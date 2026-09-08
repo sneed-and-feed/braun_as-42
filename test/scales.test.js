@@ -1,0 +1,75 @@
+import { test, describe, it } from 'node:test';
+import assert from 'node:assert';
+import {
+  midiToFrequency,
+  frequencyToMidi,
+  quantizeToScale,
+  getScaleDegreesInOctaves,
+  getChordFrequencies,
+  SCALES,
+  CHORD_VOICINGS
+} from '../js/generative/scales.js';
+
+describe('Scales and Tuning Math', () => {
+  it('correctly calculates concert pitch A4 (MIDI 69 = 440 Hz)', () => {
+    const fA4 = midiToFrequency(69, 440);
+    assert.strictEqual(Math.round(fA4), 440);
+  });
+
+  it('correctly calculates C4 (MIDI 60 ~ 261.63 Hz)', () => {
+    const fC4 = midiToFrequency(60, 440);
+    assert.strictEqual(fC4.toFixed(2), '261.63');
+  });
+
+  it('correctly handles 432 Hz concert pitch', () => {
+    const fA4_432 = midiToFrequency(69, 432);
+    assert.strictEqual(Math.round(fA4_432), 432);
+  });
+
+  it('inverts frequency to MIDI correctly', () => {
+    const midi = frequencyToMidi(440, 440);
+    assert.strictEqual(Math.round(midi), 69);
+
+    const midiC4 = frequencyToMidi(261.6255653, 440);
+    assert.strictEqual(Math.round(midiC4), 60);
+  });
+
+  it('quantizes chromatic notes to Budd Major Pentatonic', () => {
+    // In C major pentatonic: C, D, E, G, A (intervals 0, 2, 4, 7, 9)
+    // C4 is 60.
+    // 60 -> 60 (C)
+    assert.strictEqual(quantizeToScale(60, 0, SCALES.BUDD_PENTATONIC.intervals), 60);
+
+    // 61 (C#) should quantize to 60 (C) or 62 (D). In our math, diff to 60 is 1, diff to 62 is 1 -> 60 or 62.
+    const q61 = quantizeToScale(61, 0, SCALES.BUDD_PENTATONIC.intervals);
+    assert.ok(q61 === 60 || q61 === 62);
+
+    // 65 (F) -> intervals are E (64) and G (67). Diff to 64 is 1, diff to 67 is 2 -> should be 64 (E)
+    assert.strictEqual(quantizeToScale(65, 0, SCALES.BUDD_PENTATONIC.intervals), 64);
+
+    // 66 (F#) -> intervals are E (64) and G (67). Diff to 67 is 1 -> 67 (G)
+    assert.strictEqual(quantizeToScale(66, 0, SCALES.BUDD_PENTATONIC.intervals), 67);
+
+    // 71 (B) -> intervals are A (69) and high C (72). Diff to 72 is 1 -> 72 (C5)
+    assert.strictEqual(quantizeToScale(71, 0, SCALES.BUDD_PENTATONIC.intervals), 72);
+  });
+
+  it('generates scale degrees across octaves properly', () => {
+    const degrees = getScaleDegreesInOctaves(0, SCALES.BUDD_PENTATONIC.intervals, 3, 4, 440);
+    // 2 octaves * 5 notes per octave = 10 notes
+    assert.strictEqual(degrees.length, 10);
+    assert.strictEqual(degrees[0].name, 'C3');
+    assert.ok(degrees[0].freq > 120 && degrees[0].freq < 140);
+    assert.strictEqual(degrees[degrees.length - 1].name, 'A4');
+  });
+
+  it('calculates chord frequencies for Harold Budd Pavilion Sus', () => {
+    const freqs = getChordFrequencies(60, 'PAVILION_SUS', 440);
+    // Intervals [0, 7, 14, 16] -> MIDI [60, 67, 74, 76]
+    assert.strictEqual(freqs.length, 4);
+    assert.strictEqual(Math.round(frequencyToMidi(freqs[0], 440)), 60);
+    assert.strictEqual(Math.round(frequencyToMidi(freqs[1], 440)), 67);
+    assert.strictEqual(Math.round(frequencyToMidi(freqs[2], 440)), 74);
+    assert.strictEqual(Math.round(frequencyToMidi(freqs[3], 440)), 76);
+  });
+});

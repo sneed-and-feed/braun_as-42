@@ -1,0 +1,5 @@
+node_modules/
+*.log
+firefox_shot.png
+.DS_Store
+Thumbs.db

@@ -1,0 +1,22 @@
+{
+  "name": "braun-ambient-synthesizer",
+  "version": "1.0.0",
+  "description": "Dieter Rams / Braun inspired microtonal ambient generative synthesizer (Harold Budd / Brian Eno / Elta Solar 42n)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node server.js"
+  },
+  "keywords": [
+    "web-audio",
+    "ambient",
+    "synthesizer",
+    "harold-budd",
+    "brian-eno",
+    "solar-42n",
+    "dieter-rams",
+    "braun"
+  ],
+  "author": "Antigravity Audio Engineering",
+  "license": "MIT"
+}

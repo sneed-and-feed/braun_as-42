@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BRAUN · AMBIENT GENERATIVE SYNTHESIZER</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2216%22 fill=%22%23EE592B%22/><circle cx=%2250%22 cy=%2250%22 r=%2228%22 fill=%22%23ECEBE4%22/></svg>">
+</head>
+<body>
+  <main class="braun-chassis">
+    <!-- Header / Top Bar -->
+    <header class="braun-header">
+      <div class="braun-logo-group">
+        <h1 class="braun-brand">BRAUN</h1>
+        <span class="braun-model">AS 42 · AMBIENT GENERATIVE SYSTEM</span>
+      </div>
+
+      <div class="braun-top-controls">
+        <!-- Scale / Harmony Settings (Foolproof modal quantizer) -->
+        <div class="braun-select-group">
+          <label class="braun-label-inline" for="select-root">ROOT</label>
+          <select id="select-root" class="braun-select" title="Root Pitch Class"></select>
+        </div>
+
+        <div class="braun-select-group">
+          <label class="braun-label-inline" for="select-scale">MODAL HARMONY</label>
+          <select id="select-scale" class="braun-select" title="Curated Modal Space"></select>
+        </div>
+
+        <div class="braun-select-group">
+          <label class="braun-label-inline" for="select-tuning">PITCH</label>
+          <select id="select-tuning" class="braun-select" title="Reference Pitch">
+            <option value="440">440 Hz (STD)</option>
+            <option value="432">432 Hz (VERDI)</option>
+          </select>
+        </div>
+
+        <div class="braun-select-group">
+          <label class="braun-label-inline" for="select-theme">FINISH</label>
+          <select id="select-theme" class="braun-select" title="Braun Industrial Finish">
+            <option value="light">ALUMINUM (LIGHT)</option>
+            <option value="dark">ANTHRACITE (DARK)</option>
+          </select>
+        </div>
+
+        <!-- Lossless WAV Recorder -->
+        <button id="btn-record" class="braun-record-btn" title="Record Lossless 16-bit 48kHz WAV">
+          <span class="braun-led"></span>
+          <span class="braun-record-text">RECORD WAV</span>
+        </button>
+
+        <!-- Master Power Button -->
+        <button id="btn-power" class="braun-power-btn" title="System Power On / Off">
+          <span class="braun-led"></span>
+          <span class="braun-status-text">POWER ON</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Body Grid -->
+    <div class="braun-body-grid">
+      <!-- Left Column: Scope & Master Bus -->
+      <aside class="braun-left-column">
+        <!-- Phosphor Vector Display -->
+        <div class="braun-scope-container">
+          <div class="braun-scope-header">
+            <h2 class="braun-panel-title">MONITOR</h2>
+            <div class="braun-scope-modes">
+              <button class="braun-mode-tab is-active" data-mode="WAVEFORM">OSC</button>
+              <button class="braun-mode-tab" data-mode="SPECTRUM">FFT</button>
+              <button class="braun-mode-tab" data-mode="LISSAJOUS">XY PHASE</button>
+            </div>
+          </div>
+          <div class="braun-scope-bezel">
+            <canvas id="scope-canvas" class="braun-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- System & Master Knobs -->
+        <div class="braun-system-section">
+          <h2 class="braun-panel-title">MASTER OUTPUT</h2>
+          <div class="braun-knobs-row">
+            <div id="knob-master-vol"></div>
+          </div>
+
+          <!-- Brian Eno Asynchronous Phase Loops Panel -->
+          <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h2 class="braun-panel-title">AIRPORTS TAPE LOOPS</h2>
+              <button id="toggle-phase-loops" class="braun-drone-status-btn" title="Toggle Brian Eno Asynchronous Phase Loops">
+                <span class="braun-led"></span>
+                <span class="braun-status-text">LOOPS OFF</span>
+              </button>
+            </div>
+            <div id="loops-list" class="braun-loops-list"></div>
+          </div>
+
+          <!-- Generative Poisson Note Generator Panel -->
+          <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h2 class="braun-panel-title">POISSON AUTO-EVOLVE</h2>
+              <button id="toggle-auto-evolve" class="braun-drone-status-btn" title="Toggle Harold Budd Organic Poisson Generation">
+                <span class="braun-led"></span>
+                <span class="braun-status-text">EVOLVE OFF</span>
+              </button>
+            </div>
+            <div style="display: flex; justify-content: center;">
+              <div id="knob-poisson-density"></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Column: Sound Synthesis Engines & FX -->
+      <section class="braun-right-column">
+        <!-- 1. Elta Solar 42n Microtonal Twin Drone Voices -->
+        <div class="braun-section">
+          <div class="braun-section-header">
+            <div>
+              <h2 class="braun-panel-title">SOLAR 42N · MICROTONAL DRONE VOICES</h2>
+              <span class="braun-subtitle">Twin Beatable Analog Oscillators · Wavefolding · 4-Pole Ladder Filtering</span>
+            </div>
+          </div>
+
+          <div class="braun-drones-grid">
+            <!-- Drone Voice 1 -->
+            <div class="braun-drone-card">
+              <div class="braun-card-header">
+                <span class="braun-panel-title">VOICE 1 (TONIC)</span>
+                <button id="btn-drone1-active" class="braun-drone-status-btn">
+                  <span class="braun-led"></span>
+                  <span class="braun-status-text">DRONE 1 OFF</span>
+                </button>
+              </div>
+
+              <!-- Osc A & B Waveforms -->
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
+                <span class="braun-label-inline">OSC A:</span>
+                <div class="braun-wave-toggles">
+                  <button class="braun-wave-btn drone1-wave-a is-active" data-wave="saw">SAW</button>
+                  <button class="braun-wave-btn drone1-wave-a" data-wave="square">SQR</button>
+                  <button class="braun-wave-btn drone1-wave-a" data-wave="sine">SIN</button>
+                  <button class="braun-wave-btn drone1-wave-a" data-wave="triangle">TRI</button>
+                  <button class="braun-wave-btn drone1-wave-a" data-wave="warm">WARM</button>
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
+                <span class="braun-label-inline">OSC B:</span>
+                <div class="braun-wave-toggles">
+                  <button class="braun-wave-btn drone1-wave-b" data-wave="saw">SAW</button>
+                  <button class="braun-wave-btn drone1-wave-b" data-wave="square">SQR</button>
+                  <button class="braun-wave-btn drone1-wave-b" data-wave="sine">SIN</button>
+                  <button class="braun-wave-btn drone1-wave-b" data-wave="triangle">TRI</button>
+                  <button class="braun-wave-btn drone1-wave-b is-active" data-wave="warm">WARM</button>
+                </div>
+              </div>
+
+              <!-- Knobs Row -->
+              <div class="braun-knobs-row">
+                <div id="knob-drone1-beat" title="Continuous Sub-Hertz Beating Frequency"></div>
+                <div id="knob-drone1-detune" title="Fine Detuning in Cents"></div>
+                <div id="knob-drone1-fold" title="Analog Wavefolding Amount"></div>
+                <div id="knob-drone1-cutoff" title="Resonant Lowpass Cutoff"></div>
+                <div id="knob-drone1-res" title="Filter Q Resonance"></div>
+                <div id="knob-drone1-lfo" title="Slow LFO Organic Drift"></div>
+                <div id="knob-drone1-vol" title="Voice Level"></div>
+              </div>
+            </div>
+
+            <!-- Drone Voice 2 -->
+            <div class="braun-drone-card">
+              <div class="braun-card-header">
+                <span class="braun-panel-title">VOICE 2 (DOMINANT / 5TH)</span>
+                <button id="btn-drone2-active" class="braun-drone-status-btn">
+                  <span class="braun-led"></span>
+                  <span class="braun-status-text">DRONE 2 OFF</span>
+                </button>
+              </div>
+
+              <!-- Osc A & B Waveforms -->
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
+                <span class="braun-label-inline">OSC A:</span>
+                <div class="braun-wave-toggles">
+                  <button class="braun-wave-btn drone2-wave-a" data-wave="saw">SAW</button>
+                  <button class="braun-wave-btn drone2-wave-a is-active" data-wave="square">SQR</button>
+                  <button class="braun-wave-btn drone2-wave-a" data-wave="sine">SIN</button>
+                  <button class="braun-wave-btn drone2-wave-a" data-wave="triangle">TRI</button>
+                  <button class="braun-wave-btn drone2-wave-a" data-wave="warm">WARM</button>
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
+                <span class="braun-label-inline">OSC B:</span>
+                <div class="braun-wave-toggles">
+                  <button class="braun-wave-btn drone2-wave-b" data-wave="saw">SAW</button>
+                  <button class="braun-wave-btn drone2-wave-b" data-wave="square">SQR</button>
+                  <button class="braun-wave-btn drone2-wave-b" data-wave="sine">SIN</button>
+                  <button class="braun-wave-btn drone2-wave-b is-active" data-wave="triangle">TRI</button>
+                  <button class="braun-wave-btn drone2-wave-b" data-wave="warm">WARM</button>
+                </div>
+              </div>
+
+              <!-- Knobs Row -->
+              <div class="braun-knobs-row">
+                <div id="knob-drone2-beat" title="Continuous Sub-Hertz Beating Frequency"></div>
+                <div id="knob-drone2-detune" title="Fine Detuning in Cents"></div>
+                <div id="knob-drone2-fold" title="Analog Wavefolding Amount"></div>
+                <div id="knob-drone2-cutoff" title="Resonant Lowpass Cutoff"></div>
+                <div id="knob-drone2-res" title="Filter Q Resonance"></div>
+                <div id="knob-drone2-lfo" title="Slow LFO Organic Drift"></div>
+                <div id="knob-drone2-vol" title="Voice Level"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Harold Budd Felt Piano / Acoustic Chime -->
+        <div class="braun-section">
+          <div class="braun-section-header">
+            <div>
+              <h2 class="braun-panel-title">HAROLD BUDD · PLAYABLE SYNTH & FELT PIANO</h2>
+              <span class="braun-subtitle">Acoustic Wooden Hammer Thud · Steep Warm 24dB Damping · Long Singing Tail</span>
+            </div>
+            <!-- Waveform Toggles: Saw / Square / Sine / Felt -->
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="braun-label-inline">TIMBRE:</span>
+              <div class="braun-wave-toggles">
+                <button class="braun-wave-btn piano-wave-btn is-active" data-wave="felt" title="Soft Pedal Felt Piano (Sine + Triangle)">FELT</button>
+                <button class="braun-wave-btn piano-wave-btn" data-wave="sine" title="Pure Acoustic Chime / Crystal Sine">SINE</button>
+                <button class="braun-wave-btn piano-wave-btn" data-wave="saw" title="Band-Limited Warm Sawtooth Pad">SAW</button>
+                <button class="braun-wave-btn piano-wave-btn" data-wave="square" title="Band-Limited Hollow Square / Reed">SQR</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="braun-knobs-row">
+            <div id="knob-felt-tone" title="Felt Cloth Lowpass Damping"></div>
+            <div id="knob-felt-hammer" title="Hammer Impact Transient"></div>
+            <div id="knob-felt-decay" title="String Decay Time Multiplier"></div>
+            <div id="knob-felt-level" title="Piano Output Level"></div>
+          </div>
+        </div>
+
+        <!-- 3. Brian Eno FX: Tape Echo & Shimmer Reverb -->
+        <div class="braun-section">
+          <div class="braun-section-header">
+            <div>
+              <h2 class="braun-panel-title">BRIAN ENO · TAPE ECHO & SHIMMER DIFFUSION</h2>
+              <span class="braun-subtitle">Saturating Cross-Feedback Delay · Wow & Flutter · +12 Semitone Reverb Bloom</span>
+            </div>
+            <button id="toggle-freeze" class="braun-drone-status-btn" title="Lock Reverb Tail Indefinitely">
+              <span class="braun-led"></span>
+              <span class="braun-status-text">FREEZE OFF</span>
+            </button>
+          </div>
+
+          <div class="braun-knobs-row">
+            <!-- Tape Delay -->
+            <div id="knob-delay-time" title="Tape Head Delay Time"></div>
+            <div id="knob-delay-fb" title="Delay Feedback Regeneration"></div>
+            <div id="knob-delay-wow" title="Mechanical Wow & Flutter Depth"></div>
+            <div id="knob-delay-tone" title="Tape Head High-Frequency Damping"></div>
+            <div id="knob-delay-wet" title="Delay Wet Mix"></div>
+
+            <!-- Shimmer Reverb -->
+            <div id="knob-reverb-decay" title="Reverb Diffusion RT60 Tail"></div>
+            <div id="knob-reverb-damping" title="Air High-Frequency Absorption"></div>
+            <div id="knob-reverb-shimmer" title="Octave-Up Shimmer Feedback Regeneration"></div>
+            <div id="knob-reverb-wet" title="Reverb Wet Mix"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Bottom Playable Area: Chime Bar & Chord Clusters -->
+    <footer class="braun-play-section">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 class="braun-panel-title">HARMONIC TOUCH SURFACE & MACRO CHORD CLUSTERS</h2>
+        <span class="braun-subtitle">Keyboard: A-L keys · 1-6 keys for chords · Spacebar to freeze</span>
+      </div>
+
+      <!-- Tactile Macro Chord Buttons -->
+      <div id="chord-macros" class="braun-chord-macros-row"></div>
+
+      <!-- Playable Chime Strip -->
+      <div id="chime-strip" class="braun-chime-strip"></div>
+    </footer>
+
+    <!-- Minimalist Rams Manifesto Footer -->
+    <div class="braun-footer">
+      <span>DESIGN: DIETER RAMS FUNCTIONALIST PRINCIPLES · "WENIGER, ABER BESSER"</span>
+      <span>INSPIRATION: HAROLD BUDD · BRIAN ENO · ELTA SOLAR 42N</span>
+    </div>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
