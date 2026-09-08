@@ -88,6 +88,24 @@ export class FeltPianoVoice {
     this.osc1Gain.gain.setValueAtTime(0.48, ctx.currentTime);
     this.osc2Gain.gain.setValueAtTime(0.16, ctx.currentTime);
 
+    // Subtle CS-80 chorus LFO (sub-hertz analog pitch drift on Osc 2)
+    this.chorusLfo = ctx.createOscillator();
+    this.chorusLfo.type = 'sine';
+    const chorusRate = 0.65 + (((this.voiceIndex || 0) * 0.11) % 0.30);
+    this.chorusLfo.frequency.setValueAtTime(chorusRate, ctx.currentTime);
+
+    this.chorusGain = ctx.createGain();
+    this.chorusGain.gain.setValueAtTime(0, ctx.currentTime); // 0 in felt mode
+
+    this.chorusLfo.connect(this.chorusGain);
+    try {
+      this.chorusGain.connect(this.osc2.detune);
+    } catch (e) {}
+
+    try {
+      this.chorusLfo.start();
+    } catch (e) {}
+
     this.setWaveform(this.currentWaveform);
 
     this.osc1.detune.setValueAtTime(this.dispersionOffset, ctx.currentTime);
@@ -117,17 +135,47 @@ export class FeltPianoVoice {
   }
 
   /**
-   * Set voice waveform: 'felt' | 'sine' | 'saw' | 'square'
+   * Set voice waveform: 'felt' | 'sine' | 'saw' | 'square' | 'cs80' | 'vangelis'
    */
   setWaveform(type) {
     this.currentWaveform = type;
-    if (type === 'saw') {
+    const isCS80 = (type === 'cs80' || type === 'vangelis');
+
+    if (isCS80) {
       if (this.wavetables && this.wavetables.saw) {
         this.osc1.setPeriodicWave(this.wavetables.saw);
         this.osc2.setPeriodicWave(this.wavetables.warm || this.wavetables.saw);
       } else {
         this.osc1.type = 'sawtooth';
         this.osc2.type = 'sawtooth';
+      }
+      // CS-80 resonant filter Q: singing brass horn resonance
+      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
+        this.filter1.Q.setValueAtTime(1.85, this.ctx.currentTime);
+      }
+      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
+        this.filter2.Q.setValueAtTime(1.45, this.ctx.currentTime);
+      }
+      // CS-80 subtle slow chorus depth (4.5 cents analog pitch drift)
+      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
+        this.chorusGain.gain.setValueAtTime(4.5, this.ctx.currentTime);
+      }
+    } else if (type === 'saw') {
+      if (this.wavetables && this.wavetables.saw) {
+        this.osc1.setPeriodicWave(this.wavetables.saw);
+        this.osc2.setPeriodicWave(this.wavetables.warm || this.wavetables.saw);
+      } else {
+        this.osc1.type = 'sawtooth';
+        this.osc2.type = 'sawtooth';
+      }
+      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
+        this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
+        this.filter2.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
+        this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
       }
     } else if (type === 'square') {
       if (this.wavetables && this.wavetables.square) {
@@ -137,15 +185,42 @@ export class FeltPianoVoice {
         this.osc1.type = 'square';
         this.osc2.type = 'square';
       }
+      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
+        this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
+        this.filter2.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
+        this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      }
     } else if (type === 'sine') {
       this.osc1.type = 'sine';
       this.osc2.type = 'sine';
+      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
+        this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
+        this.filter2.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
+        this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      }
     } else { // 'felt' / 'triangle' default
       this.osc1.type = 'sine';
       if (this.wavetables && this.wavetables.triangle) {
         this.osc2.setPeriodicWave(this.wavetables.triangle);
       } else {
         this.osc2.type = 'triangle';
+      }
+      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
+        this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
+        this.filter2.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
+        this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
       }
     }
   }
@@ -162,8 +237,9 @@ export class FeltPianoVoice {
     const now = ctx.currentTime;
     const cancelTime = Math.max(now, ctx.currentTime);
 
-    const feltDamp = params.tone ?? 0.65; // 0.0 (darkest felt) to 1.0 (bright chime)
-    const hammerThump = params.hammer ?? 0.50; // Felt hammer click volume
+    const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
+    const feltDamp = params.tone ?? 0.65; // 0.0 (darkest felt) to 1.0 (bright chime / brass)
+    const hammerThump = isCS80 ? 0 : (params.hammer ?? 0.50); // Bypassed in CS-80 mode
     const decayMultiplier = params.decay ?? 1.0;
     const releaseTime = params.release ?? 1.8;
 
@@ -231,6 +307,13 @@ export class FeltPianoVoice {
       restCutoff = Math.min(2200, Math.max(160, freq * 1.15));
     }
 
+    if (isCS80) {
+      // Vangelis Yamaha CS-80: Equal dual-saw ranks with soaring brass authority
+      osc1Vol = 0.48;
+      osc2Vol = 0.46;
+      bodyFormantHz = 1150; // Warm analog synth chassis presence
+    }
+
     // Check if voice is being stolen / re-triggered while currently sounding
     const curGain = Math.max(0.0001, this.voiceGain.gain.value || 0.0001);
     const isStealing = this.isActive || (curGain > 0.0005);
@@ -262,8 +345,10 @@ export class FeltPianoVoice {
       this.osc1.detune.cancelScheduledValues(cancelTime);
       this.osc2.detune.cancelScheduledValues(cancelTime);
     }
-    this.osc1.detune.setValueAtTime(this.dispersionOffset, noteStartTime);
-    this.osc2.detune.setValueAtTime(this.dispersionOffset + this.overtoneSpread, noteStartTime);
+    const detune1 = isCS80 ? (this.dispersionOffset - 5.5) : this.dispersionOffset;
+    const detune2 = isCS80 ? (this.dispersionOffset + 6.5) : (this.dispersionOffset + this.overtoneSpread);
+    this.osc1.detune.setValueAtTime(detune1, noteStartTime);
+    this.osc2.detune.setValueAtTime(detune2, noteStartTime);
 
     // Apply soundboard body formant
     this.bodyFilter.frequency.setValueAtTime(bodyFormantHz, noteStartTime);
@@ -310,45 +395,74 @@ export class FeltPianoVoice {
       this.currentHammerSource = noiseSource;
     }
 
-    // Anchor current filter cutoff to eliminate biquad filter leap clicks
-    const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || restCutoff));
-    const curCutoff2 = Math.max(20, Math.min(20000, this.filter2.frequency.value || restCutoff));
+    if (isCS80) {
+      // CS-80 Expressive Filter Brass Swell (emulating polyphonic aftertouch pressure)
+      const brassAttackTime = 0.095;
+      const brassDecayTime = 0.50 * decayMultiplier;
+      const brassStartCutoff = Math.max(280, Math.min(2400, freq * 1.4));
+      const brassMaxCutoff = Math.min(16000, Math.max(freq * 4.5, 3200 + feltDamp * 8000 * velocity));
+      const brassSustainCutoff = Math.min(12000, Math.max(freq * 2.5, 1800 + feltDamp * 5000 * velocity));
 
-    if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
-      this.filter1.frequency.cancelAndHoldAtTime(cancelTime);
-      this.filter2.frequency.cancelAndHoldAtTime(cancelTime);
-    } else {
       this.filter1.frequency.cancelScheduledValues(cancelTime);
       this.filter2.frequency.cancelScheduledValues(cancelTime);
-    }
+      this.filter1.frequency.setValueAtTime(brassStartCutoff, cancelTime);
+      this.filter2.frequency.setValueAtTime(brassStartCutoff, cancelTime);
 
-    if (isStealing) {
-      this.filter1.frequency.setValueAtTime(curCutoff1, cancelTime);
-      this.filter2.frequency.setValueAtTime(curCutoff2, cancelTime);
-      this.filter1.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
-      this.filter2.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
+      const brassAttackTarget = Math.max(noteStartTime + brassAttackTime, ctx.currentTime + 0.005);
+      this.filter1.frequency.linearRampToValueAtTime(brassMaxCutoff, brassAttackTarget);
+      this.filter2.frequency.linearRampToValueAtTime(brassMaxCutoff, brassAttackTarget);
+
+      const brassDecayTarget = Math.max(noteStartTime + brassAttackTime + brassDecayTime, brassAttackTarget + 0.05);
+      this.filter1.frequency.exponentialRampToValueAtTime(brassSustainCutoff, brassDecayTarget);
+      this.filter2.frequency.exponentialRampToValueAtTime(brassSustainCutoff, brassDecayTarget);
+
+      const noteDuration = Math.max(duration || 3.5, 3.5) * decayMultiplier;
+      const brassEndTarget = Math.max(noteStartTime + brassAttackTime + brassDecayTime + noteDuration + releaseTime, brassDecayTarget + 0.2);
+      this.filter1.frequency.exponentialRampToValueAtTime(Math.max(160, freq * 1.1), brassEndTarget);
+      this.filter2.frequency.exponentialRampToValueAtTime(Math.max(160, freq * 1.1), brassEndTarget);
     } else {
-      // Voice was idle/silent: cleanly anchor at restCutoff of struck note
-      this.filter1.frequency.setValueAtTime(restCutoff, cancelTime);
-      this.filter2.frequency.setValueAtTime(restCutoff, cancelTime);
+      // Anchor current filter cutoff to eliminate biquad filter leap clicks
+      const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || restCutoff));
+      const curCutoff2 = Math.max(20, Math.min(20000, this.filter2.frequency.value || restCutoff));
+
+      if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
+        this.filter1.frequency.cancelAndHoldAtTime(cancelTime);
+        this.filter2.frequency.cancelAndHoldAtTime(cancelTime);
+      } else {
+        this.filter1.frequency.cancelScheduledValues(cancelTime);
+        this.filter2.frequency.cancelScheduledValues(cancelTime);
+      }
+
+      if (isStealing) {
+        this.filter1.frequency.setValueAtTime(curCutoff1, cancelTime);
+        this.filter2.frequency.setValueAtTime(curCutoff2, cancelTime);
+        this.filter1.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
+        this.filter2.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
+      } else {
+        // Voice was idle/silent: cleanly anchor at restCutoff of struck note
+        this.filter1.frequency.setValueAtTime(restCutoff, cancelTime);
+        this.filter2.frequency.setValueAtTime(restCutoff, cancelTime);
+      }
+
+      // Filter attack ramp
+      const filterAttackTarget = Math.max(noteStartTime + filterAttackTime, ctx.currentTime + 0.002);
+      this.filter1.frequency.linearRampToValueAtTime(maxCutoff, filterAttackTarget);
+      this.filter2.frequency.linearRampToValueAtTime(maxCutoff, filterAttackTarget);
+
+      // Rapid exponential decay down to fundamental
+      const filterDecayTime = filterDecayBase + (1.0 - feltDamp) * 0.25;
+      const filterDecayTarget = Math.max(noteStartTime + filterAttackTime + filterDecayTime, filterAttackTarget + 0.01);
+      this.filter1.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
+      this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
     }
-
-    // Filter attack ramp
-    const filterAttackTarget = Math.max(noteStartTime + filterAttackTime, ctx.currentTime + 0.002);
-    this.filter1.frequency.linearRampToValueAtTime(maxCutoff, filterAttackTarget);
-    this.filter2.frequency.linearRampToValueAtTime(maxCutoff, filterAttackTarget);
-
-    // Rapid exponential decay down to fundamental
-    const filterDecayTime = filterDecayBase + (1.0 - feltDamp) * 0.25;
-    const filterDecayTarget = Math.max(noteStartTime + filterAttackTime + filterDecayTime, filterAttackTarget + 0.01);
-    this.filter1.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
-    this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
 
     // --- Master Amplitude Envelope ---
-    // Smooth 7ms micro-attack ramp from 0.0001 to peakGain eliminates step discontinuity clicks.
-    // Calibrated peakGain prevents dense 5-6 note chord clusters from overdriving internal shaper or bus.
-    const attackTime = 0.007;
-    const peakGain = Math.max(0.005, velocity * (isBass ? 0.28 : isTreble ? 0.26 : 0.24));
+    // Smooth micro-attack ramp from 0.0001 to peakGain eliminates step discontinuity clicks.
+    // In CS-80 mode, peakGain is calibrated to match the Solar 42n drone's authoritative sonic presence.
+    const attackTime = isCS80 ? 0.024 : 0.007;
+    const peakGain = isCS80
+      ? Math.max(0.01, velocity * (isBass ? 0.38 : isTreble ? 0.35 : 0.32))
+      : Math.max(0.005, velocity * (isBass ? 0.28 : isTreble ? 0.26 : 0.24));
 
     if (!isStealing) {
       this.voiceGain.gain.cancelScheduledValues(cancelTime);
@@ -359,18 +473,29 @@ export class FeltPianoVoice {
     const attackTarget = Math.max(noteStartTime + attackTime, ctx.currentTime + 0.002);
     this.voiceGain.gain.linearRampToValueAtTime(peakGain, attackTarget);
 
-    // Long acoustic string decay
-    const sustainLevel = Math.max(0.0002, peakGain * 0.4);
-    const sustainTarget = Math.max(noteStartTime + attackTime + 0.5, attackTarget + 0.05);
-    this.voiceGain.gain.exponentialRampToValueAtTime(sustainLevel, sustainTarget);
-    const decayEndTarget = Math.max(noteStartTime + attackTime + baseDecay + releaseTime, sustainTarget + 0.1);
-    this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
+    if (isCS80) {
+      // Singing CS-80 sustain: maintains 72% peak gain for powerful presence matching the drone
+      const sustainLevel = Math.max(0.005, peakGain * 0.72);
+      const sustainTarget = Math.max(noteStartTime + attackTime + 0.25, attackTarget + 0.05);
+      this.voiceGain.gain.exponentialRampToValueAtTime(sustainLevel, sustainTarget);
+      const noteLifetime = Math.max(duration || 3.5, 3.5) * decayMultiplier;
+      const decayEndTarget = Math.max(noteStartTime + attackTime + noteLifetime + releaseTime, sustainTarget + 0.2);
+      this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
+    } else {
+      // Long acoustic string decay
+      const sustainLevel = Math.max(0.0002, peakGain * 0.4);
+      const sustainTarget = Math.max(noteStartTime + attackTime + 0.5, attackTarget + 0.05);
+      this.voiceGain.gain.exponentialRampToValueAtTime(sustainLevel, sustainTarget);
+      const decayEndTarget = Math.max(noteStartTime + attackTime + baseDecay + releaseTime, sustainTarget + 0.1);
+      this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
+    }
 
     this.isActive = true;
     this.startTime = noteStartTime;
 
     // Mark inactive when done and update polyphonic headroom
-    const totalLifetime = (baseDecay + releaseTime + (isStealing ? declickRampTime : 0)) * 1000;
+    const noteTotalDuration = isCS80 ? (Math.max(duration || 3.5, 3.5) * decayMultiplier) : baseDecay;
+    const totalLifetime = (noteTotalDuration + releaseTime + (isStealing ? declickRampTime : 0)) * 1000;
     setTimeout(() => {
       if (this.startTime === noteStartTime) {
         this.isActive = false;
@@ -392,14 +517,16 @@ export class FeltPianoVoice {
       this.voiceGain.gain.cancelScheduledValues(cancelTime);
       this.voiceGain.gain.setValueAtTime(curGain, cancelTime);
     }
-    const releaseTarget = Math.max(cancelTime + 0.35, this.ctx.currentTime + 0.01);
+    const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
+    const relDuration = isCS80 ? 0.65 : 0.35;
+    const releaseTarget = Math.max(cancelTime + relDuration, this.ctx.currentTime + 0.01);
     this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, releaseTarget);
     setTimeout(() => {
       this.isActive = false;
       if (this.synth) {
         this.synth._updatePolyphonicHeadroom();
       }
-    }, 380);
+    }, Math.round((relDuration + 0.03) * 1000));
   }
 }
 
@@ -591,7 +718,9 @@ export class FeltPianoSynthesizer {
           const isBass = (voice.currentMidi != null && voice.currentMidi < 48) || voice.currentFreq < 130.8;
           const isTreble = (voice.currentMidi != null && voice.currentMidi >= 72) || voice.currentFreq > 523.25;
           let rest;
-          if (isBass) {
+          if (voice.currentWaveform === 'cs80' || voice.currentWaveform === 'vangelis') {
+            rest = Math.min(14000, Math.max(300, voice.currentFreq * (1.8 + this.params.tone * 2.0)));
+          } else if (isBass) {
             rest = Math.min(1800, Math.max(120, voice.currentFreq * (0.8 + this.params.tone * 0.5)));
           } else if (isTreble) {
             rest = Math.min(4800, Math.max(280, voice.currentFreq * (1.1 + this.params.tone * 0.8)));

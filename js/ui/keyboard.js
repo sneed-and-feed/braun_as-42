@@ -62,26 +62,51 @@ export class BraunPlaySurface {
         this.playNote(note.freq, note.midi, velocity);
       };
 
-      let lastPointerTime = -Infinity;
+      let handledByPointer = false;
+      let clearPointerTimer = null;
+
       keyEl.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        lastPointerTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+        handledByPointer = true;
+        if (clearPointerTimer) {
+          clearTimeout(clearPointerTimer);
+          clearPointerTimer = null;
+        }
         triggerStrike(e.clientY, keyEl.getBoundingClientRect());
       });
 
+      keyEl.addEventListener('pointerup', () => {
+        // Retain handledByPointer flag across trailing synthetic click event so releasing LMB does NOT re-trigger
+        if (clearPointerTimer) clearTimeout(clearPointerTimer);
+        clearPointerTimer = setTimeout(() => {
+          handledByPointer = false;
+          clearPointerTimer = null;
+        }, 400);
+      });
+
+      keyEl.addEventListener('pointercancel', () => {
+        handledByPointer = false;
+        if (clearPointerTimer) {
+          clearTimeout(clearPointerTimer);
+          clearPointerTimer = null;
+        }
+      });
+
       keyEl.addEventListener('click', (e) => {
-        const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-        // Ignore synthetic click event following pointerdown within 400ms
-        if (now - lastPointerTime < 400) return;
+        // Single strike on pointerdown: releasing LMB must NOT re-trigger a second strike
+        if (handledByPointer) {
+          return;
+        }
         triggerStrike(e.clientY, keyEl.getBoundingClientRect());
       });
 
       // Allow glissando swiping across keys while mouse button is held down
+      let lastEnterTime = -Infinity;
       keyEl.addEventListener('pointerenter', (e) => {
         if (e.buttons === 1) {
           const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-          if (now - lastPointerTime < 140) return;
-          lastPointerTime = now;
+          if (now - lastEnterTime < 140) return;
+          lastEnterTime = now;
           triggerStrike(e.clientY, keyEl.getBoundingClientRect());
         }
       });
@@ -106,7 +131,7 @@ export class BraunPlaySurface {
       const btn = document.createElement('button');
       btn.className = 'braun-chord-macro-btn';
       btn.setAttribute('data-chord', voicing.id);
-      const shortcutKey = idx < 9 ? `${idx + 1}` : (idx === 9 ? '0' : '');
+      const shortcutKey = idx < 9 ? `${idx + 1}` : (idx === 9 ? '0' : (idx === 10 ? '-' : ''));
       btn.innerHTML = `
         <div class="braun-chord-header">
           <span class="braun-chord-title">${voicing.name}</span>
@@ -239,6 +264,8 @@ export class BraunPlaySurface {
       'KeyZ': 11, 'KeyX': 12, 'KeyC': 13, 'KeyV': 14
     };
 
+    if (typeof window === 'undefined') return;
+
     window.addEventListener('keydown', (e) => {
       // Ignore if user is in an input field
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -257,7 +284,7 @@ export class BraunPlaySurface {
         }
       }
 
-      // 1 to 9 and 0 triggers chord macros
+      // 1 to 9, 0, and - triggers chord macros
       if (e.key >= '1' && e.key <= '9') {
         const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
         const idx = parseInt(e.key, 10) - 1;
@@ -270,6 +297,12 @@ export class BraunPlaySurface {
         if (chordBtns[9]) {
           e.preventDefault();
           chordBtns[9].click();
+        }
+      } else if (e.key === '-' || e.key === '_') {
+        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
+        if (chordBtns[10]) {
+          e.preventDefault();
+          chordBtns[10].click();
         }
       }
 

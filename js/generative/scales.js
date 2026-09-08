@@ -117,6 +117,12 @@ export const CHORD_VOICINGS = {
     name: 'Nostalgia 11th',
     intervals: [0, 7, 10, 14, 15, 17],
     description: 'Lush bittersweet minor 11th (1 - 5 - b7 - 9 - b10 - 11)'
+  },
+  BLADE_RUNNER: {
+    id: 'BLADE_RUNNER',
+    name: 'Blade Runner',
+    intervals: [0, 7, 10, 14, 17, 20],
+    description: 'Vangelis CS-80 brass cluster (1 - 5 - b7 - 9 - 11 - b13)'
   }
 };
 

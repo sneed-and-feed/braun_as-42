@@ -619,7 +619,7 @@ body {
 .braun-chord-macros-grid,
 .braun-chord-macros-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   grid-template-rows: repeat(2, 72px);
   height: 152px;
   min-height: 152px;
@@ -632,7 +632,7 @@ body {
   .braun-chord-macros-grid,
   .braun-chord-macros-row {
     grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: repeat(5, 68px);
+    grid-template-rows: repeat(6, 68px);
     height: auto;
     min-height: auto;
     max-height: none;

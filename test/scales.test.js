@@ -114,5 +114,13 @@ describe('Scales and Tuning Math', () => {
     assert.strictEqual(nostFreqs.length, 6);
     const nostMidis = nostFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
     assert.deepStrictEqual(nostMidis, [60, 67, 70, 74, 75, 77]);
+
+    // Blade Runner (Vangelis CS-80 Brass Cluster): [0, 7, 10, 14, 17, 20] -> MIDI [60, 67, 70, 74, 77, 80]
+    const brFreqs = getChordFrequencies(60, 'BLADE_RUNNER', 440);
+    assert.strictEqual(brFreqs.length, 6);
+    const brMidis = brFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
+    assert.deepStrictEqual(brMidis, [60, 67, 70, 74, 77, 80]);
+    assert.strictEqual(CHORD_VOICINGS.BLADE_RUNNER.name, 'Blade Runner');
+    assert.strictEqual(CHORD_VOICINGS.BLADE_RUNNER.description, 'Vangelis CS-80 brass cluster (1 - 5 - b7 - 9 - 11 - b13)');
   });
 });

@@ -509,7 +509,7 @@ describe('UI Initialization and DOM Wiring Verification', () => {
 
     // 3. Playable Chime Strip and Macro Chords populated
     const chordMacros = elementsById.get('chord-macros');
-    assert.strictEqual(chordMacros.children.length, 10, 'Chord macros must have 10 macro buttons');
+    assert.strictEqual(chordMacros.children.length, 11, 'Chord macros must have 11 macro buttons');
 
     const chimeStrip = elementsById.get('chime-strip');
     assert.ok(chimeStrip.children.length >= 10, 'Chime strip must render playable keys across octaves');
@@ -720,15 +720,19 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     assert.ok(chordsEl.classList.contains('braun-chord-macros-grid'), 'Chord container must have braun-chord-macros-grid class');
 
     const chordBtns = chordsEl.children;
-    assert.strictEqual(chordBtns.length, 10, 'There must be exactly 10 chord macro buttons (2x5 grid)');
+    assert.strictEqual(chordBtns.length, 11, 'There must be exactly 11 chord macro buttons (2x6 grid)');
 
-    // Verify key shortcut badges: 1-5 on top row, 6-0 on bottom row
-    const expectedKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+    // Verify key shortcut badges: 1-6 on top row, 7-0 and '-' on bottom row
+    const expectedKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'];
     expectedKeys.forEach((k, idx) => {
       const btn = chordBtns[idx];
       assert.ok(btn.getAttribute('data-chord'), `Button ${idx} must have data-chord`);
       assert.ok(btn.textContent.includes(k), `Button ${idx} must include shortcut key ${k}`);
     });
+
+    const bladeRunnerBtn = Array.from(chordBtns).find(b => b.getAttribute('data-chord') === 'BLADE_RUNNER');
+    assert.ok(bladeRunnerBtn, 'Blade Runner chord macro button must exist');
+    assert.ok(bladeRunnerBtn.textContent.includes('Blade Runner'));
 
     // Test playing chord activates button flash and updates chord readout
     const firstChordId = chordBtns[0].getAttribute('data-chord');
