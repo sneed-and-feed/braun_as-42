@@ -21,7 +21,10 @@ export const CHIME_CHAR_MAP = {
 export const CHORD_KEY_MAP = {
   'Digit1': 0, 'Digit2': 1, 'Digit3': 2, 'Digit4': 3, 'Digit5': 4, 'Digit6': 5,
   'Digit7': 6, 'Digit8': 7, 'Digit9': 8, 'Digit0': 9,
-  'Minus': 10, 'Equal': 11
+  'Minus': 10, 'Equal': 11,
+  'Numpad1': 0, 'Numpad2': 1, 'Numpad3': 2, 'Numpad4': 3, 'Numpad5': 4, 'Numpad6': 5,
+  'Numpad7': 6, 'Numpad8': 7, 'Numpad9': 8, 'Numpad0': 9,
+  'NumpadSubtract': 10, 'NumpadAdd': 11
 };
 
 export function getChimeKeyIndex(e) {
@@ -222,19 +225,23 @@ export class BraunPlaySurface {
       keyEl.addEventListener('pointerup', () => {
         this._isPointerGlissandoActive = false;
         handleKeyRelease();
+        if (typeof keyEl.blur === 'function') keyEl.blur();
       });
 
       keyEl.addEventListener('pointercancel', () => {
         this._isPointerGlissandoActive = false;
         handleKeyRelease();
+        if (typeof keyEl.blur === 'function') keyEl.blur();
       });
 
       keyEl.addEventListener('click', (e) => {
         // Single strike on pointerdown: releasing LMB must NOT re-trigger a second strike
         if (handledByPointer) {
+          if (typeof keyEl.blur === 'function') keyEl.blur();
           return;
         }
         triggerStrike(e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null, false);
+        if (typeof keyEl.blur === 'function') keyEl.blur();
       });
 
       this.stripContainer.appendChild(keyEl);
@@ -393,6 +400,7 @@ export class BraunPlaySurface {
           }
         } catch (err) {}
         triggerChordRelease();
+        if (typeof btn.blur === 'function') btn.blur();
       });
 
       btn.addEventListener('pointercancel', (e) => {
@@ -402,20 +410,24 @@ export class BraunPlaySurface {
           }
         } catch (err) {}
         triggerChordRelease();
+        if (typeof btn.blur === 'function') btn.blur();
       });
 
       btn.addEventListener('pointerleave', (e) => {
         if (activeSession && e.buttons === 0) {
           triggerChordRelease();
+          if (typeof btn.blur === 'function') btn.blur();
         }
       });
 
       btn.addEventListener('click', () => {
         // Single strike on pointerdown: releasing LMB must NOT re-trigger a second strike
         if (handledByPointer) {
+          if (typeof btn.blur === 'function') btn.blur();
           return;
         }
         this.playChord(voicing.id);
+        if (typeof btn.blur === 'function') btn.blur();
       });
 
       this.chordsContainer.appendChild(btn);
@@ -641,15 +653,19 @@ export class BraunPlaySurface {
       // 2. Playable note key, chord trigger, or hotkey was pressed!
       // If the active element or target is a <select>, button, or non-text-input,
       // release focus immediately and prevent default type-ahead navigation / scrolling / clicking.
-      if (typeof document !== 'undefined' && document.activeElement && typeof document.activeElement.blur === 'function') {
-        if (document.activeElement !== document.body) {
-          document.activeElement.blur();
+      const activeEl = (typeof document !== 'undefined') ? document.activeElement : null;
+      if (activeEl && typeof activeEl.blur === 'function' && activeEl !== document.body) {
+        if (!isTextInputElement(activeEl)) {
+          activeEl.blur();
         }
       }
       if (e.target && typeof e.target.blur === 'function') {
-        if (typeof document === 'undefined' || e.target !== document.body) {
+        if (typeof document === 'undefined' || (e.target !== document.body && !isTextInputElement(e.target))) {
           e.target.blur();
         }
+      }
+      if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+        document.body.focus();
       }
 
       if (typeof e.preventDefault === 'function') {
@@ -664,7 +680,7 @@ export class BraunPlaySurface {
       // Playable chime keys with continuous hold sustain
       if (chimeIdx !== null) {
         const keys = Array.from(this.keyElements.values());
-        const keyEl = keys[chimeIdx];
+        const keyEl = keys[chimeIdx] || (keys.length > 0 ? keys[chimeIdx % keys.length] : null);
         if (keyEl) {
           const freq = parseFloat(keyEl.getAttribute('data-freq'));
           const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
@@ -681,7 +697,7 @@ export class BraunPlaySurface {
       // Chord clusters with continuous hold sustain
       if (chordIdx !== null) {
         const chordBtns = this.chordsContainer ? this.chordsContainer.querySelectorAll('.braun-chord-macro-btn') : [];
-        const btn = chordBtns[chordIdx];
+        const btn = chordBtns[chordIdx] || (chordBtns.length > 0 ? chordBtns[chordIdx % chordBtns.length] : null);
         if (btn) {
           const voicingId = btn.getAttribute('data-chord');
           btn._isHeld = true;
@@ -705,12 +721,19 @@ export class BraunPlaySurface {
         return;
       }
 
-      if (typeof document !== 'undefined' && document.activeElement &&
-          (document.activeElement.tagName === 'SELECT' || document.activeElement.tagName === 'BUTTON')) {
-        if (typeof document.activeElement.blur === 'function') document.activeElement.blur();
+      const activeUpEl = (typeof document !== 'undefined') ? document.activeElement : null;
+      if (activeUpEl && typeof activeUpEl.blur === 'function' && activeUpEl !== document.body) {
+        if (!isTextInputElement(activeUpEl)) {
+          activeUpEl.blur();
+        }
       }
-      if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON')) {
-        if (typeof e.target.blur === 'function') e.target.blur();
+      if (e.target && typeof e.target.blur === 'function') {
+        if (typeof document === 'undefined' || (e.target !== document.body && !isTextInputElement(e.target))) {
+          e.target.blur();
+        }
+      }
+      if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+        document.body.focus();
       }
 
       const code = e.code;
@@ -720,7 +743,9 @@ export class BraunPlaySurface {
       let heldKeyEntry = null;
       let heldKeyId = null;
       for (const [id, entry] of this.activeHeldKeys.entries()) {
-        if (id === code || id === key || (entry && (entry.code === code || entry.key === key))) {
+        const matchCode = (code && (id === code || (entry && entry.code === code)));
+        const matchKey = (key && (id === key || (entry && (entry.key === key || (entry.key && entry.key.toLowerCase() === key.toLowerCase())))));
+        if (matchCode || matchKey) {
           heldKeyEntry = entry;
           heldKeyId = id;
           break;
@@ -750,7 +775,9 @@ export class BraunPlaySurface {
       let heldChordEntry = null;
       let heldChordId = null;
       for (const [id, entry] of this.activeHeldChords.entries()) {
-        if (id === code || id === key || (entry && (entry.code === code || entry.key === key))) {
+        const matchCode = (code && (id === code || (entry && entry.code === code)));
+        const matchKey = (key && (id === key || (entry && (entry.key === key || (entry.key && entry.key.toLowerCase() === key.toLowerCase())))));
+        if (matchCode || matchKey) {
           heldChordEntry = entry;
           heldChordId = id;
           break;

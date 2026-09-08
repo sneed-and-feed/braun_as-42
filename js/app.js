@@ -234,14 +234,16 @@ export class AmbientApp {
     selectEl._hasSelectFocusReleaseWired = true;
 
     const releaseFocus = () => {
-      if (typeof selectEl.blur === 'function') {
-        selectEl.blur();
-      }
-      if (typeof document !== 'undefined' && document.activeElement === selectEl) {
-        if (document.body && typeof document.body.focus === 'function') {
+      try {
+        if (typeof selectEl.blur === 'function') {
+          selectEl.blur();
+        }
+      } catch (err) {}
+      try {
+        if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
           document.body.focus();
         }
-      }
+      } catch (err) {}
     };
 
     // 1. Immediately release focus upon user selection / change / input
@@ -254,29 +256,35 @@ export class AmbientApp {
       wasFocusedOnMouseDown = (typeof document !== 'undefined' && document.activeElement === selectEl);
     });
 
-    selectEl.addEventListener('mouseup', (e) => {
+    const handleRelease = (e) => {
       if (wasFocusedOnMouseDown || (e && e.target && e.target.tagName === 'OPTION')) {
         releaseFocus();
-        wasFocusedOnMouseDown = false;
       }
+    };
+
+    selectEl.addEventListener('mouseup', (e) => {
+      handleRelease(e);
+      setTimeout(() => { wasFocusedOnMouseDown = false; }, 50);
     });
 
     selectEl.addEventListener('click', (e) => {
-      if (wasFocusedOnMouseDown || (e && e.target && e.target.tagName === 'OPTION')) {
-        releaseFocus();
-        wasFocusedOnMouseDown = false;
-      }
+      handleRelease(e);
+      setTimeout(() => { wasFocusedOnMouseDown = false; }, 50);
     });
 
     // 3. Keydown on the select itself:
     // If user presses any playable musical key, chord trigger, or freeze spacebar while select is focused:
     // Prevent default browser type-ahead navigation immediately and release focus to body!
     selectEl.addEventListener('keydown', (e) => {
+      const activeEl = (typeof document !== 'undefined') ? document.activeElement : null;
       if (isPlayableSynthesizerKey(e)) {
         if (typeof e.preventDefault === 'function') {
           e.preventDefault();
         }
         releaseFocus();
+        if (activeEl && typeof activeEl.blur === 'function' && activeEl !== document.body) {
+          activeEl.blur();
+        }
       }
     });
 
@@ -290,6 +298,38 @@ export class AmbientApp {
     }
   }
 
+  _setupButtonFocusRelease(btn) {
+    if (!btn || btn._hasBtnFocusReleaseWired) return;
+    btn._hasBtnFocusReleaseWired = true;
+
+    const releaseFocus = () => {
+      try {
+        if (typeof btn.blur === 'function') btn.blur();
+      } catch (err) {}
+      try {
+        if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+          document.body.focus();
+        }
+      } catch (err) {}
+    };
+
+    btn.addEventListener('click', releaseFocus);
+    btn.addEventListener('mouseup', releaseFocus);
+
+    btn.addEventListener('keydown', (e) => {
+      const activeEl = (typeof document !== 'undefined') ? document.activeElement : null;
+      if (isPlayableSynthesizerKey(e)) {
+        if (typeof e.preventDefault === 'function') {
+          e.preventDefault();
+        }
+        releaseFocus();
+        if (activeEl && typeof activeEl.blur === 'function' && activeEl !== document.body) {
+          activeEl.blur();
+        }
+      }
+    });
+  }
+
   _initDom() {
     // Theme Switcher (Apply current selected finish immediately on boot)
     const themeSelect = document.getElementById('select-theme');
@@ -298,6 +338,9 @@ export class AmbientApp {
       themeSelect.addEventListener('change', (e) => {
         document.body.setAttribute('data-theme', e.target.value);
         if (typeof themeSelect.blur === 'function') themeSelect.blur();
+        if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+          document.body.focus();
+        }
       });
       this._setupSelectFocusRelease(themeSelect);
     }
@@ -312,9 +355,15 @@ export class AmbientApp {
         opt.textContent = note;
         opt.addEventListener('click', () => {
           if (typeof rootSelect.blur === 'function') rootSelect.blur();
+          if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+            document.body.focus();
+          }
         });
         opt.addEventListener('mouseup', () => {
           if (typeof rootSelect.blur === 'function') rootSelect.blur();
+          if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+            document.body.focus();
+          }
         });
         rootSelect.appendChild(opt);
       });
@@ -326,6 +375,9 @@ export class AmbientApp {
         if (this.playSurface) this.playSurface.rebuildKeys();
         this.updateLoopNotes();
         if (typeof rootSelect.blur === 'function') rootSelect.blur();
+        if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+          document.body.focus();
+        }
       });
       this._setupSelectFocusRelease(rootSelect);
     }
@@ -340,9 +392,15 @@ export class AmbientApp {
         opt.textContent = sc.name;
         opt.addEventListener('click', () => {
           if (typeof scaleSelect.blur === 'function') scaleSelect.blur();
+          if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+            document.body.focus();
+          }
         });
         opt.addEventListener('mouseup', () => {
           if (typeof scaleSelect.blur === 'function') scaleSelect.blur();
+          if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+            document.body.focus();
+          }
         });
         scaleSelect.appendChild(opt);
       });
@@ -354,6 +412,9 @@ export class AmbientApp {
         if (this.playSurface) this.playSurface.rebuildKeys();
         this.updateLoopNotes();
         if (typeof scaleSelect.blur === 'function') scaleSelect.blur();
+        if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+          document.body.focus();
+        }
       });
       this._setupSelectFocusRelease(scaleSelect);
     }
@@ -424,6 +485,9 @@ export class AmbientApp {
         if (this.playSurface) this.playSurface.rebuildKeys();
         this.updateLoopNotes();
         if (typeof tuningSelect.blur === 'function') tuningSelect.blur();
+        if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+          document.body.focus();
+        }
       });
       this._setupSelectFocusRelease(tuningSelect);
     }
@@ -560,6 +624,9 @@ export class AmbientApp {
       presetSelect.addEventListener('change', (e) => {
         this.applyPreset(e.target.value, { animate: true, duration: 350 });
         if (typeof presetSelect.blur === 'function') presetSelect.blur();
+        if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
+          document.body.focus();
+        }
       });
       this._setupSelectFocusRelease(presetSelect);
     }
@@ -579,10 +646,13 @@ export class AmbientApp {
     // Calibrate all parameters, knobs, and vector pad to pristine default preset on boot
     this.applyPreset('DEFAULT', { animate: false });
 
-    // Ensure all dropdown selects release focus on selection and prevent key interception
+    // Ensure all dropdown selects and buttons release focus on selection and prevent key interception
     if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
       const allSelects = document.querySelectorAll('select, .braun-select');
       allSelects.forEach(sel => this._setupSelectFocusRelease(sel));
+
+      const allButtons = document.querySelectorAll('button');
+      allButtons.forEach(btn => this._setupButtonFocusRelease(btn));
     }
   }
 

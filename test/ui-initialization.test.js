@@ -1369,4 +1369,152 @@ describe('UI Initialization and DOM Wiring Verification', () => {
 
     app.playSurface.playNote = origPlayNote;
   });
+
+  it('verifies pressing note keys while a button is focused blurs the button and sounds the note', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const resetBtn = elementsById.get('btn-reset-all');
+    assert.ok(resetBtn, 'btn-reset-all must exist');
+
+    resetBtn.focus();
+    assert.strictEqual(globalThis.document.activeElement, resetBtn, 'Button must have focus');
+
+    let playedMidi = null;
+    const origPlayNote = app.playSurface.playNote.bind(app.playSurface);
+    app.playSurface.playNote = (freq, midi) => {
+      playedMidi = midi;
+      return null;
+    };
+
+    let prevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'KeyA',
+      key: 'a',
+      repeat: false,
+      target: resetBtn,
+      preventDefault: () => { prevented = true; }
+    });
+
+    assert.strictEqual(prevented, true, 'Default button activation must be prevented');
+    assert.strictEqual(globalThis.document.activeElement, globalThis.document.body, 'Focus must return to document.body');
+    assert.ok(playedMidi !== null, 'Note must sound immediately on keydown');
+
+    app.playSurface.playNote = origPlayNote;
+  });
+
+  it('verifies pressing spacebar while a button is focused toggles freeze without triggering button action', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const resetBtn = elementsById.get('btn-reset-all');
+    resetBtn.focus();
+    assert.strictEqual(globalThis.document.activeElement, resetBtn);
+
+    let resetTriggered = false;
+    const origResetAll = app.resetAllKnobs.bind(app);
+    app.resetAllKnobs = () => { resetTriggered = true; };
+
+    const freezeBtn = elementsById.get('toggle-freeze');
+    let freezeTriggered = false;
+    freezeBtn.addEventListener('click', () => { freezeTriggered = true; });
+
+    let spacePrevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'Space',
+      key: ' ',
+      repeat: false,
+      target: resetBtn,
+      preventDefault: () => { spacePrevented = true; }
+    });
+
+    assert.strictEqual(spacePrevented, true, 'Spacebar default must be prevented');
+    assert.strictEqual(globalThis.document.activeElement, globalThis.document.body, 'Button must be blurred and body focused');
+    assert.strictEqual(resetTriggered, false, 'Button action must NOT be triggered by spacebar');
+    assert.strictEqual(freezeTriggered, true, 'Freeze must be toggled by spacebar');
+
+    app.resetAllKnobs = origResetAll;
+  });
+
+  it('verifies pressing KeyH (Harold) or KeyV (Vangelis) while preset selector is focused sounds note and does not change preset', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetSelect = elementsById.get('select-preset');
+    presetSelect.value = 'DEFAULT';
+    presetSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, presetSelect);
+
+    const playedNotes = [];
+    const origPlayNote = app.playSurface.playNote.bind(app.playSurface);
+    app.playSurface.playNote = (freq, midi) => {
+      playedNotes.push(midi);
+      return null;
+    };
+
+    // Press 'H' (matches 'HAROLD_BUDD' option)
+    let hPrevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'KeyH',
+      key: 'h',
+      repeat: false,
+      target: presetSelect,
+      preventDefault: () => { hPrevented = true; }
+    });
+
+    assert.strictEqual(hPrevented, true, 'KeyH must be prevented from type-ahead navigation');
+    assert.strictEqual(presetSelect.value, 'DEFAULT', 'Preset value must remain DEFAULT, not change to HAROLD_BUDD');
+    assert.strictEqual(globalThis.document.activeElement, globalThis.document.body, 'Preset select must release focus to body');
+    assert.strictEqual(playedNotes.length, 1, 'Chime note DEG 6 (H) must sound');
+
+    // Focus preset select again and press 'V' (matches 'VANGELIS' option)
+    presetSelect.focus();
+    let vPrevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'KeyV',
+      key: 'v',
+      repeat: false,
+      target: presetSelect,
+      preventDefault: () => { vPrevented = true; }
+    });
+
+    assert.strictEqual(vPrevented, true, 'KeyV must be prevented from type-ahead navigation');
+    assert.strictEqual(presetSelect.value, 'DEFAULT', 'Preset value must remain DEFAULT, not change to VANGELIS');
+    assert.strictEqual(globalThis.document.activeElement, globalThis.document.body, 'Preset select must release focus to body');
+    assert.strictEqual(playedNotes.length, 2, 'Chime note DEG 15 (V) must sound');
+
+    app.playSurface.playNote = origPlayNote;
+  });
+
+  it('verifies Numpad1 triggers chord voicing macro', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    let chordTriggered = false;
+    const origStartChord = app.playSurface.startChord.bind(app.playSurface);
+    app.playSurface.startChord = () => {
+      chordTriggered = true;
+      return { isReleased: false, timers: [], voices: [] };
+    };
+
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'Numpad1',
+      key: '1',
+      repeat: false,
+      target: globalThis.document.body,
+      preventDefault: () => {}
+    });
+
+    assert.strictEqual(chordTriggered, true, 'Numpad1 must trigger chord macro');
+    app.playSurface.startChord = origStartChord;
+  });
 });
