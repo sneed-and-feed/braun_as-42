@@ -210,10 +210,10 @@ export class TapeDelay {
       this.fbGainRL.gain.cancelScheduledValues(now);
     }
 
-    this.fbGainLL.gain.setTargetAtTime(directFb, now, 0.04);
-    this.fbGainRR.gain.setTargetAtTime(directFb, now, 0.04);
-    this.fbGainLR.gain.setTargetAtTime(crossFb, now, 0.04);
-    this.fbGainRL.gain.setTargetAtTime(crossFb, now, 0.04);
+    this.fbGainLL.gain.setTargetAtTime(directFb, now, 0.025);
+    this.fbGainRR.gain.setTargetAtTime(directFb, now, 0.025);
+    this.fbGainLR.gain.setTargetAtTime(crossFb, now, 0.025);
+    this.fbGainRL.gain.setTargetAtTime(crossFb, now, 0.025);
   }
 
   setWowFlutter(depth) {
@@ -249,7 +249,7 @@ export class TapeDelay {
     } else if (typeof this.wetGain.gain.cancelScheduledValues === 'function') {
       this.wetGain.gain.cancelScheduledValues(now);
     }
-    this.wetGain.gain.setTargetAtTime(this.wetLevel, now, 0.03);
+    this.wetGain.gain.setTargetAtTime(this.wetLevel, now, 0.025);
   }
 
   setDry(dry) {

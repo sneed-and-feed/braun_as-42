@@ -30,7 +30,7 @@ export class BraunVectorPad {
 
     this.dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
     this.width = 340;
-    this.height = 124;
+    this.height = 152;
 
     this._render();
     this._attachEvents();
@@ -77,7 +77,7 @@ export class BraunVectorPad {
         <div class="braun-vector-coords">
           <span class="braun-vector-readout-item">X: <span class="braun-vector-readout-val" id="readout-x">1,420 Hz (50%)</span></span>
           <span style="color: var(--border-line); margin: 0 4px;">|</span>
-          <span class="braun-vector-readout-item">Y: <span class="braun-vector-readout-val" id="readout-y">460 ms · SHIMMER 45%</span></span>
+          <span class="braun-vector-readout-item">Y: <span class="braun-vector-readout-val" id="readout-y">SPACE 50% · BLOOM 40%</span></span>
         </div>
         <div class="braun-vector-readout-indicator">
           <span class="braun-led" id="vector-status-led"></span>
@@ -105,10 +105,10 @@ export class BraunVectorPad {
 
   _resize() {
     if (!this.canvas || !this.surfaceBox) return;
-    const rect = this.surfaceBox.getBoundingClientRect ? this.surfaceBox.getBoundingClientRect() : { width: 340, height: 124 };
+    const rect = this.surfaceBox.getBoundingClientRect ? this.surfaceBox.getBoundingClientRect() : { width: 340, height: 152 };
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
     const w = Math.max(10, Math.round(rect.width || this.surfaceBox.clientWidth || 340));
-    const h = Math.max(10, Math.round(rect.height || this.surfaceBox.clientHeight || 124));
+    const h = Math.max(10, Math.round(rect.height || this.surfaceBox.clientHeight || 152));
 
     this.dpr = dpr;
     this.width = w;
@@ -328,15 +328,15 @@ export class BraunVectorPad {
 
   _updateReadout() {
     const cutoffHz = Math.round(250 * Math.pow(5500 / 250, this.x));
-    const delayMs = Math.round(100 + this.y * 850);
-    const shimmerPct = Math.round(15 + this.y * 70);
     const tonePct = Math.round(this.x * 100);
+    const spacePct = Math.round(this.y * 100);
+    const bloomPct = Math.round(this.y * 80);
 
     if (this.readoutX) {
       this.readoutX.textContent = `${cutoffHz.toLocaleString()} Hz (${tonePct}%)`;
     }
     if (this.readoutY) {
-      this.readoutY.textContent = `${delayMs} ms · SHIMMER ${shimmerPct}%`;
+      this.readoutY.textContent = `SPACE ${spacePct}% · BLOOM ${bloomPct}%`;
     }
   }
 
@@ -353,23 +353,22 @@ export class BraunVectorPad {
     this.engine.setDroneCutoff(1, drone1Cutoff);
     this.engine.setDroneCutoff(2, drone2Cutoff);
 
-    // Y Axis: Tape Delay Time (0.10s to 0.95s), Space & Bloom
-    const delayTimeSec = 0.10 + this.y * 0.85;
-    this.engine.setDelayTime(delayTimeSec);
-
-    const shimmerAmount = 0.15 + this.y * 0.70;
-    this.engine.setReverbShimmer(shimmerAmount);
-
-    const reverbWet = 0.20 + this.y * 0.45;
-    this.engine.setReverbWet(reverbWet);
-
-    // Smoothly slew delay wet mix along with Y axis for lush ambient wash
-    const delayWet = 0.15 + this.y * 0.55;
+    // Y Axis: Space & Shimmer Wash (Decoupled from Tape Delay Time to eliminate record scratch crunch)
+    // Delay Wet Mix (0% to 75%)
+    const delayWet = this.y * 0.75;
     this.engine.setDelayWet(delayWet);
 
-    // Slew tape saturation / feedback along with Y axis
-    const delayFeedback = 0.35 + this.y * 0.38;
+    // Delay Feedback (0.25 to 0.70)
+    const delayFeedback = 0.25 + this.y * 0.45;
     this.engine.setDelayFeedback(delayFeedback);
+
+    // Reverb Wet Mix (0% to 85%)
+    const reverbWet = this.y * 0.85;
+    this.engine.setReverbWet(reverbWet);
+
+    // Shimmer Bloom Feedback (0% to 80%)
+    const shimmerAmount = this.y * 0.80;
+    this.engine.setReverbShimmer(shimmerAmount);
 
     if (notifyChange && this.onChange) {
       this.onChange({
@@ -377,11 +376,10 @@ export class BraunVectorPad {
         y: this.y,
         feltTone,
         cutoffHz: Math.round(250 * Math.pow(5500 / 250, this.x)),
-        delayTimeSec,
-        shimmerAmount,
-        reverbWet,
         delayWet,
-        delayFeedback
+        delayFeedback,
+        reverbWet,
+        shimmerAmount
       });
     }
   }

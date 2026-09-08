@@ -50,23 +50,23 @@ export class FeltPianoVoice {
     // Warmth / Saturation stage with 4x anti-aliasing oversampling
     this.saturationShaper = ctx.createWaveShaper();
     this.saturationShaper.oversample = '4x';
-    this.saturationShaper.curve = makeSoftClipCurve(1024, 1.25);
+    this.saturationShaper.curve = makeSoftClipCurve(1024, 1.15);
 
-    // 24dB/octave lowpass filter (cascaded dual 12dB biquad filters with smooth Q=1.3)
+    // 24dB/octave lowpass filter (cascaded dual 12dB biquad filters with tamed acoustic Q=0.707)
     this.filter1 = ctx.createBiquadFilter();
     this.filter2 = ctx.createBiquadFilter();
     this.filter1.type = 'lowpass';
     this.filter2.type = 'lowpass';
-    this.filter1.Q.setValueAtTime(1.3, ctx.currentTime);
-    this.filter2.Q.setValueAtTime(1.3, ctx.currentTime);
+    this.filter1.Q.setValueAtTime(0.707, ctx.currentTime);
+    this.filter2.Q.setValueAtTime(0.707, ctx.currentTime);
 
     // Acoustic wooden body soundboard formant filter (peaking resonator)
     this.bodyFilter = ctx.createBiquadFilter();
     this.bodyFilter.type = 'peaking';
     this.bodyFilter.frequency.setValueAtTime(540, ctx.currentTime);
-    this.bodyFilter.Q.setValueAtTime(1.6, ctx.currentTime);
+    this.bodyFilter.Q.setValueAtTime(1.2, ctx.currentTime);
     if (this.bodyFilter.gain && this.bodyFilter.gain.setValueAtTime) {
-      this.bodyFilter.gain.setValueAtTime(2.5, ctx.currentTime);
+      this.bodyFilter.gain.setValueAtTime(1.5, ctx.currentTime);
     }
 
     // Hammer noise thump generator
@@ -76,17 +76,17 @@ export class FeltPianoVoice {
     this.hammerFilter = ctx.createBiquadFilter();
     this.hammerFilter.type = 'bandpass';
     this.hammerFilter.frequency.setValueAtTime(280, ctx.currentTime);
-    this.hammerFilter.Q.setValueAtTime(3.0, ctx.currentTime);
+    this.hammerFilter.Q.setValueAtTime(2.0, ctx.currentTime);
 
     // Oscillators: Osc 1 (Fundamental core) & Osc 2 (Detuned overtone)
-    // Scaled to sum <= 0.86 so saturation shaper never hits hard digital boundary
+    // Calibrated internal voice levels so 5-6 voice chord clusters never clip internal saturation shaper
     this.osc1 = ctx.createOscillator();
     this.osc2 = ctx.createOscillator();
 
     this.osc1Gain = ctx.createGain();
     this.osc2Gain = ctx.createGain();
-    this.osc1Gain.gain.setValueAtTime(0.58, ctx.currentTime);
-    this.osc2Gain.gain.setValueAtTime(0.28, ctx.currentTime);
+    this.osc1Gain.gain.setValueAtTime(0.48, ctx.currentTime);
+    this.osc2Gain.gain.setValueAtTime(0.16, ctx.currentTime);
 
     this.setWaveform(this.currentWaveform);
 
@@ -183,11 +183,11 @@ export class FeltPianoVoice {
 
     let registerDecayMult = 1.0;
     let hammerCutoff = 280;
-    let hammerThumpGainMult = 0.35;
+    let hammerThumpGainMult = 0.20;
     let thumpDuration = 0.025; // 25ms
     let bodyFormantHz = 540;
-    let osc1Vol = 0.58;
-    let osc2Vol = 0.28;
+    let osc1Vol = 0.48;
+    let osc2Vol = 0.16;
     let filterAttackTime = 0.006;
     let filterDecayBase = 0.18;
 
@@ -197,10 +197,10 @@ export class FeltPianoVoice {
     if (isBass) {
       // Bass octaves 1-2: deep sub-weight, slower damping, and heavy felt hammer thud
       registerDecayMult = 1.45 + Math.max(0, (48 - midi) * 0.04);
-      osc1Vol = 0.64;
-      osc2Vol = 0.22;
+      osc1Vol = 0.60;
+      osc2Vol = 0.12;
       hammerCutoff = Math.min(220, Math.max(110, freq * 1.3));
-      hammerThumpGainMult = 0.46;
+      hammerThumpGainMult = 0.26;
       thumpDuration = 0.032;
       bodyFormantHz = Math.max(280, Math.min(420, 300 + (midi - 24) * 5));
       filterDecayBase = 0.26;
@@ -209,10 +209,10 @@ export class FeltPianoVoice {
     } else if (isTreble) {
       // Treble octaves 5-6: brighter acoustic bell presence and quicker decay
       registerDecayMult = Math.max(0.48, 1.0 - (midi - 71) * 0.035);
-      osc1Vol = 0.52;
-      osc2Vol = 0.34;
+      osc1Vol = 0.44;
+      osc2Vol = 0.18;
       hammerCutoff = Math.min(1400, Math.max(550, freq * 0.9));
-      hammerThumpGainMult = 0.26;
+      hammerThumpGainMult = 0.16;
       thumpDuration = 0.016;
       bodyFormantHz = Math.min(950, 680 + (midi - 72) * 12);
       filterAttackTime = 0.004;
@@ -224,7 +224,7 @@ export class FeltPianoVoice {
       registerDecayMult = 1.0;
       bodyFormantHz = 480 + (midi - 48) * 5.5; // Spruce piano soundboard formant ~480-605 Hz
       hammerCutoff = Math.min(450, Math.max(240, freq * 1.2));
-      hammerThumpGainMult = 0.35;
+      hammerThumpGainMult = 0.20;
       thumpDuration = 0.025;
       filterDecayBase = 0.18;
       maxCutoff = Math.min(7500, Math.max(freq * 1.8, 420 + (feltDamp * 2600 * velocity)));
@@ -345,9 +345,10 @@ export class FeltPianoVoice {
     this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
 
     // --- Master Amplitude Envelope ---
-    // Smooth 7ms micro-attack ramp from 0.0001 to peakGain eliminates step discontinuity clicks
+    // Smooth 7ms micro-attack ramp from 0.0001 to peakGain eliminates step discontinuity clicks.
+    // Calibrated peakGain prevents dense 5-6 note chord clusters from overdriving internal shaper or bus.
     const attackTime = 0.007;
-    const peakGain = Math.max(0.005, velocity * (isBass ? 0.44 : isTreble ? 0.42 : 0.40));
+    const peakGain = Math.max(0.005, velocity * (isBass ? 0.28 : isTreble ? 0.26 : 0.24));
 
     if (!isStealing) {
       this.voiceGain.gain.cancelScheduledValues(cancelTime);

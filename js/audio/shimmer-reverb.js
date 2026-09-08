@@ -272,13 +272,26 @@ export class ShimmerReverb {
   setShimmer(amount) {
     this.shimmerAmount = Math.max(0, Math.min(1.0, amount));
     const now = this.ctx.currentTime;
-    this.shimmerSend.gain.setTargetAtTime(this.shimmerAmount * 0.9, now, 0.05);
-    this.shimmerFeedback.gain.setTargetAtTime(0.2 + this.shimmerAmount * 0.45, now, 0.05);
+    if (typeof this.shimmerSend.gain.cancelAndHoldAtTime === 'function') {
+      this.shimmerSend.gain.cancelAndHoldAtTime(now);
+      this.shimmerFeedback.gain.cancelAndHoldAtTime(now);
+    } else if (typeof this.shimmerSend.gain.cancelScheduledValues === 'function') {
+      this.shimmerSend.gain.cancelScheduledValues(now);
+      this.shimmerFeedback.gain.cancelScheduledValues(now);
+    }
+    this.shimmerSend.gain.setTargetAtTime(this.shimmerAmount * 0.9, now, 0.025);
+    this.shimmerFeedback.gain.setTargetAtTime(0.2 + this.shimmerAmount * 0.45, now, 0.025);
   }
 
   setWet(level) {
     this.wetLevel = Math.max(0, Math.min(1.0, level));
-    this.reverbWetGain.gain.setTargetAtTime(this.wetLevel, this.ctx.currentTime, 0.03);
+    const now = this.ctx.currentTime;
+    if (typeof this.reverbWetGain.gain.cancelAndHoldAtTime === 'function') {
+      this.reverbWetGain.gain.cancelAndHoldAtTime(now);
+    } else if (typeof this.reverbWetGain.gain.cancelScheduledValues === 'function') {
+      this.reverbWetGain.gain.cancelScheduledValues(now);
+    }
+    this.reverbWetGain.gain.setTargetAtTime(this.wetLevel, now, 0.025);
   }
 
   setDry(level) {

@@ -680,10 +680,17 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     // Engine parameters should be updated
     // X maps to feltTone: 0.15 + 0.85 * 0.80 = 0.83
     assert.ok(Math.abs(app.engine.feltParams.tone - 0.83) < 1e-3);
-    // Y maps to delayTime: 0.10 + 0.75 * 0.85 = 0.7375
-    assert.ok(Math.abs(app.engine.delayParams.time - 0.7375) < 1e-3);
-    // Y maps to shimmer: 0.15 + 0.75 * 0.70 = 0.675
-    assert.ok(Math.abs(app.engine.reverbParams.shimmer - 0.675) < 1e-3);
+    // Y-axis decoupled from delayTime to eliminate record scratch crunch
+    assert.strictEqual(app.engine.delayParams.time, 0.46, 'Tape delay time remains locked to dedicated knob');
+    // Y maps to Space & Shimmer Wash:
+    // Delay wet: 0.75 * 0.75 = 0.5625
+    assert.ok(Math.abs(app.engine.delayParams.wet - 0.5625) < 1e-3);
+    // Delay feedback: 0.25 + 0.75 * 0.45 = 0.5875
+    assert.ok(Math.abs(app.engine.delayParams.feedback - 0.5875) < 1e-3);
+    // Reverb wet: 0.75 * 0.85 = 0.6375
+    assert.ok(Math.abs(app.engine.reverbParams.wet - 0.6375) < 1e-3);
+    // Shimmer bloom: 0.75 * 0.80 = 0.60
+    assert.ok(Math.abs(app.engine.reverbParams.shimmer - 0.60) < 1e-3);
 
     // Toggle mode to latch
     app.vectorPad.toggleMode();

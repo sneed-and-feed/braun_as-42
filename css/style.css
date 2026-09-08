@@ -620,10 +620,10 @@ body {
 .braun-chord-macros-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  grid-template-rows: repeat(2, 58px);
-  height: 124px;
-  min-height: 124px;
-  max-height: 124px;
+  grid-template-rows: repeat(2, 72px);
+  height: 152px;
+  min-height: 152px;
+  max-height: 152px;
   gap: 8px;
   box-sizing: border-box;
 }
@@ -632,15 +632,15 @@ body {
   .braun-chord-macros-grid,
   .braun-chord-macros-row {
     grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: repeat(5, 52px);
+    grid-template-rows: repeat(5, 68px);
     height: auto;
     min-height: auto;
     max-height: none;
   }
   .braun-chord-macro-btn {
-    height: 52px;
-    min-height: 52px;
-    max-height: 52px;
+    height: 68px;
+    min-height: 68px;
+    max-height: 68px;
   }
 }
 
@@ -651,13 +651,13 @@ body {
   padding: 6px 8px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: flex-start;
-  height: 58px;
-  min-height: 58px;
-  max-height: 58px;
+  height: 72px;
+  min-height: 72px;
+  max-height: 72px;
   box-sizing: border-box;
-  gap: 2px;
+  gap: 3px;
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
   position: relative;
@@ -723,11 +723,11 @@ body {
 }
 
 .braun-chord-desc {
-  font-size: 8px;
+  font-size: 8.5px;
   color: var(--text-secondary);
-  line-height: 1.25;
+  line-height: 1.35;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -812,9 +812,9 @@ body {
 
 .braun-vector-surface-box {
   position: relative;
-  height: 124px;
-  min-height: 124px;
-  max-height: 124px;
+  height: 152px;
+  min-height: 152px;
+  max-height: 152px;
   background-color: var(--bg-bezel);
   border: 1px solid var(--border-line);
   border-radius: 3px;

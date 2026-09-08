@@ -279,16 +279,13 @@ export class AmbientApp {
 
   _syncKnobsFromVectorPad(data) {
     if (!this.knobs) return;
-    if (this.knobs.feltTone) {
+    if (this.knobs.feltTone && data.feltTone !== undefined) {
       this.knobs.feltTone.setValue(Math.round(data.feltTone * 100), false);
     }
-    if (this.knobs.delayTime) {
-      this.knobs.delayTime.setValue(Math.round(data.delayTimeSec * 1000), false);
-    }
-    if (this.knobs.reverbShimmer) {
+    if (this.knobs.reverbShimmer && data.shimmerAmount !== undefined) {
       this.knobs.reverbShimmer.setValue(Math.round(data.shimmerAmount * 100), false);
     }
-    if (this.knobs.reverbWet) {
+    if (this.knobs.reverbWet && data.reverbWet !== undefined) {
       this.knobs.reverbWet.setValue(Math.round(data.reverbWet * 100), false);
     }
     if (this.knobs.delayWet && data.delayWet !== undefined) {
@@ -434,7 +431,7 @@ export class AmbientApp {
       label: 'MASTER',
       min: 0,
       max: 100,
-      value: 85,
+      value: 80,
       unit: '%',
       size: 'medium',
       onChange: (v) => this.engine.setMasterVolume(v / 100)
@@ -525,10 +522,6 @@ export class AmbientApp {
       size: 'medium',
       onChange: (v) => {
         this.engine.setDelayTime(v / 1000);
-        if (this.vectorPad && !this.vectorPad.isEngaged) {
-          const normY = Math.max(0, Math.min(1, (v / 1000 - 0.10) / 0.85));
-          this.vectorPad.setCoordinates(this.vectorPad.x, normY, false);
-        }
       }
     });
 

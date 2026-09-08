@@ -361,12 +361,13 @@ describe('Vector Modulation Audio Slewing & Anti-Zipper DSP', () => {
 
   it('verifies BraunVectorPad coordinates modulate delay wet mix and delay feedback on Y axis for lush wash', () => {
     let captured = null;
+    let delayTimeCalled = false;
     const mockEngine = {
       setFeltTone: () => {},
       setDroneCutoff: () => {},
-      setDelayTime: () => {},
-      setReverbShimmer: () => {},
-      setReverbWet: () => {},
+      setDelayTime: () => { delayTimeCalled = true; },
+      setReverbShimmer: (v) => { if (!captured) captured = {}; captured.shimmerAmount = v; },
+      setReverbWet: (v) => { if (!captured) captured = {}; captured.reverbWet = v; },
       setDelayWet: (v) => { if (!captured) captured = {}; captured.delayWet = v; },
       setDelayFeedback: (v) => { if (!captured) captured = {}; captured.delayFeedback = v; }
     };
@@ -381,9 +382,15 @@ describe('Vector Modulation Audio Slewing & Anti-Zipper DSP', () => {
     pad.setCoordinates(0.60, 0.75, true);
 
     assert.ok(captured, 'setCoordinates must update audio parameters');
-    // Y=0.75: delayWet = 0.15 + 0.75 * 0.55 = 0.5625
+    // Vector pad Y-axis must be decoupled from tape delayTime to prevent record scratch buffer scrubbing
+    assert.strictEqual(delayTimeCalled, false, 'Vector pad must NOT modulate delayTime to avoid buffer scrubbing / record scratches');
+    // Y=0.75: delayWet = 0.75 * 0.75 = 0.5625
     assert.ok(Math.abs(captured.delayWet - 0.5625) < 1e-3, `delayWet must be ~0.5625, got ${captured.delayWet}`);
-    // Y=0.75: delayFeedback = 0.35 + 0.75 * 0.38 = 0.635
-    assert.ok(Math.abs(captured.delayFeedback - 0.635) < 1e-3, `delayFeedback must be ~0.635, got ${captured.delayFeedback}`);
+    // Y=0.75: delayFeedback = 0.25 + 0.75 * 0.45 = 0.5875
+    assert.ok(Math.abs(captured.delayFeedback - 0.5875) < 1e-3, `delayFeedback must be ~0.5875, got ${captured.delayFeedback}`);
+    // Y=0.75: reverbWet = 0.75 * 0.85 = 0.6375
+    assert.ok(Math.abs(captured.reverbWet - 0.6375) < 1e-3, `reverbWet must be ~0.6375, got ${captured.reverbWet}`);
+    // Y=0.75: shimmerAmount = 0.75 * 0.80 = 0.60
+    assert.ok(Math.abs(captured.shimmerAmount - 0.60) < 1e-3, `shimmerAmount must be ~0.60, got ${captured.shimmerAmount}`);
   });
 });

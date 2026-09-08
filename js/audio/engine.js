@@ -43,7 +43,7 @@ export class AudioEngine {
     });
 
     // Control parameters (cached so UI tweaks before power-on are seamlessly preserved)
-    this.masterVolume = 0.85;
+    this.masterVolume = 0.80;
     this.tapeDrive = 0.18; // Analog master bus tape saturation
 
     this.feltParams = {
@@ -152,7 +152,7 @@ export class AudioEngine {
     // Analog Soft Limiter (prevents digital clipping, adds warm saturation if pushed)
     this.masterLimiter = this.ctx.createWaveShaper();
     this.masterLimiter.oversample = '4x';
-    this.masterLimiter.curve = makeSoftClipCurve(2048, 1.15);
+    this.masterLimiter.curve = makeSoftClipCurve(2048, 1.10);
 
     // Analog Master Bus Tape Saturation Stage (adds warmth, musical harmonics, and tape glue)
     this.masterTapeSaturator = this.ctx.createWaveShaper();
@@ -167,11 +167,11 @@ export class AudioEngine {
     // Master Bus Peak Compressor / Brickwall Limiter (transparent protection against polyphonic summing overloads)
     if (this.ctx.createDynamicsCompressor) {
       this.masterCompressor = this.ctx.createDynamicsCompressor();
-      this.masterCompressor.threshold.setValueAtTime(-1.0, this.ctx.currentTime); // -1 dBFS
-      this.masterCompressor.knee.setValueAtTime(3.0, this.ctx.currentTime);
-      this.masterCompressor.ratio.setValueAtTime(20.0, this.ctx.currentTime);
-      this.masterCompressor.attack.setValueAtTime(0.002, this.ctx.currentTime);
-      this.masterCompressor.release.setValueAtTime(0.050, this.ctx.currentTime);
+      this.masterCompressor.threshold.setValueAtTime(-3.0, this.ctx.currentTime); // -3 dBFS
+      this.masterCompressor.knee.setValueAtTime(6.0, this.ctx.currentTime);
+      this.masterCompressor.ratio.setValueAtTime(8.0, this.ctx.currentTime); // 8:1 ratio
+      this.masterCompressor.attack.setValueAtTime(0.003, this.ctx.currentTime); // 3ms attack
+      this.masterCompressor.release.setValueAtTime(0.060, this.ctx.currentTime);
 
       this.masterGain.connect(this.masterTapeSaturator);
       this.masterTapeSaturator.connect(this.masterCompressor);
@@ -220,9 +220,14 @@ export class AudioEngine {
     this.feltPiano.setSympathetic(this.feltParams.sympathetic);
     this.feltPiano.setWaveform(this.feltParams.waveform);
 
-    this.feltPiano.output.connect(this.masterGain);
-    this.feltPiano.output.connect(this.tapeDelay.input);
-    this.feltPiano.output.connect(this.shimmerReverb.input);
+    // Calibrated Felt Piano Bus
+    this.pianoBus = this.ctx.createGain();
+    this.pianoBus.gain.setValueAtTime(1.0, this.ctx.currentTime);
+
+    this.feltPiano.output.connect(this.pianoBus);
+    this.pianoBus.connect(this.masterGain);
+    this.pianoBus.connect(this.tapeDelay.input);
+    this.pianoBus.connect(this.shimmerReverb.input);
 
     // Elta Solar 42n Microtonal Drone Voices (Voice 1 & Voice 2)
     this.droneBus = this.ctx.createGain();
