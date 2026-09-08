@@ -133,12 +133,14 @@ export class AudioEngine {
     }
 
     this._initPromise = (async () => {
-      const AudioContextClass = (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) ||
-                                (typeof globalThis !== 'undefined' && globalThis.AudioContext);
-      if (!AudioContextClass) return;
+      if (!this.ctx) {
+        const AudioContextClass = (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) ||
+                                  (typeof globalThis !== 'undefined' && globalThis.AudioContext);
+        if (!AudioContextClass) return;
 
-      this.ctx = new AudioContextClass({ latencyHint: 'interactive' });
-      if (this.ctx.state === 'suspended') {
+        this.ctx = new AudioContextClass({ latencyHint: 'interactive' });
+      }
+      if (this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
         this.ctx.resume().catch(e => console.warn('AudioContext resume deferred:', e));
       }
 
@@ -224,9 +226,14 @@ export class AudioEngine {
     this.pianoBus = this.ctx.createGain();
     this.pianoBus.gain.setValueAtTime(1.0, this.ctx.currentTime);
 
+    // Dedicated Delay Send Bus with calibrated unity headroom
+    this.delaySend = this.ctx.createGain();
+    this.delaySend.gain.setValueAtTime(1.0, this.ctx.currentTime);
+
     this.feltPiano.output.connect(this.pianoBus);
     this.pianoBus.connect(this.masterGain);
-    this.pianoBus.connect(this.tapeDelay.input);
+    this.pianoBus.connect(this.delaySend);
+    this.delaySend.connect(this.tapeDelay.input);
     this.pianoBus.connect(this.shimmerReverb.input);
 
     // Elta Solar 42n Microtonal Drone Voices (Voice 1 & Voice 2)
