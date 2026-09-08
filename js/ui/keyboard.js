@@ -65,15 +65,21 @@ export class BraunPlaySurface {
           // Lower hit gives firmer touch (0.45 .. 0.85)
           velocity = 0.35 + relY * 0.50;
         }
-        return this.playNote(note.freq, note.midi, velocity, isHold ? 20.0 : 3.5);
+        return this.playNote(note.freq, note.midi, velocity, isHold ? 20.0 : 3.5, isHold);
       };
 
       const handleKeyRelease = () => {
         if (activeVoice) {
           this.activePointerVoices.delete(activeVoice);
-          if (typeof activeVoice.release === 'function') activeVoice.release();
+          if (typeof activeVoice.release === 'function') {
+            activeVoice.release();
+          } else if (activeVoice && typeof activeVoice.then === 'function') {
+            activeVoice.then(v => { if (v && typeof v.release === 'function') v.release(); });
+          }
           activeVoice = null;
         }
+        keyEl.classList.remove('is-pressed');
+        keyEl.classList.remove('is-active');
         if (clearPointerTimer) clearTimeout(clearPointerTimer);
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
@@ -284,14 +290,24 @@ export class BraunPlaySurface {
   /**
    * Play single note with visual feedback
    */
-  playNote(freq, midi, velocity = 0.6, duration = 3.5) {
+  playNote(freq, midi, velocity = 0.6, duration = 3.5, isHold = false) {
     this.flashKey(midi);
     if (this.onPlay) {
       this.onPlay(freq, midi, velocity);
     }
-    if (!this.engine || !this.engine.isInitialized || !this.engine.feltPiano) return null;
+    if (!this.engine || !this.engine.isInitialized || !this.engine.feltPiano) {
+      if (this.engine && this.engine._initPromise) {
+        return this.engine._initPromise.then(() => {
+          if (this.engine && this.engine.feltPiano) {
+            return this.engine.feltPiano.playNote(freq, velocity, duration, isHold);
+          }
+          return null;
+        });
+      }
+      return null;
+    }
 
-    return this.engine.feltPiano.playNote(freq, velocity, duration);
+    return this.engine.feltPiano.playNote(freq, velocity, duration, isHold);
   }
 
   /**
@@ -360,6 +376,33 @@ export class BraunPlaySurface {
       timers: []
     };
 
+    const triggerChordVoice = (freq, vel, midi) => {
+      this.flashKey(midi);
+      if (this.engine && this.engine.isInitialized && this.engine.feltPiano) {
+        const voice = this.engine.feltPiano.playNote(freq, vel, duration, isHold);
+        if (voice) {
+          session.voices.push(voice);
+          if (session.isReleased) {
+            if (typeof voice.release === 'function') voice.release();
+            else if (voice && typeof voice.then === 'function') voice.then(v => v?.release?.());
+          }
+        }
+      } else if (this.engine && this.engine._initPromise) {
+        this.engine._initPromise.then(() => {
+          if (this.engine && this.engine.feltPiano) {
+            const voice = this.engine.feltPiano.playNote(freq, vel, duration, isHold);
+            if (voice) {
+              session.voices.push(voice);
+              if (session.isReleased) {
+                if (typeof voice.release === 'function') voice.release();
+                else if (voice && typeof voice.then === 'function') voice.then(v => v?.release?.());
+              }
+            }
+          }
+        });
+      }
+    };
+
     freqs.forEach((freq, idx) => {
       // Humanized micro-strum delay (18ms to 38ms per note)
       const delayMs = idx * (22 + Math.random() * 14);
@@ -369,16 +412,7 @@ export class BraunPlaySurface {
         }
         const vel = 0.55 + Math.random() * 0.22;
         const midi = rootMidi + (voicing ? voicing.intervals[idx] : 0);
-        this.flashKey(midi);
-        if (this.engine && this.engine.isInitialized && this.engine.feltPiano) {
-          const voice = this.engine.feltPiano.playNote(freq, vel, duration);
-          if (voice) {
-            session.voices.push(voice);
-            if (session.isReleased) {
-              voice.release();
-            }
-          }
-        }
+        triggerChordVoice(freq, vel, midi);
       }, delayMs);
       session.timers.push(timerId);
     });
@@ -390,8 +424,12 @@ export class BraunPlaySurface {
     if (!session || session.isReleased) return;
     session.isReleased = true;
     session.voices.forEach(voice => {
-      if (voice && typeof voice.release === 'function') {
-        voice.release();
+      if (voice) {
+        if (typeof voice.release === 'function') {
+          voice.release();
+        } else if (typeof voice.then === 'function') {
+          voice.then(v => { if (v && typeof v.release === 'function') v.release(); });
+        }
       }
     });
     session.timers.forEach(t => clearTimeout(t));
@@ -459,7 +497,7 @@ export class BraunPlaySurface {
           const freq = parseFloat(keyEl.getAttribute('data-freq'));
           const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
           keyEl.classList.add('is-active');
-          const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0);
+          const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0, true);
           const keyIdentifier = e.code || e.key;
           this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise });
         }
@@ -537,6 +575,21 @@ export class BraunPlaySurface {
       });
       this.activeHeldChords.clear();
 
+      this.activePointerVoices.forEach(voiceOrPromise => {
+        if (voiceOrPromise) {
+          if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
+          else if (typeof voiceOrPromise.then === 'function') voiceOrPromise.then(v => v?.release?.());
+        }
+      });
+      this.activePointerVoices.clear();
+
+      this.activePointerChordSessions.forEach(session => {
+        if (session) this.stopChordSession(session);
+      });
+      this.activePointerChordSessions.clear();
+    });
+
+    window.addEventListener('pointerup', () => {
       this.activePointerVoices.forEach(voiceOrPromise => {
         if (voiceOrPromise) {
           if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();

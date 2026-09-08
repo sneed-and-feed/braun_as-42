@@ -30,6 +30,8 @@ export class FeltPianoVoice {
     this.overtoneSpread = 1.5 + ((voiceIndex * 3) % 5) * 0.22; // 1.5 to 2.38 cents
 
     this.isActive = false;
+    this.isHold = false;
+    this._decayTimer = null;
     this.currentMidi = null;
     this.currentFreq = null;
     this.currentVelocity = 0.6;
@@ -259,11 +261,19 @@ export class FeltPianoVoice {
    * @param {number} velocity - 0.0 to 1.0
    * @param {number} duration - Note duration in seconds
    * @param {Object} params - Global piano parameters
+   * @param {boolean} [isHold=false] - True continuous hold sustain without premature decay
    */
-  trigger(freq, velocity, duration, params) {
+  trigger(freq, velocity, duration, params, isHold = false) {
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const cancelTime = Math.max(now, ctx.currentTime);
+
+    const hold = Boolean(isHold || duration === 20.0 || duration === Infinity || (typeof duration === 'number' && !isFinite(duration)));
+    this.isHold = hold;
+    if (this._decayTimer) {
+      clearTimeout(this._decayTimer);
+      this._decayTimer = null;
+    }
 
     const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
     const feltDamp = params.tone ?? 0.65; // 0.0 (darkest felt) to 1.0 (bright chime / brass)
@@ -444,10 +454,12 @@ export class FeltPianoVoice {
       this.filter1.frequency.exponentialRampToValueAtTime(brassSustainCutoff, brassDecayTarget);
       this.filter2.frequency.exponentialRampToValueAtTime(brassSustainCutoff, brassDecayTarget);
 
-      const noteDuration = Math.max(duration || 3.5, 3.5) * decayMultiplier;
-      const brassEndTarget = Math.max(noteStartTime + brassAttackTime + brassDecayTime + noteDuration + releaseTime, brassDecayTarget + 0.2);
-      this.filter1.frequency.exponentialRampToValueAtTime(Math.max(160, freq * 1.1), brassEndTarget);
-      this.filter2.frequency.exponentialRampToValueAtTime(Math.max(160, freq * 1.1), brassEndTarget);
+      if (!hold) {
+        const noteDuration = Math.max(duration || 3.5, 3.5) * decayMultiplier;
+        const brassEndTarget = Math.max(noteStartTime + brassAttackTime + brassDecayTime + noteDuration + releaseTime, brassDecayTarget + 0.2);
+        this.filter1.frequency.exponentialRampToValueAtTime(Math.max(160, freq * 1.1), brassEndTarget);
+        this.filter2.frequency.exponentialRampToValueAtTime(Math.max(160, freq * 1.1), brassEndTarget);
+      }
     } else {
       // Anchor current filter cutoff to eliminate biquad filter leap clicks
       const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || restCutoff));
@@ -506,37 +518,48 @@ export class FeltPianoVoice {
       const sustainLevel = Math.max(0.005, peakGain * 0.72);
       const sustainTarget = Math.max(noteStartTime + attackTime + 0.25, attackTarget + 0.05);
       this.voiceGain.gain.exponentialRampToValueAtTime(sustainLevel, sustainTarget);
-      const noteLifetime = Math.max(duration || 3.5, 3.5) * decayMultiplier;
-      const decayEndTarget = Math.max(noteStartTime + attackTime + noteLifetime + releaseTime, sustainTarget + 0.2);
-      this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
+      if (!hold) {
+        const noteLifetime = Math.max(duration || 3.5, 3.5) * decayMultiplier;
+        const decayEndTarget = Math.max(noteStartTime + attackTime + noteLifetime + releaseTime, sustainTarget + 0.2);
+        this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
+      }
     } else {
       // Long acoustic string decay
-      const sustainLevel = Math.max(0.0002, peakGain * 0.4);
+      const sustainLevel = Math.max(0.005, peakGain * 0.50);
       const sustainTarget = Math.max(noteStartTime + attackTime + 0.5, attackTarget + 0.05);
       this.voiceGain.gain.exponentialRampToValueAtTime(sustainLevel, sustainTarget);
-      const stringDecay = Math.max(baseDecay, (duration || 3.5) * decayMultiplier);
-      const decayEndTarget = Math.max(noteStartTime + attackTime + stringDecay + releaseTime, sustainTarget + 0.1);
-      this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
+      if (!hold) {
+        const stringDecay = Math.max(baseDecay, (duration || 3.5) * decayMultiplier);
+        const decayEndTarget = Math.max(noteStartTime + attackTime + stringDecay + releaseTime, sustainTarget + 0.1);
+        this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
+      }
     }
 
     this.isActive = true;
     this.startTime = noteStartTime;
 
-    // Mark inactive when done and update polyphonic headroom
-    const noteTotalDuration = isCS80 ? (Math.max(duration || 3.5, 3.5) * decayMultiplier) : Math.max(baseDecay, (duration || 3.5) * decayMultiplier);
-    const totalLifetime = (noteTotalDuration + releaseTime + (isStealing ? declickRampTime : 0)) * 1000;
-    setTimeout(() => {
-      if (this.startTime === noteStartTime) {
-        this.isActive = false;
-        if (this.synth) {
-          this.synth._updatePolyphonicHeadroom();
+    // Mark inactive when done and update polyphonic headroom (only when not continuously held)
+    if (!hold) {
+      const noteTotalDuration = isCS80 ? (Math.max(duration || 3.5, 3.5) * decayMultiplier) : Math.max(baseDecay, (duration || 3.5) * decayMultiplier);
+      const totalLifetime = (noteTotalDuration + releaseTime + (isStealing ? declickRampTime : 0)) * 1000;
+      this._decayTimer = setTimeout(() => {
+        if (this.startTime === noteStartTime && !this.isHold) {
+          this.isActive = false;
+          if (this.synth) {
+            this.synth._updatePolyphonicHeadroom();
+          }
         }
-      }
-    }, totalLifetime);
+      }, totalLifetime);
+    }
   }
 
   release() {
     if (!this.isActive) return;
+    this.isHold = false;
+    if (this._decayTimer) {
+      clearTimeout(this._decayTimer);
+      this._decayTimer = null;
+    }
     const now = this.ctx.currentTime;
     const cancelTime = Math.max(now, this.ctx.currentTime);
     const curGain = Math.max(0.0001, this.voiceGain.gain.value || 0.0001);
@@ -547,7 +570,7 @@ export class FeltPianoVoice {
       this.voiceGain.gain.setValueAtTime(curGain, cancelTime);
     }
     const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
-    const relDuration = isCS80 ? 0.65 : 0.35;
+    const relDuration = isCS80 ? 0.65 : 0.40;
     const releaseTarget = Math.max(cancelTime + relDuration, this.ctx.currentTime + 0.01);
     this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, releaseTarget);
     if (isCS80 && this.currentFreq) {
@@ -570,7 +593,7 @@ export class FeltPianoVoice {
       if (this.synth) {
         this.synth._updatePolyphonicHeadroom();
       }
-    }, Math.round((relDuration + 0.03) * 1000));
+    }, Math.round((relDuration + 0.05) * 1000));
   }
 }
 
@@ -699,8 +722,9 @@ export class FeltPianoSynthesizer {
    * @param {number} freq
    * @param {number} [velocity=0.6]
    * @param {number} [duration=3.5]
+   * @param {boolean} [isHold=false]
    */
-  playNote(freq, velocity = 0.6, duration = 3.5) {
+  playNote(freq, velocity = 0.6, duration = 3.5, isHold = false) {
     // 1. Find free inactive voice using round-robin rotation across pool
     let voice = null;
     const n = this.voices.length;
@@ -724,7 +748,8 @@ export class FeltPianoSynthesizer {
       }, this.voices[0]);
     }
 
-    voice.trigger(freq, velocity, duration, this.params);
+    const hold = Boolean(isHold || duration === 20.0 || duration === Infinity || (typeof duration === 'number' && !isFinite(duration)));
+    voice.trigger(freq, velocity, duration, this.params, hold);
     this._updatePolyphonicHeadroom();
     return voice;
   }

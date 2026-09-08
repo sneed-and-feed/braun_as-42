@@ -11,67 +11,75 @@
   <main class="braun-chassis">
     <!-- Header / Top Bar -->
     <header class="braun-header">
-      <div class="braun-logo-group">
-        <h1 class="braun-brand">BRAUN</h1>
-        <span class="braun-model">AS 42 · AMBIENT GENERATIVE SYSTEM</span>
+      <div class="braun-header-main">
+        <div class="braun-logo-group">
+          <h1 class="braun-brand">BRAUN</h1>
+          <span class="braun-model">AS 42 · AMBIENT GENERATIVE SYSTEM</span>
+        </div>
+
+        <div class="braun-utility-group">
+          <div class="braun-select-group">
+            <label class="braun-label-inline" for="select-theme">FINISH</label>
+            <select id="select-theme" class="braun-select" title="Braun Industrial Finish">
+              <option value="light">ALUMINUM (LIGHT)</option>
+              <option value="dark">ANTHRACITE (DARK)</option>
+            </select>
+          </div>
+
+          <!-- Master Preset / Reset Button -->
+          <button id="btn-reset-all" class="braun-reset-btn" title="Reset All Knobs & Parameters to Calibrated Defaults">
+            <span class="braun-reset-icon">↺</span>
+            <span class="braun-status-text">RESET ALL</span>
+          </button>
+
+          <!-- Lossless WAV Recorder -->
+          <button id="btn-record" class="braun-record-btn" title="Record Lossless 16-bit 48kHz WAV">
+            <span class="braun-led"></span>
+            <span class="braun-record-text">RECORD WAV</span>
+          </button>
+
+          <!-- Master Power Button -->
+          <button id="btn-power" class="braun-power-btn" title="System Power On / Off">
+            <span class="braun-led"></span>
+            <span class="braun-status-text">POWER ON</span>
+          </button>
+        </div>
       </div>
 
-      <div class="braun-top-controls">
-        <!-- Scale / Harmony Settings (Foolproof modal quantizer) -->
-        <div class="braun-select-group">
-          <label class="braun-label-inline" for="select-root">ROOT</label>
-          <select id="select-root" class="braun-select" title="Root Pitch Class"></select>
+      <div class="braun-top-controls braun-tuning-toolbar">
+        <div class="braun-tuning-cluster">
+          <!-- Scale / Harmony Settings (Foolproof modal quantizer) -->
+          <div class="braun-select-group">
+            <label class="braun-label-inline" for="select-root">ROOT</label>
+            <select id="select-root" class="braun-select" title="Root Pitch Class"></select>
+          </div>
+
+          <div class="braun-select-group">
+            <label class="braun-label-inline" for="select-scale">MODAL HARMONY</label>
+            <select id="select-scale" class="braun-select" title="Curated Modal Space"></select>
+          </div>
+
+          <div class="braun-select-group">
+            <label class="braun-label-inline" for="select-tuning">PITCH</label>
+            <select id="select-tuning" class="braun-select" title="Reference Pitch">
+              <option value="440">440 Hz (STD)</option>
+              <option value="432">432 Hz (VERDI)</option>
+            </select>
+          </div>
         </div>
 
-        <div class="braun-select-group">
-          <label class="braun-label-inline" for="select-scale">MODAL HARMONY</label>
-          <select id="select-scale" class="braun-select" title="Curated Modal Space"></select>
+        <div class="braun-preset-cluster">
+          <!-- Curated Sound Presets -->
+          <div class="braun-select-group">
+            <label class="braun-label-inline" for="select-preset">PRESET</label>
+            <select id="select-preset" class="braun-select" title="Curated Braun Sound Presets">
+              <option value="DEFAULT">CALIBRATED DEFAULT</option>
+              <option value="HAROLD_BUDD">HAROLD BUDD · PAVILION</option>
+              <option value="VANGELIS">VANGELIS · CS-80 BRASS</option>
+              <option value="ENO_AIRPORTS">ENO · MUSIC FOR AIRPORTS</option>
+            </select>
+          </div>
         </div>
-
-        <div class="braun-select-group">
-          <label class="braun-label-inline" for="select-tuning">PITCH</label>
-          <select id="select-tuning" class="braun-select" title="Reference Pitch">
-            <option value="440">440 Hz (STD)</option>
-            <option value="432">432 Hz (VERDI)</option>
-          </select>
-        </div>
-
-        <div class="braun-select-group">
-          <label class="braun-label-inline" for="select-theme">FINISH</label>
-          <select id="select-theme" class="braun-select" title="Braun Industrial Finish">
-            <option value="light">ALUMINUM (LIGHT)</option>
-            <option value="dark">ANTHRACITE (DARK)</option>
-          </select>
-        </div>
-
-        <!-- Curated Sound Presets -->
-        <div class="braun-select-group">
-          <label class="braun-label-inline" for="select-preset">PRESET</label>
-          <select id="select-preset" class="braun-select" title="Curated Braun Sound Presets">
-            <option value="DEFAULT">CALIBRATED DEFAULT</option>
-            <option value="HAROLD_BUDD">HAROLD BUDD · PAVILION</option>
-            <option value="VANGELIS">VANGELIS · CS-80 BRASS</option>
-            <option value="ENO_AIRPORTS">ENO · MUSIC FOR AIRPORTS</option>
-          </select>
-        </div>
-
-        <!-- Master Preset / Reset Button -->
-        <button id="btn-reset-all" class="braun-reset-btn" title="Reset All Knobs & Parameters to Calibrated Defaults">
-          <span class="braun-reset-icon">↺</span>
-          <span class="braun-status-text">RESET ALL</span>
-        </button>
-
-        <!-- Lossless WAV Recorder -->
-        <button id="btn-record" class="braun-record-btn" title="Record Lossless 16-bit 48kHz WAV">
-          <span class="braun-led"></span>
-          <span class="braun-record-text">RECORD WAV</span>
-        </button>
-
-        <!-- Master Power Button -->
-        <button id="btn-power" class="braun-power-btn" title="System Power On / Off">
-          <span class="braun-led"></span>
-          <span class="braun-status-text">POWER ON</span>
-        </button>
       </div>
     </header>
 

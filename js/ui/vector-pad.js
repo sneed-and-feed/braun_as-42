@@ -601,7 +601,7 @@ export class BraunVectorPad {
     // Reticle Telemetry Coordinate Text with integer pixel snapping
     if (ctx.fillText) {
       ctx.font = '9px "SF Mono", Monaco, "Courier New", monospace';
-      ctx.fillStyle = this.isEngaged ? 'rgba(238, 89, 43, 0.85)' : 'rgba(255, 255, 255, 0.35)';
+      ctx.fillStyle = this.isEngaged ? 'rgba(238, 89, 43, 0.95)' : 'rgba(255, 255, 255, 0.75)';
       const textX = Math.round(Math.max(6, Math.min(w - 75, centerPx + 16)));
       const textY = Math.round(Math.max(14, Math.min(h - 6, centerPy - 8)));
       ctx.fillText(`[${Math.round(this.x * 100)}%, ${Math.round(this.y * 100)}%]`, textX, textY);

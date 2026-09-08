@@ -387,3 +387,176 @@ describe('Vector Touchpad Y-Axis Decoupling & Space / Shimmer Wash', () => {
     assert.strictEqual(readoutYText, 'SPACE 100% · BLOOM 80%');
   });
 });
+
+describe('Press & Hold Sustain, Header Layout, and Dark Theme Legibility Verification', () => {
+  it('guarantees FeltPianoVoice with isHold=true sustains indefinitely without scheduled decay to silence', () => {
+    const ctx = createDSPMockCtx();
+    const voice = new FeltPianoVoice(ctx, ctx.createGain(), null, null, null, 0);
+
+    // 1. Trigger with isHold = true
+    voice.trigger(440, 0.8, 20.0, { attack: 0.05, decay: 2.0, sustain: 0.5, tone: 0.6 }, true);
+
+    assert.strictEqual(voice.isHold, true, 'Voice isHold must be true when hold is requested');
+    assert.strictEqual(voice.isActive, true, 'Voice must be active while held');
+
+    // Verify amplitude envelope events:
+    // Should have attack (linearRampToValueAtTime) and ramp to sustain level
+    // CRITICAL: MUST NOT schedule an exponential ramp to 0.0001 while held!
+    const decayToZero = voice.voiceGain.gain.events.find(
+      e => e.type === 'exponentialRampToValueAtTime' && e.v <= 0.001
+    );
+    assert.strictEqual(
+      decayToZero,
+      undefined,
+      'Held voice must NEVER schedule an exponential ramp to 0.0001 before release'
+    );
+
+    // 2. Call voice.release()
+    voice.release();
+    assert.strictEqual(voice.isHold, false, 'Voice isHold must become false on release');
+
+    // After release, exponential ramp down to 0.0001 must be scheduled
+    const releaseRamp = voice.voiceGain.gain.events.find(
+      e => e.type === 'exponentialRampToValueAtTime' && e.v <= 0.001
+    );
+    assert.ok(releaseRamp, 'Calling release() must schedule exponential ramp to 0.0001');
+  });
+
+  it('guarantees CS-80 voice with isHold=true keeps singing sustain open until release', () => {
+    const ctx = createDSPMockCtx();
+    const voice = new FeltPianoVoice(ctx, ctx.createGain(), null, null, null, 0);
+    voice.setWaveform('cs80');
+
+    // Trigger CS-80 voice with hold duration (20.0s)
+    voice.trigger(220, 0.85, 20.0, { attack: 0.024, decay: 2.0, sustain: 0.72, tone: 0.7 }, true);
+
+    assert.strictEqual(voice.isHold, true);
+    assert.strictEqual(voice.isActive, true);
+
+    // Gain must NOT ramp to 0
+    const prematureGainDecay = voice.voiceGain.gain.events.find(
+      e => e.type === 'exponentialRampToValueAtTime' && e.v <= 0.001
+    );
+    assert.strictEqual(prematureGainDecay, undefined, 'CS-80 voice must NOT ramp gain to 0 while held');
+
+    // Filter must NOT close down to fundamental while held
+    const prematureFilterClosing = voice.filter1.frequency.events.filter(
+      e => e.type === 'exponentialRampToValueAtTime'
+    );
+    // While held, filter has only 1 ramp (to sustain cutoff ~1800-4800Hz), not closing to 220Hz
+    assert.strictEqual(
+      prematureFilterClosing.some(e => e.v <= 250),
+      false,
+      'CS-80 filter cutoff must remain open and singing while held'
+    );
+
+    // Release CS-80 voice
+    voice.release();
+    assert.strictEqual(voice.isHold, false);
+
+    // Filter should now close towards fundamental and gain should ramp to 0.0001
+    const postReleaseGain = voice.voiceGain.gain.events.find(
+      e => e.type === 'exponentialRampToValueAtTime' && e.v <= 0.001
+    );
+    assert.ok(postReleaseGain, 'CS-80 release must ramp gain down to 0.0001');
+    const postReleaseFilter = voice.filter1.frequency.events.find(
+      e => e.type === 'exponentialRampToValueAtTime' && e.v <= 250
+    );
+    assert.ok(postReleaseFilter, 'CS-80 release must close filter down toward fundamental');
+  });
+
+  it('verifies header architecture separates brand/utility and tuning toolbar to prevent button overflow', () => {
+    const htmlPath = path.resolve(__dirname, '../index.html');
+    const html = fs.readFileSync(htmlPath, 'utf8');
+
+    // 1. Two-tier header structure exists
+    assert.ok(html.includes('class="braun-header-main"'), 'Header must have braun-header-main top tier');
+    assert.ok(
+      html.includes('class="braun-top-controls braun-tuning-toolbar"'),
+      'Header must have braun-tuning-toolbar second tier'
+    );
+
+    // 2. Utility group contains theme selector, reset button, record button, and power button
+    assert.ok(html.includes('class="braun-utility-group"'), 'Header must contain braun-utility-group');
+    const headerMainIndex = html.indexOf('class="braun-header-main"');
+    const toolbarIndex = html.indexOf('class="braun-top-controls braun-tuning-toolbar"');
+    const headerMainContent = html.slice(headerMainIndex, toolbarIndex);
+
+    assert.ok(headerMainContent.includes('id="select-theme"'), 'Utility group must include theme selector');
+    assert.ok(headerMainContent.includes('id="btn-reset-all"'), 'Utility group must include reset all button');
+    assert.ok(headerMainContent.includes('id="btn-record"'), 'Utility group must include record button');
+    assert.ok(headerMainContent.includes('id="btn-power"'), 'Utility group must include power button');
+
+    // 3. Tuning toolbar contains root, scale, tuning, and preset selectors
+    const toolbarContent = html.slice(toolbarIndex, html.indexOf('</header>'));
+    assert.ok(toolbarContent.includes('id="select-root"'), 'Tuning toolbar must include root selector');
+    assert.ok(toolbarContent.includes('id="select-scale"'), 'Tuning toolbar must include scale selector');
+    assert.ok(toolbarContent.includes('id="select-tuning"'), 'Tuning toolbar must include tuning selector');
+    assert.ok(toolbarContent.includes('id="select-preset"'), 'Tuning toolbar must include preset selector');
+  });
+
+  it('verifies CSS styling aligns reset button cleanly and enforces high-contrast dark theme legibility', () => {
+    const cssPath = path.resolve(__dirname, '../css/style.css');
+    const css = fs.readFileSync(cssPath, 'utf8');
+
+    // 1. Utility button alignment & dimensions
+    assert.ok(
+      css.includes('.braun-reset-btn') && css.includes('height: 30px;'),
+      'Reset button must have calibrated height: 30px matching adjacent utility controls'
+    );
+    assert.ok(
+      css.includes('.braun-record-btn') && css.includes('height: 30px;'),
+      'Record button must have height: 30px'
+    );
+    assert.ok(
+      css.includes('.braun-power-btn') && css.includes('height: 30px;'),
+      'Power button must have height: 30px'
+    );
+    assert.ok(
+      css.includes('.braun-utility-group {') && css.includes('align-items: center;'),
+      'Utility group must vertically center utility actions'
+    );
+
+    // 2. Dark theme palette contrast variables
+    assert.ok(
+      css.includes('--text-primary: #F0F0F0;'),
+      'Dark theme must have high-contrast primary text (#F0F0F0)'
+    );
+    assert.ok(
+      css.includes('--text-secondary: #BDBDBD;'),
+      'Dark theme must have clear secondary text (#BDBDBD)'
+    );
+    assert.ok(
+      css.includes('--text-muted: #8E8E8E;'),
+      'Dark theme must have legible muted text (#8E8E8E)'
+    );
+
+    // 3. High-contrast element-level dark theme rules
+    assert.ok(
+      css.includes('[data-theme="dark"] .braun-key-name,') &&
+      css.includes('[data-theme="matte-black"] .braun-key-name'),
+      'Dark theme must override chime note text for maximum contrast'
+    );
+    assert.ok(
+      css.includes('[data-theme="dark"] .braun-chord-title,') &&
+      css.includes('[data-theme="matte-black"] .braun-chord-title'),
+      'Dark theme must override chord macro title for maximum contrast'
+    );
+    assert.ok(
+      css.includes('[data-theme="dark"] .braun-chord-desc,') &&
+      css.includes('[data-theme="matte-black"] .braun-chord-desc'),
+      'Dark theme must override chord macro description for legibility'
+    );
+    assert.ok(
+      css.includes('.braun-vector-axis-label {') && css.includes('text-shadow:'),
+      'Vector pad axis labels must have text-shadow for dark surface legibility'
+    );
+
+    // 4. Touch-action none on chime keys and chord macros to prevent mobile pointer cancel during hold
+    assert.ok(
+      css.includes('touch-action: none;'),
+      'Play surface elements must specify touch-action: none to prevent mobile hold cancellation'
+    );
+  });
+});
+

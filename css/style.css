@@ -31,22 +31,26 @@
   --panel-radius: 4px;
 }
 
-[data-theme="dark"] {
-  /* Braun Dark Anthracite Theme */
-  --bg-app: #18191B;
-  --bg-panel: #202225;
+[data-theme="dark"],
+[data-theme="matte-black"] {
+  /* Braun Dark Anthracite / Matte Black Theme */
+  --bg-app: #141517;
+  --bg-panel: #1E2023;
   --bg-panel-inset: #151618;
-  --bg-bezel: #0D0E0E;
-  --border-line: #2E3035;
-  --border-subtle: #26282B;
-  --text-primary: #EDEDEA;
-  --text-secondary: #A2A4A8;
-  --text-muted: #6E7075;
+  --bg-bezel: #0A0B0C;
+  --border-line: #3A3A3A;
+  --border-subtle: #2C2E33;
+  --text-primary: #F0F0F0;
+  --text-secondary: #BDBDBD;
+  --text-muted: #8E8E8E;
+  --text-dim: #8E8E8E;
   --knob-cap: #2B2D31;
-  --knob-border: #3A3D42;
-  --knob-indicator: #EDEDEA;
-  --knob-track: #26282B;
+  --knob-border: #4A4D52;
+  --knob-indicator: #F0F0F0;
+  --knob-track: #2A2C30;
   --knob-fill: #EE592B;
+  --braun-orange: #EE592B;
+  --braun-orange-glow: rgba(238, 89, 43, 0.55);
 }
 
 * {
@@ -88,11 +92,19 @@ body {
 /* --- Header / Top Bar --- */
 .braun-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
+  flex-direction: column;
+  padding: 0;
   border-bottom: 1px solid var(--border-line);
   background-color: var(--bg-panel);
+}
+
+.braun-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  flex-wrap: wrap;
+  gap: 12px 16px;
 }
 
 .braun-logo-group {
@@ -117,21 +129,56 @@ body {
   text-transform: uppercase;
 }
 
+.braun-utility-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .braun-top-controls {
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
+.braun-top-controls.braun-tuning-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  border-top: 1px solid var(--border-line);
+  background-color: var(--bg-panel-inset);
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.braun-tuning-cluster {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.braun-preset-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* --- Master Power & Status Buttons --- */
 .braun-power-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   background-color: var(--bg-panel-inset);
   border: 1px solid var(--border-line);
   border-radius: 3px;
-  padding: 8px 14px;
+  height: 30px;
+  padding: 0 14px;
+  box-sizing: border-box;
   font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
@@ -139,6 +186,7 @@ body {
   text-transform: uppercase;
   color: var(--text-primary);
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
@@ -170,17 +218,22 @@ body {
 .braun-record-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   background-color: var(--bg-panel-inset);
   border: 1px solid var(--border-line);
   border-radius: 3px;
-  padding: 8px 14px;
+  height: 30px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-primary);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .braun-record-btn.is-recording {
@@ -199,11 +252,14 @@ body {
 .braun-reset-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   background-color: var(--bg-panel-inset);
   border: 1px solid var(--border-line);
   border-radius: 3px;
-  padding: 6px 12px;
+  height: 30px;
+  padding: 0 12px;
+  box-sizing: border-box;
   font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
@@ -211,6 +267,7 @@ body {
   text-transform: uppercase;
   color: var(--text-primary);
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
@@ -252,6 +309,7 @@ body {
   color: var(--text-secondary);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .braun-select {
@@ -259,7 +317,9 @@ body {
   color: var(--text-primary);
   border: 1px solid var(--border-line);
   border-radius: 3px;
-  padding: 6px 10px;
+  height: 30px;
+  padding: 0 10px;
+  box-sizing: border-box;
   font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 500;
@@ -275,13 +335,26 @@ body {
 }
 
 @media (max-width: 1060px) {
-  .braun-header {
-    flex-wrap: wrap;
+  .braun-header-main {
+    flex-direction: column;
+    align-items: flex-start;
     gap: 12px;
   }
-  .braun-top-controls {
+  .braun-utility-group {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .braun-top-controls.braun-tuning-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .braun-tuning-cluster {
+    width: 100%;
     flex-wrap: wrap;
-    gap: 10px;
+  }
+  .braun-preset-cluster {
+    width: 100%;
   }
   .braun-body-grid {
     grid-template-columns: 1fr;
@@ -399,9 +472,14 @@ body {
 
 .braun-subtitle {
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+[data-theme="dark"] .braun-subtitle,
+[data-theme="matte-black"] .braun-subtitle {
+  color: #BDBDBD;
 }
 
 /* --- Solar 42n Twin Drone Voices Grid --- */
@@ -703,6 +781,9 @@ body {
   box-sizing: border-box;
   gap: 2px;
   cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
   position: relative;
   overflow: hidden;
@@ -782,6 +863,35 @@ body {
   width: 100%;
   word-break: break-word;
   padding-bottom: 2px;
+}
+
+[data-theme="dark"] .braun-chord-macro-btn,
+[data-theme="matte-black"] .braun-chord-macro-btn {
+  background-color: #212327;
+  border-color: #3A3D44;
+}
+
+[data-theme="dark"] .braun-chord-macro-btn:hover,
+[data-theme="matte-black"] .braun-chord-macro-btn:hover {
+  background-color: #2B2E33;
+  border-color: #F0F0F0;
+}
+
+[data-theme="dark"] .braun-chord-title,
+[data-theme="matte-black"] .braun-chord-title {
+  color: #F0F0F0;
+}
+
+[data-theme="dark"] .braun-chord-desc,
+[data-theme="matte-black"] .braun-chord-desc {
+  color: #BDBDBD;
+}
+
+[data-theme="dark"] .braun-chord-shortcut,
+[data-theme="matte-black"] .braun-chord-shortcut {
+  background-color: #2D3036;
+  color: #F0F0F0;
+  border-color: #484C55;
 }
 
 /* --- Braun AS 42 Precision Vector Touchpad Surface --- */
@@ -894,7 +1004,8 @@ body {
   font-family: var(--font-mono);
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.90);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   pointer-events: none;
   text-transform: uppercase;
   z-index: 2;
@@ -973,6 +1084,9 @@ body {
   align-items: center;
   padding: 5px 4px;
   cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   transition: transform 0.08s ease, background 0.08s ease;
   position: relative;
 }
@@ -985,7 +1099,8 @@ body {
   border-color: var(--text-muted);
 }
 
-.braun-chime-key.is-pressed {
+.braun-chime-key.is-pressed,
+.braun-chime-key.is-active {
   background: var(--text-primary);
   color: var(--bg-panel);
   transform: translateY(2px);
@@ -998,7 +1113,8 @@ body {
   border-radius: 1px;
 }
 
-.braun-chime-key.is-pressed .braun-key-indicator {
+.braun-chime-key.is-pressed .braun-key-indicator,
+.braun-chime-key.is-active .braun-key-indicator {
   background-color: var(--braun-orange);
   box-shadow: 0 0 6px var(--braun-orange);
 }
@@ -1014,22 +1130,67 @@ body {
   font-size: 11px;
   font-weight: 700;
   font-family: var(--font-mono);
+  color: var(--text-primary);
 }
 
 .braun-key-degree {
-  font-size: 8px;
+  font-size: 8.5px;
+  font-weight: 600;
   color: var(--text-secondary);
   letter-spacing: 0.04em;
 }
 
-.braun-chime-key.is-pressed .braun-key-degree {
+.braun-chime-key.is-pressed .braun-key-degree,
+.braun-chime-key.is-active .braun-key-degree {
   color: var(--bg-panel);
 }
 
 .braun-key-shortcut {
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-size: 9.5px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  background-color: var(--bg-panel-inset);
+  border: 1px solid var(--border-line);
+  border-radius: 2px;
+  padding: 1px 4px;
+  line-height: 1.1;
+  min-width: 14px;
+  text-align: center;
+}
+
+[data-theme="dark"] .braun-chime-key,
+[data-theme="matte-black"] .braun-chime-key {
+  background: linear-gradient(180deg, #25282D 0%, #1A1C1F 100%);
+  border-color: #3A3D44;
+}
+
+[data-theme="dark"] .braun-chime-key:hover,
+[data-theme="matte-black"] .braun-chime-key:hover {
+  background: #2C2F36;
+  border-color: #F0F0F0;
+}
+
+[data-theme="dark"] .braun-key-name,
+[data-theme="matte-black"] .braun-key-name {
+  color: #F0F0F0;
+}
+
+[data-theme="dark"] .braun-key-degree,
+[data-theme="matte-black"] .braun-key-degree {
+  color: #BDBDBD;
+}
+
+[data-theme="dark"] .braun-key-shortcut,
+[data-theme="matte-black"] .braun-key-shortcut {
+  background-color: #2B2E34;
+  color: #F0F0F0;
+  border-color: #484C55;
+}
+
+[data-theme="dark"] .braun-key-indicator,
+[data-theme="matte-black"] .braun-key-indicator {
+  background-color: #555963;
 }
 
 /* --- Rotary Knob Component Styling --- */
