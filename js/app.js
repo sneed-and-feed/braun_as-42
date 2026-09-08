@@ -216,6 +216,9 @@ export class AmbientApp {
     this.isPowerOn = false;
     this._initialized = false;
     this._knobsBuilt = false;
+    this._isApplyingPreset = false;
+    this._resetTimer = null;
+    this._presetTimer = null;
 
     this.init();
   }
@@ -500,6 +503,11 @@ export class AmbientApp {
    */
   applyPreset(presetKey, { animate = true, duration = 300 } = {}) {
     const preset = PRESETS[presetKey] || PRESETS.DEFAULT;
+    this._isApplyingPreset = true;
+    if (this._presetTimer) {
+      clearTimeout(this._presetTimer);
+      this._presetTimer = null;
+    }
 
     // 1. Update preset selector dropdown if out of sync
     const presetSelect = document.getElementById('select-preset');
@@ -514,7 +522,7 @@ export class AmbientApp {
         const knob = this.knobs[k];
         if (knob) {
           if (shouldAnimate && typeof knob.animateTo === 'function') {
-            knob.animateTo(targetVal, duration);
+            knob.animateTo(targetVal, duration, null, false);
           } else {
             knob.setValue(targetVal, true);
           }
@@ -592,7 +600,12 @@ export class AmbientApp {
 
     // 5. Vector Pad Coordinates (sync visual coordinates without stomping calibrated preset knobs)
     if (this.vectorPad && preset.vectorX !== undefined && preset.vectorY !== undefined) {
-      this.vectorPad.setCoordinates(preset.vectorX, preset.vectorY, false);
+      const shouldAnimate = animate && duration > 0 && typeof requestAnimationFrame === 'function';
+      if (shouldAnimate && typeof this.vectorPad.animateTo === 'function') {
+        this.vectorPad.animateTo(preset.vectorX, preset.vectorY, duration, false);
+      } else {
+        this.vectorPad.setCoordinates(preset.vectorX, preset.vectorY, false);
+      }
     }
 
     // 6. Scale Selector (optional)
@@ -602,6 +615,17 @@ export class AmbientApp {
       this.engine.setScale(preset.scaleKey, this.engine.rootPitchClass);
       if (this.playSurface) this.playSurface.rebuildKeys();
       this.updateLoopNotes();
+    }
+
+    // Release applying preset flag once animation finishes
+    const releaseDelay = (animate && duration > 0) ? (duration + 50) : 0;
+    if (releaseDelay > 0) {
+      this._presetTimer = setTimeout(() => {
+        this._isApplyingPreset = false;
+        this._presetTimer = null;
+      }, releaseDelay);
+    } else {
+      this._isApplyingPreset = false;
     }
   }
 
@@ -614,8 +638,19 @@ export class AmbientApp {
   resetAllKnobs({ animate = true, duration = 350 } = {}) {
     const resetBtn = document.getElementById('btn-reset-all');
     if (resetBtn) {
+      if (this._resetTimer) {
+        clearTimeout(this._resetTimer);
+        this._resetTimer = null;
+      }
+      resetBtn.classList.remove('is-active');
+      if (typeof resetBtn.offsetWidth === 'number') {
+        void resetBtn.offsetWidth; // Force CSS reflow to re-trigger smooth rotation cleanly
+      }
       resetBtn.classList.add('is-active');
-      setTimeout(() => resetBtn.classList.remove('is-active'), 350);
+      this._resetTimer = setTimeout(() => {
+        resetBtn.classList.remove('is-active');
+        this._resetTimer = null;
+      }, duration);
     }
 
     // Turn off reverb freeze if active
@@ -633,7 +668,7 @@ export class AmbientApp {
 
     // Center Vector Pad to origin without stomping calibrated preset knobs
     if (this.vectorPad) {
-      this.vectorPad.resetToCenter(false);
+      this.vectorPad.resetToCenter(false, animate, duration);
     }
   }
 
@@ -817,7 +852,7 @@ export class AmbientApp {
       size: 'medium',
       onChange: (v) => {
         this.engine.setFeltTone(v / 100);
-        if (this.vectorPad && !this.vectorPad.isEngaged) {
+        if (!this._isApplyingPreset && this.vectorPad && !this.vectorPad.isEngaged) {
           const normX = Math.max(0, Math.min(1, (v / 100 - 0.15) / 0.80));
           this.vectorPad.setCoordinates(normX, this.vectorPad.y, false);
         }
@@ -957,7 +992,7 @@ export class AmbientApp {
       size: 'medium',
       onChange: (v) => {
         this.engine.setReverbShimmer(v / 100);
-        if (this.vectorPad && !this.vectorPad.isEngaged) {
+        if (!this._isApplyingPreset && this.vectorPad && !this.vectorPad.isEngaged) {
           const normY = Math.max(0, Math.min(1, (v / 100 - 0.15) / 0.70));
           this.vectorPad.setCoordinates(this.vectorPad.x, normY, false);
         }

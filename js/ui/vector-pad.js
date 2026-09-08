@@ -294,12 +294,74 @@ export class BraunVectorPad {
     }
   }
 
-  resetToCenter(updateEngine = true) {
+  resetToCenter(updateEngine = true, animate = false, duration = 300) {
     if (this._animId) {
-      cancelAnimationFrame(this._animId);
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animId);
+      else clearTimeout(this._animId);
       this._animId = null;
     }
-    this.setCoordinates(this.defaultX, this.defaultY, updateEngine);
+    if (animate && duration > 0) {
+      this.animateTo(this.defaultX, this.defaultY, duration, updateEngine);
+    } else {
+      this.setCoordinates(this.defaultX, this.defaultY, updateEngine);
+    }
+  }
+
+  /**
+   * Smoothly animate vector reticle to target coordinates
+   * @param {number} targetX
+   * @param {number} targetY
+   * @param {number} [duration=300]
+   * @param {boolean} [updateEngine=false]
+   */
+  animateTo(targetX, targetY, duration = 300, updateEngine = false) {
+    if (this._animId) {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animId);
+      else clearTimeout(this._animId);
+      this._animId = null;
+    }
+
+    const startX = this.x;
+    const startY = this.y;
+    const clampedTargetX = Math.max(0, Math.min(1.0, targetX));
+    const clampedTargetY = Math.max(0, Math.min(1.0, targetY));
+
+    if (duration <= 0 || (Math.abs(startX - clampedTargetX) < 1e-4 && Math.abs(startY - clampedTargetY) < 1e-4)) {
+      this.setCoordinates(clampedTargetX, clampedTargetY, updateEngine);
+      return;
+    }
+
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+    const step = (currentTime) => {
+      const now = (typeof currentTime === 'number' && currentTime > 0) ? currentTime : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+      const elapsed = Math.max(0, now - startTime);
+      const progress = Math.min(1.0, elapsed / duration);
+      const eased = easeOutCubic(progress);
+
+      const curX = startX + (clampedTargetX - startX) * eased;
+      const curY = startY + (clampedTargetY - startY) * eased;
+
+      this.setCoordinates(curX, curY, updateEngine);
+
+      if (progress < 1.0) {
+        if (typeof requestAnimationFrame === 'function') {
+          this._animId = requestAnimationFrame(step);
+        } else {
+          this._animId = setTimeout(() => step(Date.now()), 16);
+        }
+      } else {
+        this.setCoordinates(clampedTargetX, clampedTargetY, updateEngine);
+        this._animId = null;
+      }
+    };
+
+    if (typeof requestAnimationFrame === 'function') {
+      this._animId = requestAnimationFrame(step);
+    } else {
+      this._animId = setTimeout(() => step(Date.now()), 16);
+    }
   }
 
   setCoordinates(x, y, updateEngine = true) {

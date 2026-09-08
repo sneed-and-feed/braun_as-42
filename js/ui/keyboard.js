@@ -20,6 +20,8 @@ export class BraunPlaySurface {
 
     this.keyElements = new Map(); // midi -> HTMLElement
     this.activeTouches = new Map();
+    this.activePointerVoices = new Set();
+    this.activePointerChordSessions = new Set();
 
     this._renderChords();
     this.rebuildKeys();
@@ -68,6 +70,7 @@ export class BraunPlaySurface {
 
       const handleKeyRelease = () => {
         if (activeVoice) {
+          this.activePointerVoices.delete(activeVoice);
           if (typeof activeVoice.release === 'function') activeVoice.release();
           activeVoice = null;
         }
@@ -86,6 +89,7 @@ export class BraunPlaySurface {
           clearPointerTimer = null;
         }
         if (activeVoice) {
+          this.activePointerVoices.delete(activeVoice);
           if (typeof activeVoice.release === 'function') {
             activeVoice.release();
           } else if (activeVoice && typeof activeVoice.then === 'function') {
@@ -99,6 +103,9 @@ export class BraunPlaySurface {
           }
         } catch (err) {}
         activeVoice = triggerStrike(e.clientY, keyEl.getBoundingClientRect(), true);
+        if (activeVoice) {
+          this.activePointerVoices.add(activeVoice);
+        }
       });
 
       keyEl.addEventListener('pointerup', (e) => {
@@ -179,6 +186,7 @@ export class BraunPlaySurface {
 
       const triggerChordRelease = () => {
         if (activeSession) {
+          this.activePointerChordSessions.delete(activeSession);
           this.stopChordSession(activeSession);
           activeSession = null;
         }
@@ -198,6 +206,7 @@ export class BraunPlaySurface {
           clearPointerTimer = null;
         }
         if (activeSession) {
+          this.activePointerChordSessions.delete(activeSession);
           this.stopChordSession(activeSession);
           activeSession = null;
         }
@@ -208,6 +217,9 @@ export class BraunPlaySurface {
         } catch (err) {}
 
         activeSession = this.startChord(voicing.id, true);
+        if (activeSession) {
+          this.activePointerChordSessions.add(activeSession);
+        }
         btn.classList.add('is-active');
       });
 
@@ -406,6 +418,16 @@ export class BraunPlaySurface {
       'Minus': 10, 'Equal': 11
     };
 
+    const getKeyIndex = (e) => {
+      if (keyMap[e.code] !== undefined) return keyMap[e.code];
+      const charMap = {
+        'a': 0, 's': 1, 'd': 2, 'f': 3, 'g': 4, 'h': 5, 'j': 6, 'k': 7,
+        'l': 8, ';': 9, "'": 10, 'z': 11, 'x': 12, 'c': 13, 'v': 14
+      };
+      const lower = e.key ? e.key.toLowerCase() : '';
+      return charMap[lower] !== undefined ? charMap[lower] : null;
+    };
+
     const getChordIndex = (e) => {
       if (chordKeyMap[e.code] !== undefined) return chordKeyMap[e.code];
       if (e.key >= '1' && e.key <= '9') return parseInt(e.key, 10) - 1;
@@ -428,16 +450,18 @@ export class BraunPlaySurface {
       if (e.repeat) return;
 
       // Playable chime keys with continuous hold sustain
-      if (keyMap[e.code] !== undefined) {
+      const chimeIdx = getKeyIndex(e);
+      if (chimeIdx !== null) {
         const keys = Array.from(this.keyElements.values());
-        const keyEl = keys[keyMap[e.code]];
+        const keyEl = keys[chimeIdx];
         if (keyEl) {
           e.preventDefault();
           const freq = parseFloat(keyEl.getAttribute('data-freq'));
           const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
           keyEl.classList.add('is-active');
           const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0);
-          this.activeHeldKeys.set(e.code, { keyEl, voiceOrPromise });
+          const keyIdentifier = e.code || e.key;
+          this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise });
         }
         return;
       }
@@ -452,7 +476,8 @@ export class BraunPlaySurface {
           const voicingId = btn.getAttribute('data-chord');
           btn.classList.add('is-active');
           const session = this.startChord(voicingId, true);
-          this.activeHeldChords.set(e.code, { btn, session });
+          const chordIdentifier = e.code || e.key;
+          this.activeHeldChords.set(chordIdentifier, { btn, session });
         }
         return;
       }
@@ -468,8 +493,9 @@ export class BraunPlaySurface {
     window.addEventListener('keyup', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
 
-      if (this.activeHeldKeys.has(e.code)) {
-        const { keyEl, voiceOrPromise } = this.activeHeldKeys.get(e.code);
+      const keyIdentifier = e.code || e.key;
+      if (this.activeHeldKeys.has(keyIdentifier)) {
+        const { keyEl, voiceOrPromise } = this.activeHeldKeys.get(keyIdentifier);
         if (keyEl) keyEl.classList.remove('is-active');
         if (voiceOrPromise) {
           if (typeof voiceOrPromise.release === 'function') {
@@ -480,17 +506,18 @@ export class BraunPlaySurface {
             });
           }
         }
-        this.activeHeldKeys.delete(e.code);
+        this.activeHeldKeys.delete(keyIdentifier);
       }
 
       const chordIdx = getChordIndex(e);
-      if (chordIdx !== null && this.activeHeldChords.has(e.code)) {
-        const { btn, session } = this.activeHeldChords.get(e.code);
+      const chordIdentifier = e.code || e.key;
+      if (chordIdx !== null && this.activeHeldChords.has(chordIdentifier)) {
+        const { btn, session } = this.activeHeldChords.get(chordIdentifier);
         if (btn) btn.classList.remove('is-active');
         if (session) {
           this.stopChordSession(session);
         }
-        this.activeHeldChords.delete(e.code);
+        this.activeHeldChords.delete(chordIdentifier);
       }
     });
 
@@ -509,6 +536,19 @@ export class BraunPlaySurface {
         if (session) this.stopChordSession(session);
       });
       this.activeHeldChords.clear();
+
+      this.activePointerVoices.forEach(voiceOrPromise => {
+        if (voiceOrPromise) {
+          if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
+          else if (typeof voiceOrPromise.then === 'function') voiceOrPromise.then(v => v?.release?.());
+        }
+      });
+      this.activePointerVoices.clear();
+
+      this.activePointerChordSessions.forEach(session => {
+        if (session) this.stopChordSession(session);
+      });
+      this.activePointerChordSessions.clear();
     });
   }
 }

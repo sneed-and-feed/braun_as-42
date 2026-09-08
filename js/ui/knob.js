@@ -278,8 +278,9 @@ export class BraunKnob {
    * @param {number} targetVal
    * @param {number} [duration=300] - Duration in ms
    * @param {Function} [onComplete=null]
+   * @param {boolean} [triggerOnChangeDuring=false] - Whether to fire onChange during animation frames
    */
-  animateTo(targetVal, duration = 300, onComplete = null) {
+  animateTo(targetVal, duration = 300, onComplete = null, triggerOnChangeDuring = false) {
     if (this._animFrameId) {
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animFrameId);
       else clearTimeout(this._animFrameId);
@@ -307,7 +308,7 @@ export class BraunKnob {
 
       const currentNorm = startNorm + (targetNorm - startNorm) * eased;
       const currentVal = this.fromNormalized(currentNorm);
-      this.setValue(currentVal, true);
+      this.setValue(currentVal, triggerOnChangeDuring);
 
       if (progress < 1.0) {
         if (typeof requestAnimationFrame === 'function') {

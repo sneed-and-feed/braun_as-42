@@ -472,12 +472,24 @@ function setupMockBrowser() {
   }
 
   globalThis.document = mockDocument;
+  const windowListeners = new Map();
   globalThis.window = {
     document: mockDocument,
     AudioContext: MockAudioContext,
     devicePixelRatio: 1,
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addEventListener: (type, fn) => {
+      if (!windowListeners.has(type)) windowListeners.set(type, []);
+      windowListeners.get(type).push(fn);
+    },
+    removeEventListener: (type, fn) => {
+      if (windowListeners.has(type)) {
+        windowListeners.set(type, windowListeners.get(type).filter(f => f !== fn));
+      }
+    },
+    dispatchEvent: (e) => {
+      const fns = windowListeners.get(e.type) || [];
+      fns.forEach(fn => fn(e));
+    },
     requestAnimationFrame: (cb) => setTimeout(cb, 16),
     cancelAnimationFrame: (id) => clearTimeout(id)
   };
@@ -1020,5 +1032,77 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     assert.strictEqual(engine.delayParams.wet, 0.40, 'Delay wet mix at 40%');
     assert.strictEqual(engine.reverbParams.wet, 0.45, 'Reverb wet mix at 45%');
     assert.strictEqual(engine.reverbParams.shimmer, 0.45, 'Shimmer feedback at 45%');
+  });
+
+  it('verifies vector pad coordinates are preserved and not clobbered during and after preset transitions', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp, PRESETS } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    // 1. Select Harold Budd preset
+    const presetSelect = elementsById.get('select-preset');
+    presetSelect.change('HAROLD_BUDD');
+
+    // Vector pad must sit precisely at Harold Budd preset coordinates
+    assert.strictEqual(app.vectorPad.x, PRESETS.HAROLD_BUDD.vectorX, 'Vector X must match Harold Budd preset');
+    assert.strictEqual(app.vectorPad.y, PRESETS.HAROLD_BUDD.vectorY, 'Vector Y must match Harold Budd preset');
+
+    // 2. Select Vangelis preset
+    presetSelect.change('VANGELIS');
+    assert.strictEqual(app.vectorPad.x, PRESETS.VANGELIS.vectorX, 'Vector X must match Vangelis preset');
+    assert.strictEqual(app.vectorPad.y, PRESETS.VANGELIS.vectorY, 'Vector Y must match Vangelis preset');
+
+    // 3. Reset All must center vector pad to 0.50, 0.50
+    const resetBtn = elementsById.get('btn-reset-all');
+    resetBtn.click();
+    assert.strictEqual(app.vectorPad.x, 0.50, 'Vector X must return to default center 0.50');
+    assert.strictEqual(app.vectorPad.y, 0.50, 'Vector Y must return to default center 0.50');
+  });
+
+  it('verifies rapid consecutive clicks on reset button refresh the rotation transition cleanly', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const resetBtn = elementsById.get('btn-reset-all');
+
+    // Rapid click 1
+    resetBtn.click();
+    assert.ok(resetBtn.classList.contains('is-active'), 'Reset button must be active');
+    assert.ok(app._resetTimer !== null, 'Reset timer must be active');
+
+    // Rapid click 2 before timeout expires
+    resetBtn.click();
+    assert.ok(resetBtn.classList.contains('is-active'), 'Reset button must remain active');
+    assert.ok(app._resetTimer !== null, 'Reset timer must be renewed');
+  });
+
+  it('verifies active mouse pointer strikes release gracefully on window blur', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    let releasedVoice = false;
+    let releasedChord = false;
+    const mockVoice = {
+      release: () => { releasedVoice = true; }
+    };
+    const mockChordSession = {
+      voices: [{ release: () => { releasedChord = true; } }],
+      timers: []
+    };
+
+    app.playSurface.activePointerVoices.add(mockVoice);
+    app.playSurface.activePointerChordSessions.add(mockChordSession);
+    assert.strictEqual(app.playSurface.activePointerVoices.size, 1);
+    assert.strictEqual(app.playSurface.activePointerChordSessions.size, 1);
+
+    // Trigger window blur
+    window.dispatchEvent({ type: 'blur' });
+
+    assert.strictEqual(releasedVoice, true, 'Held pointer voice must be released on window blur');
+    assert.strictEqual(releasedChord, true, 'Held pointer chord session voices must be released on window blur');
+    assert.strictEqual(app.playSurface.activePointerVoices.size, 0, 'Pointer voices set must be cleared');
+    assert.strictEqual(app.playSurface.activePointerChordSessions.size, 0, 'Pointer chord sessions set must be cleared');
   });
 });
