@@ -146,8 +146,20 @@ export class AudioEngine {
     this.analyser.fftSize = 2048;
     this.analyser.smoothingTimeConstant = 0.82;
 
-    // Master bus routing
-    this.masterGain.connect(this.masterLimiter);
+    // Master Bus Peak Compressor / Brickwall Limiter (transparent protection against polyphonic summing overloads)
+    if (this.ctx.createDynamicsCompressor) {
+      this.masterCompressor = this.ctx.createDynamicsCompressor();
+      this.masterCompressor.threshold.setValueAtTime(-1.0, this.ctx.currentTime); // -1 dBFS
+      this.masterCompressor.knee.setValueAtTime(3.0, this.ctx.currentTime);
+      this.masterCompressor.ratio.setValueAtTime(20.0, this.ctx.currentTime);
+      this.masterCompressor.attack.setValueAtTime(0.002, this.ctx.currentTime);
+      this.masterCompressor.release.setValueAtTime(0.050, this.ctx.currentTime);
+
+      this.masterGain.connect(this.masterCompressor);
+      this.masterCompressor.connect(this.masterLimiter);
+    } else {
+      this.masterGain.connect(this.masterLimiter);
+    }
     this.masterLimiter.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
@@ -455,6 +467,7 @@ export class AudioEngine {
     this.isRecording = false;
 
     if (this.recorderNode) {
+      this.recorderNode.onaudioprocess = null;
       this.analyser.disconnect(this.recorderNode);
       this.recorderNode.disconnect();
       this.recorderNode = null;

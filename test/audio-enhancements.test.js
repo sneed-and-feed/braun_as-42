@@ -576,4 +576,130 @@ describe('Audio Enhancements and DSP Verification', () => {
       assert.ok(e.t >= 2.470, `Steal event ${e.type} at ${e.t} must be >= currentTime 2.470`);
     });
   });
+
+  it('verifies voice stealing eliminates duplicate setValueAtTime conflicts at noteStartTime', () => {
+    class TimelineParam {
+      constructor(val = 0) {
+        this.value = val;
+        this.events = [];
+      }
+      setValueAtTime(v, t) { this.events.push({ type: 'setValueAtTime', v, t }); }
+      linearRampToValueAtTime(v, t) { this.events.push({ type: 'linearRampToValueAtTime', v, t }); }
+      exponentialRampToValueAtTime(v, t) { this.events.push({ type: 'exponentialRampToValueAtTime', v, t }); }
+      cancelScheduledValues(t) { this.events.push({ type: 'cancelScheduledValues', t }); }
+      cancelAndHoldAtTime(t) { this.events.push({ type: 'cancelAndHoldAtTime', t }); }
+    }
+
+    class TestAudioCtx {
+      constructor() {
+        this.sampleRate = 48000;
+        this.currentTime = 5.0;
+      }
+      createGain() { return { gain: new TimelineParam(0), connect: () => {} }; }
+      createBuffer(ch, len, rate) {
+        return { getChannelData: () => new Float32Array(len), length: len, sampleRate: rate };
+      }
+      createWaveShaper() { return { oversample: '', curve: null, connect: () => {} }; }
+      createBiquadFilter() {
+        return {
+          frequency: new TimelineParam(440),
+          Q: new TimelineParam(1.3),
+          connect: () => {}
+        };
+      }
+      createOscillator() {
+        return {
+          frequency: new TimelineParam(440),
+          detune: new TimelineParam(0),
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+      }
+      createBufferSource() {
+        return { buffer: null, connect: () => {}, start: () => {}, stop: () => {} };
+      }
+    }
+
+    const testCtx = new TestAudioCtx();
+    const synth = new FeltPianoSynthesizer(testCtx, null, 1); // single voice forces stealing
+
+    synth.playNote(261.63, 0.7, 2.0);
+
+    // Retrigger same voice while loud
+    testCtx.currentTime = 5.05;
+    synth.voices[0].voiceGain.gain.value = 0.32;
+    synth.playNote(329.63, 0.8, 2.0);
+
+    const gainEvents = synth.voices[0].voiceGain.gain.events.filter(e => e.t >= 5.05);
+    // There must NOT be any setValueAtTime at noteStartTime (5.055) that conflicts with linearRampToValueAtTime
+    const conflictingSet = gainEvents.find(e => e.type === 'setValueAtTime' && Math.abs(e.t - 5.055) < 1e-6);
+    assert.strictEqual(conflictingSet, undefined, 'Must not have conflicting setValueAtTime at same instant as linear ramp endpoint');
+
+    // The de-click ramp must transition into attack ramp smoothly
+    const declickRamp = gainEvents.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0001);
+    const attackRamp = gainEvents.find(e => e.type === 'linearRampToValueAtTime' && e.v > 0.05);
+    assert.ok(declickRamp, 'De-click ramp to 0.0001 must exist');
+    assert.ok(attackRamp, 'Attack ramp must exist');
+    assert.strictEqual(declickRamp.t, 5.055, 'De-click ramp ends at noteStartTime (5.055)');
+    assert.ok(attackRamp.t > 5.055, 'Attack ramp ends after noteStartTime');
+  });
+
+  it('verifies rapid burst of all 10 chord macros triggers clean polyphonic voice allocation', () => {
+    class MockCtx {
+      constructor() {
+        this.sampleRate = 48000;
+        this.currentTime = 0;
+      }
+      createGain() {
+        return {
+          gain: { value: 0.38, setValueAtTime: () => {}, setTargetAtTime: () => {}, linearRampToValueAtTime: () => {}, exponentialRampToValueAtTime: () => {}, cancelScheduledValues: () => {} },
+          connect: () => {}
+        };
+      }
+      createBuffer(ch, len, rate) {
+        return { getChannelData: () => new Float32Array(len), length: len, sampleRate: rate };
+      }
+      createWaveShaper() { return { oversample: '', curve: null, connect: () => {} }; }
+      createBiquadFilter() {
+        return {
+          frequency: { value: 350, setValueAtTime: () => {}, linearRampToValueAtTime: () => {}, exponentialRampToValueAtTime: () => {}, cancelScheduledValues: () => {} },
+          Q: { value: 1.3, setValueAtTime: () => {} },
+          connect: () => {}
+        };
+      }
+      createOscillator() {
+        return {
+          frequency: { value: 440, setValueAtTime: () => {}, cancelScheduledValues: () => {} },
+          detune: { value: 0, setValueAtTime: () => {} },
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+      }
+      createBufferSource() {
+        return { buffer: null, connect: () => {}, start: () => {}, stop: () => {} };
+      }
+    }
+
+    const ctx = new MockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 24);
+
+    // Rapidly trigger 10 chords with 5 notes each (50 note strikes in quick burst)
+    for (let c = 0; c < 10; c++) {
+      ctx.currentTime += 0.025;
+      for (let n = 0; n < 5; n++) {
+        const freq = 130.81 * Math.pow(2, (c * 2 + n * 3) / 12);
+        assert.doesNotThrow(() => {
+          synth.playNote(freq, 0.75, 2.5);
+        }, `Chord burst chord ${c} note ${n} must not throw`);
+      }
+    }
+
+    // All 24 voices in the pool should be robust and undamaged
+    assert.strictEqual(synth.voices.length, 24);
+    synth.voices.forEach(v => {
+      assert.ok(!Number.isNaN(v.startTime), 'Voice startTime must be a valid number');
+    });
+  });
 });

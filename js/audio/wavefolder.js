@@ -13,11 +13,12 @@
 export function makeSoftClipCurve(samples = 2048, drive = 1.5) {
   const curve = new Float32Array(samples);
   const half = (samples - 1) / 2;
+  const norm = Math.tanh(drive);
 
   for (let i = 0; i < samples; i++) {
     const x = (i - half) / half; // -1 to +1
-    // Hyperbolic tangent soft saturation
-    curve[i] = Math.tanh(drive * x);
+    // Hyperbolic tangent soft saturation smoothly normalized to unity bounds
+    curve[i] = Math.tanh(drive * x) / norm;
   }
 
   return curve;

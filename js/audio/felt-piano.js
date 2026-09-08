@@ -264,8 +264,8 @@ export class FeltPianoVoice {
       this.voiceGain.gain.cancelScheduledValues(cancelTime);
       this.voiceGain.gain.setValueAtTime(0.0001, cancelTime);
     }
-
-    this.voiceGain.gain.setValueAtTime(0.0001, noteStartTime);
+    // When stealing, the voice gain has already smoothly ramped down to 0.0001 at noteStartTime.
+    // Ramping directly to peakGain from noteStartTime prevents redundant setValueAtTime collisions.
     const attackTarget = Math.max(noteStartTime + attackTime, ctx.currentTime + 0.002);
     this.voiceGain.gain.linearRampToValueAtTime(peakGain, attackTarget);
 

@@ -62,34 +62,28 @@ export class BraunPlaySurface {
         this.playNote(note.freq, note.midi, velocity);
       };
 
-      let pointerHandled = false;
+      let lastPointerTime = -Infinity;
       keyEl.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        pointerHandled = true;
+        lastPointerTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
         triggerStrike(e.clientY, keyEl.getBoundingClientRect());
-        setTimeout(() => { pointerHandled = false; }, 250);
       });
 
       keyEl.addEventListener('click', (e) => {
-        if (pointerHandled) return;
+        const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+        // Ignore synthetic click event following pointerdown within 400ms
+        if (now - lastPointerTime < 400) return;
         triggerStrike(e.clientY, keyEl.getBoundingClientRect());
       });
 
       // Allow glissando swiping across keys while mouse button is held down
       keyEl.addEventListener('pointerenter', (e) => {
-        if (e.buttons === 1 && !pointerHandled) {
-          pointerHandled = true;
+        if (e.buttons === 1) {
+          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+          if (now - lastPointerTime < 140) return;
+          lastPointerTime = now;
           triggerStrike(e.clientY, keyEl.getBoundingClientRect());
-          setTimeout(() => { pointerHandled = false; }, 250);
         }
-      });
-
-      keyEl.addEventListener('pointerleave', () => {
-        pointerHandled = false;
-      });
-
-      keyEl.addEventListener('pointerup', () => {
-        setTimeout(() => { pointerHandled = false; }, 50);
       });
 
       this.stripContainer.appendChild(keyEl);
@@ -148,9 +142,13 @@ export class BraunPlaySurface {
   flashKey(midi) {
     const keyEl = this.keyElements.get(Math.round(midi));
     if (keyEl) {
+      if (keyEl._flashTimer) {
+        clearTimeout(keyEl._flashTimer);
+      }
       keyEl.classList.add('is-pressed');
-      setTimeout(() => {
+      keyEl._flashTimer = setTimeout(() => {
         keyEl.classList.remove('is-pressed');
+        keyEl._flashTimer = null;
       }, 250);
     }
   }
@@ -165,9 +163,13 @@ export class BraunPlaySurface {
       : (this.chordsContainer.querySelectorAll ? this.chordsContainer.querySelectorAll('.braun-chord-macro-btn') : []);
     const btn = Array.from(btns).find(b => b.getAttribute && b.getAttribute('data-chord') === voicingId);
     if (btn) {
+      if (btn._flashTimer) {
+        clearTimeout(btn._flashTimer);
+      }
       btn.classList.add('is-active');
-      setTimeout(() => {
+      btn._flashTimer = setTimeout(() => {
         btn.classList.remove('is-active');
+        btn._flashTimer = null;
       }, 250);
     }
   }
