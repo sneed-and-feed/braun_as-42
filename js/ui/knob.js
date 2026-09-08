@@ -93,6 +93,11 @@ export class BraunKnob {
     const onPointerDown = (e) => {
       if (e.target === this.directInput) return;
       e.preventDefault();
+      if (this._animFrameId) {
+        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animFrameId);
+        else clearTimeout(this._animFrameId);
+        this._animFrameId = null;
+      }
       isDragging = true;
       startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
       startVal = this.value;
@@ -267,4 +272,61 @@ export class BraunKnob {
       this.onChange(this.value);
     }
   }
+
+  /**
+   * Smoothly animate knob rotation to target value using cubic easing
+   * @param {number} targetVal
+   * @param {number} [duration=300] - Duration in ms
+   * @param {Function} [onComplete=null]
+   */
+  animateTo(targetVal, duration = 300, onComplete = null) {
+    if (this._animFrameId) {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animFrameId);
+      else clearTimeout(this._animFrameId);
+      this._animFrameId = null;
+    }
+
+    const startNorm = this.toNormalized(this.value);
+    const targetNorm = Math.max(0, Math.min(1, this.toNormalized(targetVal)));
+
+    // Set immediately if duration is zero or difference is negligible
+    if (duration <= 0 || Math.abs(startNorm - targetNorm) < 1e-4) {
+      this.setValue(targetVal, true);
+      if (onComplete) onComplete();
+      return;
+    }
+
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+    const step = (currentTime) => {
+      const now = (typeof currentTime === 'number' && currentTime > 0) ? currentTime : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+      const elapsed = Math.max(0, now - startTime);
+      const progress = Math.min(1.0, elapsed / duration);
+      const eased = easeOutCubic(progress);
+
+      const currentNorm = startNorm + (targetNorm - startNorm) * eased;
+      const currentVal = this.fromNormalized(currentNorm);
+      this.setValue(currentVal, true);
+
+      if (progress < 1.0) {
+        if (typeof requestAnimationFrame === 'function') {
+          this._animFrameId = requestAnimationFrame(step);
+        } else {
+          this._animFrameId = setTimeout(() => step(Date.now()), 16);
+        }
+      } else {
+        this.setValue(targetVal, true);
+        this._animFrameId = null;
+        if (onComplete) onComplete();
+      }
+    };
+
+    if (typeof requestAnimationFrame === 'function') {
+      this._animFrameId = requestAnimationFrame(step);
+    } else {
+      this._animFrameId = setTimeout(() => step(Date.now()), 16);
+    }
+  }
 }
+

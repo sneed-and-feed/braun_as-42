@@ -44,6 +44,23 @@
           </select>
         </div>
 
+        <!-- Curated Sound Presets -->
+        <div class="braun-select-group">
+          <label class="braun-label-inline" for="select-preset">PRESET</label>
+          <select id="select-preset" class="braun-select" title="Curated Braun Sound Presets">
+            <option value="DEFAULT">CALIBRATED DEFAULT</option>
+            <option value="HAROLD_BUDD">HAROLD BUDD · PAVILION</option>
+            <option value="VANGELIS">VANGELIS · CS-80 BRASS</option>
+            <option value="ENO_AIRPORTS">ENO · MUSIC FOR AIRPORTS</option>
+          </select>
+        </div>
+
+        <!-- Master Preset / Reset Button -->
+        <button id="btn-reset-all" class="braun-reset-btn" title="Reset All Knobs & Parameters to Calibrated Defaults">
+          <span class="braun-reset-icon">↺</span>
+          <span class="braun-status-text">RESET ALL</span>
+        </button>
+
         <!-- Lossless WAV Recorder -->
         <button id="btn-record" class="braun-record-btn" title="Record Lossless 16-bit 48kHz WAV">
           <span class="braun-led"></span>

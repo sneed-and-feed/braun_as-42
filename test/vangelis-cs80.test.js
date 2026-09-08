@@ -18,6 +18,30 @@ import { BraunPlaySurface } from '../js/ui/keyboard.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+class MockButtonElement {
+  constructor() {
+    this.listeners = new Map();
+    this.attrs = new Map();
+    this.classList = {
+      _classes: new Set(),
+      add: (c) => this.classList._classes.add(c),
+      remove: (c) => this.classList._classes.delete(c),
+      contains: (c) => this.classList._classes.has(c)
+    };
+  }
+  addEventListener(type, cb) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(cb);
+  }
+  dispatchEvent(type, ev = {}) {
+    const cbs = this.listeners.get(type) || [];
+    cbs.forEach(cb => cb(ev));
+  }
+  setAttribute(k, v) { this.attrs.set(k, v); }
+  getAttribute(k) { return this.attrs.get(k); }
+  getBoundingClientRect() { return { top: 0, height: 72, left: 0, width: 100 }; }
+}
+
 // Mock Web Audio Context for DSP assertions
 function createDSPMockCtx() {
   class MockAudioParam {
@@ -412,29 +436,6 @@ describe('Click-and-Hold Single Strike Verification', () => {
     let chordNoteStarts = 0;
     let releasedVoices = 0;
 
-    class MockButtonElement {
-      constructor() {
-        this.listeners = new Map();
-        this.attrs = new Map();
-        this.classList = {
-          add: () => {},
-          remove: () => {},
-          contains: () => false
-        };
-      }
-      addEventListener(type, cb) {
-        if (!this.listeners.has(type)) this.listeners.set(type, []);
-        this.listeners.get(type).push(cb);
-      }
-      dispatchEvent(type, ev = {}) {
-        const cbs = this.listeners.get(type) || [];
-        cbs.forEach(cb => cb(ev));
-      }
-      setAttribute(k, v) { this.attrs.set(k, v); }
-      getAttribute(k) { return this.attrs.get(k); }
-      getBoundingClientRect() { return { top: 0, height: 72, left: 0, width: 100 }; }
-    }
-
     const mockStrip = { innerHTML: '', appendChild: () => {} };
     const createdButtons = [];
     const mockChords = {
@@ -531,5 +532,95 @@ describe('Click-and-Hold Single Strike Verification', () => {
     assert.strictEqual(synth.currentWaveform, 'felt');
     assert.strictEqual(v.currentWaveform, 'felt');
   });
+
+  it('guarantees computer keyboard hold-sustain keeps voice sounding and releasing key triggers voice.release()', async () => {
+    let playedFreq = null;
+    let playedDuration = null;
+    let released = false;
+
+    const mockStrip = {
+      innerHTML: '',
+      children: [],
+      appendChild: () => {},
+      querySelectorAll: () => []
+    };
+    const mockChords = {
+      innerHTML: '',
+      children: [],
+      classList: { add: () => {} },
+      appendChild: () => {},
+      querySelectorAll: () => []
+    };
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: (f, vel, dur) => {
+          playedFreq = f;
+          playedDuration = dur;
+          return {
+            release: () => { released = true; }
+          };
+        }
+      }
+    };
+
+    let keydownHandler = null;
+    let keyupHandler = null;
+    const origAddEventListener = globalThis.window ? globalThis.window.addEventListener : null;
+    if (typeof globalThis.window === 'undefined') {
+      globalThis.window = {};
+    }
+    globalThis.window.addEventListener = (event, fn) => {
+      if (event === 'keydown') keydownHandler = fn;
+      if (event === 'keyup') keyupHandler = fn;
+    };
+
+    const origCreateElement = globalThis.document ? globalThis.document.createElement : null;
+    const origGetElementById = globalThis.document ? globalThis.document.getElementById : null;
+    if (typeof globalThis.document === 'undefined') {
+      globalThis.document = {};
+    }
+    globalThis.document.createElement = () => new MockButtonElement();
+    globalThis.document.getElementById = () => null;
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      assert.ok(keydownHandler, 'Must register keydown handler on window');
+      assert.ok(keyupHandler, 'Must register keyup handler on window');
+
+      // 1. User presses 'KeyA' down (chime note 0)
+      keydownHandler({
+        code: 'KeyA',
+        key: 'a',
+        repeat: false,
+        target: { tagName: 'DIV' },
+        preventDefault: () => {}
+      });
+
+      assert.ok(playedFreq !== null, 'KeyA must trigger note');
+      assert.strictEqual(playedDuration, 20.0, 'Holding KeyA must pass hold duration (20.0s)');
+      assert.strictEqual(released, false, 'Voice must NOT be released while key is held down');
+
+      // 2. User releases 'KeyA'
+      keyupHandler({
+        code: 'KeyA',
+        key: 'a',
+        target: { tagName: 'DIV' }
+      });
+
+      assert.strictEqual(released, true, 'Releasing KeyA must immediately call voice.release()');
+    } finally {
+      if (origAddEventListener) globalThis.window.addEventListener = origAddEventListener;
+      else if (globalThis.window) delete globalThis.window.addEventListener;
+      if (origCreateElement) globalThis.document.createElement = origCreateElement;
+      else if (globalThis.document) delete globalThis.document.createElement;
+      if (origGetElementById) globalThis.document.getElementById = origGetElementById;
+      else if (globalThis.document) delete globalThis.document.getElementById;
+    }
+  });
 });
+
 

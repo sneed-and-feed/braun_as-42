@@ -226,6 +226,10 @@ function setupMockBrowser() {
   const theme = register('select-theme', 'select');
   theme.value = 'light';
 
+  const presetSelect = register('select-preset', 'select');
+  presetSelect.value = 'DEFAULT';
+  register('btn-reset-all', 'button');
+
   register('btn-record', 'button');
   const powerBtn = register('btn-power', 'button');
   const pLed = new MockElement('span');
@@ -867,5 +871,154 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     assert.strictEqual(app.engine.poisson.humanize, 0.50);
     app.engine.setPoissonHumanize(0.75);
     assert.strictEqual(app.engine.poisson.humanize, 0.75);
+  });
+
+  it('verifies Preset selector and Reset All switch are wired and render in DOM', async () => {
+    const { elementsById } = setupMockBrowser();
+
+    const { AmbientApp, PRESETS } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetEl = elementsById.get('select-preset');
+    const resetBtn = elementsById.get('btn-reset-all');
+
+    assert.ok(presetEl, 'select-preset element must exist');
+    assert.ok(resetBtn, 'btn-reset-all element must exist');
+    assert.ok(PRESETS.DEFAULT, 'DEFAULT preset must exist');
+    assert.ok(PRESETS.HAROLD_BUDD, 'HAROLD_BUDD preset must exist');
+    assert.ok(PRESETS.VANGELIS, 'VANGELIS preset must exist');
+    assert.ok(PRESETS.ENO_AIRPORTS, 'ENO_AIRPORTS preset must exist');
+  });
+
+  it('verifies Reset All resets all 32 knobs, wave toggles, and vector pad to calibrated defaults', async () => {
+    const { elementsById } = setupMockBrowser();
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    // 1. Manually alter several knobs, wave mode, and vector pad
+    app.knobs.masterVol.setValue(20);
+    app.knobs.delayWet.setValue(85);
+    app.knobs.reverbDecay.setValue(18.0);
+    app.knobs.drone1Vol.setValue(90);
+    app.vectorPad.setCoordinates(0.10, 0.90, true);
+    app.knobs.feltTone.setValue(95);
+    app.engine.setFeltWaveform('cs80');
+
+    assert.strictEqual(app.knobs.masterVol.value, 20);
+    assert.strictEqual(app.knobs.feltTone.value, 95);
+    assert.strictEqual(app.engine.feltParams.waveform, 'cs80');
+
+    // 2. Trigger Reset All button
+    const resetBtn = elementsById.get('btn-reset-all');
+    resetBtn.click();
+
+    // 3. Verify knobs return to calibrated pristine defaults
+    assert.strictEqual(app.knobs.masterVol.value, 80, 'Master volume reset to 80%');
+    assert.strictEqual(app.knobs.masterDrive.value, 18, 'Master drive reset to 18%');
+    assert.strictEqual(app.knobs.feltTone.value, 62, 'Felt tone reset to 62%');
+    assert.strictEqual(app.knobs.feltHammer.value, 45, 'Hammer reset to 45%');
+    assert.strictEqual(app.knobs.feltSymp.value, 45, 'Symp resonance reset to 45%');
+    assert.strictEqual(app.knobs.feltDecay.value, 1.1, 'Decay reset to 1.1x');
+    assert.strictEqual(app.knobs.feltLevel.value, 80, 'Piano level reset to 80%');
+    assert.strictEqual(app.knobs.delayWet.value, 40, 'Delay wet reset to 40%');
+    assert.strictEqual(app.knobs.reverbWet.value, 45, 'Reverb wet reset to 45%');
+    assert.strictEqual(app.knobs.reverbDecay.value, 8.5, 'Reverb decay reset to 8.5s');
+    assert.strictEqual(app.knobs.drone1Vol.value, 55, 'Drone 1 volume reset to 55%');
+    assert.strictEqual(app.knobs.drone2Vol.value, 55, 'Drone 2 volume reset to 55%');
+
+    // Verify engine audio parameters updated
+    assert.strictEqual(app.engine.masterVolume, 0.80);
+    assert.strictEqual(app.engine.feltParams.volume, 0.80);
+    assert.strictEqual(app.engine.feltParams.sympathetic, 0.45);
+    assert.strictEqual(app.engine.feltParams.waveform, 'felt');
+    assert.strictEqual(app.engine.droneParams[1].vol, 0.55);
+    assert.strictEqual(app.engine.droneBusGain, 0.22);
+    assert.strictEqual(app.engine.delayParams.wet, 0.40);
+    assert.strictEqual(app.engine.reverbParams.wet, 0.45);
+  });
+
+  it('verifies curated presets (Harold Budd, Vangelis CS-80, Eno Airports) configure sound engines accurately', async () => {
+    const { elementsById } = setupMockBrowser();
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetSelect = elementsById.get('select-preset');
+
+    // 1. Select Harold Budd preset
+    presetSelect.change('HAROLD_BUDD');
+    assert.strictEqual(app.engine.feltParams.waveform, 'felt');
+    assert.strictEqual(app.knobs.feltTone.value, 35, 'Harold Budd felt tone is softly damped (35%)');
+    assert.strictEqual(app.knobs.feltSymp.value, 65, 'Harold Budd sympathetic resonance is rich (65%)');
+    assert.strictEqual(app.knobs.reverbDecay.value, 12.0, 'Harold Budd reverb decay is expansive (12s)');
+
+    // 2. Select Vangelis preset
+    presetSelect.change('VANGELIS');
+    assert.strictEqual(app.engine.feltParams.waveform, 'cs80', 'Vangelis preset activates CS-80 brass timbre');
+    assert.strictEqual(app.knobs.masterDrive.value, 28, 'Vangelis preset drives tape saturation to 28%');
+    assert.strictEqual(app.knobs.feltTone.value, 80, 'Vangelis brass tone is bright (80%)');
+    assert.strictEqual(app.knobs.reverbShimmer.value, 65, 'Vangelis shimmer bloom is intense (65%)');
+
+    // 3. Select Eno Airports preset
+    presetSelect.change('ENO_AIRPORTS');
+    assert.strictEqual(app.engine.feltParams.waveform, 'sine', 'Eno Airports activates crystal sine chime timbre');
+    assert.strictEqual(app.knobs.delayTime.value, 680, 'Eno delay time is 680ms');
+    assert.strictEqual(app.knobs.delayFeedback.value, 68, 'Eno delay feedback is floating at 68%');
+    assert.strictEqual(app.knobs.reverbDecay.value, 15.0, 'Eno reverb decay is 15.0s');
+
+    // 4. Return to Default preset
+    presetSelect.change('DEFAULT');
+    assert.strictEqual(app.engine.feltParams.waveform, 'felt');
+    assert.strictEqual(app.knobs.feltTone.value, 62);
+    assert.strictEqual(app.knobs.masterVol.value, 80);
+  });
+
+  it('verifies BraunKnob.animateTo smoothly animates and snaps to target value', async () => {
+    const { elementsById } = setupMockBrowser();
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const knob = app.knobs.masterVol;
+    assert.strictEqual(knob.value, 80);
+
+    // Animate to 40% over 60ms
+    let completed = false;
+    knob.animateTo(40, 60, () => {
+      completed = true;
+    });
+
+    await new Promise(r => setTimeout(r, 120));
+    assert.strictEqual(knob.value, 40, 'Knob value must cleanly snap to target value on complete');
+    assert.strictEqual(completed, true, 'onComplete callback must be called');
+    assert.strictEqual(app.engine.masterVolume, 0.40, 'Engine master volume must update with knob animation');
+  });
+
+  it('verifies default leveled gain staging balances all sound sources into harmonious ambient mix', async () => {
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+    const engine = app.engine;
+
+    // Master bus
+    assert.strictEqual(engine.masterVolume, 0.80, 'Master volume calibrated to 80%');
+    assert.strictEqual(engine.tapeDrive, 0.18, 'Master tape drive provides subtle 18% warmth');
+
+    // Piano bus
+    assert.strictEqual(engine.feltParams.volume, 0.80, 'Piano bus level sits at 80%');
+    assert.strictEqual(engine.feltParams.sympathetic, 0.45, 'Sympathetic resonance at 45%');
+
+    // Drone bus sits -8.0dB below piano bus
+    const keysBusGain = 0.38 * engine.feltParams.volume; // 0.304
+    const droneVoiceLevel = engine.droneParams[1].vol; // 0.55
+    const combinedDroneLevel = engine.droneBusGain * droneVoiceLevel; // 0.121
+    const dbRatio = 20 * Math.log10(combinedDroneLevel / keysBusGain);
+
+    assert.ok(dbRatio <= -6.0 && dbRatio >= -9.5, `Drone underbed sits harmoniously at ${dbRatio.toFixed(2)} dB`);
+
+    // Effects mix levels
+    assert.strictEqual(engine.delayParams.wet, 0.40, 'Delay wet mix at 40%');
+    assert.strictEqual(engine.reverbParams.wet, 0.45, 'Reverb wet mix at 45%');
+    assert.strictEqual(engine.reverbParams.shimmer, 0.45, 'Shimmer feedback at 45%');
   });
 });

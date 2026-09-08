@@ -11,6 +11,201 @@ import { BraunPlaySurface } from './ui/keyboard.js';
 import { BraunVectorPad } from './ui/vector-pad.js';
 import { SCALES, NOTE_NAMES } from './generative/scales.js';
 
+export const PRESETS = {
+  DEFAULT: {
+    id: 'DEFAULT',
+    name: 'CALIBRATED DEFAULT',
+    scaleKey: 'BUDD_PENTATONIC',
+    pianoWave: 'felt',
+    drone1WaveA: 'saw',
+    drone1WaveB: 'warm',
+    drone1Snap: 'deep-tonic',
+    drone2WaveA: 'square',
+    drone2WaveB: 'triangle',
+    drone2Snap: 'perfect-5th',
+    vectorX: 0.50,
+    vectorY: 0.50,
+    knobs: {
+      masterVol: 80,
+      masterDrive: 18,
+      feltTone: 62,
+      feltHammer: 45,
+      feltSymp: 45,
+      feltDecay: 1.1,
+      feltLevel: 80,
+      drone1Beat: 0.35,
+      drone1Detune: 2.5,
+      drone1Fold: 45,
+      drone1Cutoff: 650,
+      drone1Res: 3.5,
+      drone1Lfo: 0.12,
+      drone1Vol: 55,
+      drone2Beat: 0.65,
+      drone2Detune: -3.2,
+      drone2Fold: 45,
+      drone2Cutoff: 850,
+      drone2Res: 3.5,
+      drone2Lfo: 0.12,
+      drone2Vol: 55,
+      delayTime: 460,
+      delayFeedback: 55,
+      delayWow: 45,
+      delayTone: 3600,
+      delayWet: 40,
+      reverbDecay: 8.5,
+      reverbDamping: 60,
+      reverbShimmer: 45,
+      reverbWet: 45,
+      poissonDensity: 12,
+      poissonHumanize: 50
+    }
+  },
+  HAROLD_BUDD: {
+    id: 'HAROLD_BUDD',
+    name: 'HAROLD BUDD · PAVILION',
+    scaleKey: 'BUDD_PENTATONIC',
+    pianoWave: 'felt',
+    drone1WaveA: 'sine',
+    drone1WaveB: 'warm',
+    drone1Snap: 'deep-tonic',
+    drone2WaveA: 'triangle',
+    drone2WaveB: 'sine',
+    drone2Snap: 'perfect-5th',
+    vectorX: 0.25,
+    vectorY: 0.60,
+    knobs: {
+      masterVol: 82,
+      masterDrive: 14,
+      feltTone: 35,
+      feltHammer: 55,
+      feltSymp: 65,
+      feltDecay: 1.6,
+      feltLevel: 85,
+      drone1Beat: 0.20,
+      drone1Detune: 1.8,
+      drone1Fold: 25,
+      drone1Cutoff: 480,
+      drone1Res: 2.2,
+      drone1Lfo: 0.08,
+      drone1Vol: 48,
+      drone2Beat: 0.40,
+      drone2Detune: -2.0,
+      drone2Fold: 20,
+      drone2Cutoff: 600,
+      drone2Res: 2.0,
+      drone2Lfo: 0.08,
+      drone2Vol: 45,
+      delayTime: 520,
+      delayFeedback: 60,
+      delayWow: 50,
+      delayTone: 2800,
+      delayWet: 45,
+      reverbDecay: 12.0,
+      reverbDamping: 70,
+      reverbShimmer: 35,
+      reverbWet: 55,
+      poissonDensity: 8,
+      poissonHumanize: 65
+    }
+  },
+  VANGELIS: {
+    id: 'VANGELIS',
+    name: 'VANGELIS · CS-80 BRASS',
+    scaleKey: 'AVALON_SPIRITED',
+    pianoWave: 'cs80',
+    drone1WaveA: 'saw',
+    drone1WaveB: 'saw',
+    drone1Snap: 'deep-tonic',
+    drone2WaveA: 'saw',
+    drone2WaveB: 'square',
+    drone2Snap: 'major-9th',
+    vectorX: 0.81,
+    vectorY: 0.70,
+    knobs: {
+      masterVol: 78,
+      masterDrive: 28,
+      feltTone: 80,
+      feltHammer: 20,
+      feltSymp: 30,
+      feltDecay: 1.8,
+      feltLevel: 82,
+      drone1Beat: 0.85,
+      drone1Detune: 4.5,
+      drone1Fold: 60,
+      drone1Cutoff: 1200,
+      drone1Res: 4.5,
+      drone1Lfo: 0.25,
+      drone1Vol: 55,
+      drone2Beat: 1.20,
+      drone2Detune: -5.0,
+      drone2Fold: 65,
+      drone2Cutoff: 1450,
+      drone2Res: 4.8,
+      drone2Lfo: 0.30,
+      drone2Vol: 55,
+      delayTime: 380,
+      delayFeedback: 52,
+      delayWow: 40,
+      delayTone: 4500,
+      delayWet: 45,
+      reverbDecay: 9.0,
+      reverbDamping: 45,
+      reverbShimmer: 65,
+      reverbWet: 50,
+      poissonDensity: 10,
+      poissonHumanize: 40
+    }
+  },
+  ENO_AIRPORTS: {
+    id: 'ENO_AIRPORTS',
+    name: 'ENO · MUSIC FOR AIRPORTS',
+    scaleKey: 'BUDD_PENTATONIC',
+    pianoWave: 'sine',
+    drone1WaveA: 'sine',
+    drone1WaveB: 'triangle',
+    drone1Snap: 'sub-bass',
+    drone2WaveA: 'sine',
+    drone2WaveB: 'triangle',
+    drone2Snap: 'beating-unison',
+    vectorX: 0.68,
+    vectorY: 0.75,
+    knobs: {
+      masterVol: 80,
+      masterDrive: 12,
+      feltTone: 70,
+      feltHammer: 35,
+      feltSymp: 55,
+      feltDecay: 2.0,
+      feltLevel: 75,
+      drone1Beat: 0.35,
+      drone1Detune: 1.5,
+      drone1Fold: 15,
+      drone1Cutoff: 550,
+      drone1Res: 2.0,
+      drone1Lfo: 0.05,
+      drone1Vol: 45,
+      drone2Beat: 0.35,
+      drone2Detune: -1.5,
+      drone2Fold: 15,
+      drone2Cutoff: 550,
+      drone2Res: 2.0,
+      drone2Lfo: 0.05,
+      drone2Vol: 45,
+      delayTime: 680,
+      delayFeedback: 68,
+      delayWow: 60,
+      delayTone: 5000,
+      delayWet: 50,
+      reverbDecay: 15.0,
+      reverbDamping: 55,
+      reverbShimmer: 55,
+      reverbWet: 58,
+      poissonDensity: 6,
+      poissonHumanize: 75
+    }
+  }
+};
+
 export class AmbientApp {
   constructor() {
     this.engine = new AudioEngine();
@@ -273,8 +468,173 @@ export class AmbientApp {
       });
     }
 
+    // Curated Sound Presets Selector
+    const presetSelect = document.getElementById('select-preset');
+    if (presetSelect) {
+      presetSelect.addEventListener('change', (e) => {
+        this.applyPreset(e.target.value, { animate: true, duration: 350 });
+      });
+    }
+
+    // Master Preset / Reset Switch (Dieter Rams "Reset All")
+    const resetBtn = document.getElementById('btn-reset-all');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        this.resetAllKnobs({ animate: true, duration: 350 });
+      });
+    }
+
     // Render All Rotary Knobs immediately
     this._buildKnobs();
+
+    // Calibrate all parameters, knobs, and vector pad to pristine default preset on boot
+    this.applyPreset('DEFAULT', { animate: false });
+  }
+
+  /**
+   * Apply a curated preset across all knobs, toggles, vector pad, and audio engine
+   * @param {string} presetKey - One of DEFAULT, HAROLD_BUDD, VANGELIS, ENO_AIRPORTS
+   * @param {Object} [options]
+   * @param {boolean} [options.animate=true]
+   * @param {number} [options.duration=300]
+   */
+  applyPreset(presetKey, { animate = true, duration = 300 } = {}) {
+    const preset = PRESETS[presetKey] || PRESETS.DEFAULT;
+
+    // 1. Update preset selector dropdown if out of sync
+    const presetSelect = document.getElementById('select-preset');
+    if (presetSelect && presetSelect.value !== preset.id) {
+      presetSelect.value = preset.id;
+    }
+
+    // 2. Animate all rotary knobs to preset values (or snap immediately if not animating or in test environment)
+    if (preset.knobs) {
+      const shouldAnimate = animate && duration > 0 && typeof requestAnimationFrame === 'function';
+      Object.entries(preset.knobs).forEach(([k, targetVal]) => {
+        const knob = this.knobs[k];
+        if (knob) {
+          if (shouldAnimate && typeof knob.animateTo === 'function') {
+            knob.animateTo(targetVal, duration);
+          } else {
+            knob.setValue(targetVal, true);
+          }
+        }
+      });
+
+      // Update engine immediately
+      if (preset.knobs.masterVol !== undefined) this.engine.setMasterVolume(preset.knobs.masterVol / 100);
+      if (preset.knobs.masterDrive !== undefined) this.engine.setTapeDrive(preset.knobs.masterDrive / 100);
+      if (preset.knobs.feltTone !== undefined) this.engine.setFeltTone(preset.knobs.feltTone / 100);
+      if (preset.knobs.feltHammer !== undefined) this.engine.setFeltHammer(preset.knobs.feltHammer / 100);
+      if (preset.knobs.feltSymp !== undefined) this.engine.setFeltSympathetic(preset.knobs.feltSymp / 100);
+      if (preset.knobs.feltDecay !== undefined) this.engine.setFeltDecay(preset.knobs.feltDecay);
+      if (preset.knobs.feltLevel !== undefined) this.engine.setFeltVolume(preset.knobs.feltLevel / 100);
+      if (preset.knobs.drone1Beat !== undefined) this.engine.setDroneBeating(1, preset.knobs.drone1Beat);
+      if (preset.knobs.drone1Detune !== undefined) this.engine.setDroneDetune(1, preset.knobs.drone1Detune);
+      if (preset.knobs.drone1Fold !== undefined) this.engine.setDroneWavefold(1, preset.knobs.drone1Fold);
+      if (preset.knobs.drone1Cutoff !== undefined) this.engine.setDroneCutoff(1, preset.knobs.drone1Cutoff);
+      if (preset.knobs.drone1Res !== undefined) this.engine.setDroneResonance(1, preset.knobs.drone1Res);
+      if (preset.knobs.drone1Lfo !== undefined) this.engine.setDroneLfo(1, preset.knobs.drone1Lfo);
+      if (preset.knobs.drone1Vol !== undefined) this.engine.setDroneVolume(1, preset.knobs.drone1Vol / 100);
+      if (preset.knobs.drone2Beat !== undefined) this.engine.setDroneBeating(2, preset.knobs.drone2Beat);
+      if (preset.knobs.drone2Detune !== undefined) this.engine.setDroneDetune(2, preset.knobs.drone2Detune);
+      if (preset.knobs.drone2Fold !== undefined) this.engine.setDroneWavefold(2, preset.knobs.drone2Fold);
+      if (preset.knobs.drone2Cutoff !== undefined) this.engine.setDroneCutoff(2, preset.knobs.drone2Cutoff);
+      if (preset.knobs.drone2Res !== undefined) this.engine.setDroneResonance(2, preset.knobs.drone2Res);
+      if (preset.knobs.drone2Lfo !== undefined) this.engine.setDroneLfo(2, preset.knobs.drone2Lfo);
+      if (preset.knobs.drone2Vol !== undefined) this.engine.setDroneVolume(2, preset.knobs.drone2Vol / 100);
+      if (preset.knobs.delayTime !== undefined) this.engine.setDelayTime(preset.knobs.delayTime / 1000);
+      if (preset.knobs.delayFeedback !== undefined) this.engine.setDelayFeedback(preset.knobs.delayFeedback / 100);
+      if (preset.knobs.delayWow !== undefined) this.engine.setDelayWow(preset.knobs.delayWow / 100);
+      if (preset.knobs.delayTone !== undefined) this.engine.setDelayTone(preset.knobs.delayTone);
+      if (preset.knobs.delayWet !== undefined) this.engine.setDelayWet(preset.knobs.delayWet / 100);
+      if (preset.knobs.reverbDecay !== undefined) this.engine.setReverbDecay(preset.knobs.reverbDecay);
+      if (preset.knobs.reverbDamping !== undefined) this.engine.setReverbDamping(preset.knobs.reverbDamping / 100);
+      if (preset.knobs.reverbShimmer !== undefined) this.engine.setReverbShimmer(preset.knobs.reverbShimmer / 100);
+      if (preset.knobs.reverbWet !== undefined) this.engine.setReverbWet(preset.knobs.reverbWet / 100);
+      if (preset.knobs.poissonDensity !== undefined && this.engine.poisson) this.engine.poisson.setParameters({ eventsPerMinute: preset.knobs.poissonDensity });
+      if (preset.knobs.poissonHumanize !== undefined) this.engine.setPoissonHumanize(preset.knobs.poissonHumanize / 100);
+    }
+
+    // 3. Timbre waveform button and engine setting
+    if (preset.pianoWave) {
+      const pianoWaveBtns = document.querySelectorAll('.piano-wave-btn');
+      pianoWaveBtns.forEach(btn => {
+        const match = btn.getAttribute('data-wave') === preset.pianoWave;
+        btn.classList.toggle('is-active', match);
+      });
+      this.engine.setFeltWaveform(preset.pianoWave);
+    }
+
+    // 4. Drone waveform toggles & snap tuning
+    [1, 2].forEach(id => {
+      const pfx = `drone${id}`;
+      const waveA = preset[`${pfx}WaveA`];
+      const waveB = preset[`${pfx}WaveB`];
+      if (waveA) {
+        const btnsA = document.querySelectorAll(`.${pfx}-wave-a`);
+        btnsA.forEach(btn => btn.classList.toggle('is-active', btn.getAttribute('data-wave') === waveA));
+        this.engine.setDroneWaveA(id, waveA);
+      }
+      if (waveB) {
+        const btnsB = document.querySelectorAll(`.${pfx}-wave-b`);
+        btnsB.forEach(btn => btn.classList.toggle('is-active', btn.getAttribute('data-wave') === waveB));
+        this.engine.setDroneWaveB(id, waveB);
+      }
+
+      const snap = preset[`${pfx}Snap`];
+      if (snap) {
+        const snapBtns = document.querySelectorAll(`.${pfx}-snap-btn`);
+        snapBtns.forEach(btn => btn.classList.toggle('is-active', btn.getAttribute('data-snap') === snap));
+        this.engine.setDroneSnap(id, snap);
+      }
+    });
+
+    // 5. Vector Pad Coordinates (sync visual coordinates without stomping calibrated preset knobs)
+    if (this.vectorPad && preset.vectorX !== undefined && preset.vectorY !== undefined) {
+      this.vectorPad.setCoordinates(preset.vectorX, preset.vectorY, false);
+    }
+
+    // 6. Scale Selector (optional)
+    if (preset.scaleKey && preset.scaleKey !== this.engine.currentScaleKey) {
+      const scaleSelect = document.getElementById('select-scale');
+      if (scaleSelect) scaleSelect.value = preset.scaleKey;
+      this.engine.setScale(preset.scaleKey, this.engine.rootPitchClass);
+      if (this.playSurface) this.playSurface.rebuildKeys();
+      this.updateLoopNotes();
+    }
+  }
+
+  /**
+   * Reset all rotary knobs, wave toggles, and vector pad to pristine calibrated defaults
+   * @param {Object} [options]
+   * @param {boolean} [options.animate=true]
+   * @param {number} [options.duration=350]
+   */
+  resetAllKnobs({ animate = true, duration = 350 } = {}) {
+    const resetBtn = document.getElementById('btn-reset-all');
+    if (resetBtn) {
+      resetBtn.classList.add('is-active');
+      setTimeout(() => resetBtn.classList.remove('is-active'), 350);
+    }
+
+    // Turn off reverb freeze if active
+    if (this.engine.reverbParams.freeze) {
+      const freezeBtn = document.getElementById('toggle-freeze');
+      if (freezeBtn) {
+        freezeBtn.click();
+      } else {
+        this.engine.toggleReverbFreeze();
+      }
+    }
+
+    // Apply DEFAULT calibrated preset
+    this.applyPreset('DEFAULT', { animate, duration });
+
+    // Center Vector Pad to origin without stomping calibrated preset knobs
+    if (this.vectorPad) {
+      this.vectorPad.resetToCenter(false);
+    }
   }
 
   _syncKnobsFromVectorPad(data) {
@@ -427,7 +787,7 @@ export class AmbientApp {
     this._knobsBuilt = true;
 
     // --- Master Knobs ---
-    new BraunKnob(document.getElementById('knob-master-vol'), {
+    this.knobs.masterVol = new BraunKnob(document.getElementById('knob-master-vol'), {
       label: 'MASTER',
       min: 0,
       max: 100,
@@ -437,7 +797,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setMasterVolume(v / 100)
     });
 
-    new BraunKnob(document.getElementById('knob-master-drive'), {
+    this.knobs.masterDrive = new BraunKnob(document.getElementById('knob-master-drive'), {
       label: 'TAPE DRIVE',
       min: 0,
       max: 100,
@@ -464,7 +824,7 @@ export class AmbientApp {
       }
     });
 
-    new BraunKnob(document.getElementById('knob-felt-hammer'), {
+    this.knobs.feltHammer = new BraunKnob(document.getElementById('knob-felt-hammer'), {
       label: 'HAMMER',
       min: 0,
       max: 100,
@@ -474,7 +834,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setFeltHammer(v / 100)
     });
 
-    new BraunKnob(document.getElementById('knob-felt-symp'), {
+    this.knobs.feltSymp = new BraunKnob(document.getElementById('knob-felt-symp'), {
       label: 'SYMP RESONANCE',
       min: 0,
       max: 100,
@@ -484,7 +844,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setFeltSympathetic(v / 100)
     });
 
-    new BraunKnob(document.getElementById('knob-felt-decay'), {
+    this.knobs.feltDecay = new BraunKnob(document.getElementById('knob-felt-decay'), {
       label: 'DECAY',
       min: 0.5,
       max: 2.5,
@@ -495,7 +855,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setFeltDecay(v)
     });
 
-    new BraunKnob(document.getElementById('knob-felt-level'), {
+    this.knobs.feltLevel = new BraunKnob(document.getElementById('knob-felt-level'), {
       label: 'PIANO LVL',
       min: 0,
       max: 100,
@@ -535,7 +895,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setDelayFeedback(v / 100)
     });
 
-    new BraunKnob(document.getElementById('knob-delay-wow'), {
+    this.knobs.delayWow = new BraunKnob(document.getElementById('knob-delay-wow'), {
       label: 'WOW/FLUTTER',
       min: 0,
       max: 100,
@@ -545,7 +905,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setDelayWow(v / 100)
     });
 
-    new BraunKnob(document.getElementById('knob-delay-tone'), {
+    this.knobs.delayTone = new BraunKnob(document.getElementById('knob-delay-tone'), {
       label: 'TAPE TONE',
       min: 1000,
       max: 10000,
@@ -567,7 +927,7 @@ export class AmbientApp {
     });
 
     // --- Shimmer Diffusion Reverb Knobs ---
-    new BraunKnob(document.getElementById('knob-reverb-decay'), {
+    this.knobs.reverbDecay = new BraunKnob(document.getElementById('knob-reverb-decay'), {
       label: 'DIFFUSION',
       min: 1.0,
       max: 20.0,
@@ -578,7 +938,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setReverbDecay(v)
     });
 
-    new BraunKnob(document.getElementById('knob-reverb-damping'), {
+    this.knobs.reverbDamping = new BraunKnob(document.getElementById('knob-reverb-damping'), {
       label: 'AIR DAMP',
       min: 10,
       max: 95,
@@ -615,7 +975,7 @@ export class AmbientApp {
     });
 
     // --- Generative Poisson Density & Humanize Knobs ---
-    new BraunKnob(document.getElementById('knob-poisson-density'), {
+    this.knobs.poissonDensity = new BraunKnob(document.getElementById('knob-poisson-density'), {
       label: 'NOTE RATE',
       min: 4,
       max: 30,
@@ -630,7 +990,7 @@ export class AmbientApp {
       }
     });
 
-    new BraunKnob(document.getElementById('knob-poisson-humanize'), {
+    this.knobs.poissonHumanize = new BraunKnob(document.getElementById('knob-poisson-humanize'), {
       label: 'HUMANIZE',
       min: 0,
       max: 100,
@@ -694,7 +1054,7 @@ export class AmbientApp {
     });
 
     // Fine Detune Cents
-    new BraunKnob(document.getElementById(`knob-${prefix}-detune`), {
+    this.knobs[`${prefix}Detune`] = new BraunKnob(document.getElementById(`knob-${prefix}-detune`), {
       label: 'DETUNE',
       min: -35,
       max: 35,
@@ -707,7 +1067,7 @@ export class AmbientApp {
     });
 
     // Wavefold
-    new BraunKnob(document.getElementById(`knob-${prefix}-fold`), {
+    this.knobs[`${prefix}Fold`] = new BraunKnob(document.getElementById(`knob-${prefix}-fold`), {
       label: 'WAVEFOLD',
       min: 0,
       max: 100,
@@ -718,7 +1078,7 @@ export class AmbientApp {
     });
 
     // Cutoff
-    new BraunKnob(document.getElementById(`knob-${prefix}-cutoff`), {
+    this.knobs[`${prefix}Cutoff`] = new BraunKnob(document.getElementById(`knob-${prefix}-cutoff`), {
       label: 'LADDER LPF',
       min: 50,
       max: 8000,
@@ -730,7 +1090,7 @@ export class AmbientApp {
     });
 
     // Resonance
-    new BraunKnob(document.getElementById(`knob-${prefix}-res`), {
+    this.knobs[`${prefix}Res`] = new BraunKnob(document.getElementById(`knob-${prefix}-res`), {
       label: 'RESONANCE',
       min: 0.5,
       max: 10.0,
@@ -742,7 +1102,7 @@ export class AmbientApp {
     });
 
     // LFO Drift
-    new BraunKnob(document.getElementById(`knob-${prefix}-lfo`), {
+    this.knobs[`${prefix}Lfo`] = new BraunKnob(document.getElementById(`knob-${prefix}-lfo`), {
       label: 'LFO DRIFT',
       min: 0.02,
       max: 1.5,

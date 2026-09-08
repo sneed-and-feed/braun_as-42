@@ -514,7 +514,8 @@ export class FeltPianoVoice {
       const sustainLevel = Math.max(0.0002, peakGain * 0.4);
       const sustainTarget = Math.max(noteStartTime + attackTime + 0.5, attackTarget + 0.05);
       this.voiceGain.gain.exponentialRampToValueAtTime(sustainLevel, sustainTarget);
-      const decayEndTarget = Math.max(noteStartTime + attackTime + baseDecay + releaseTime, sustainTarget + 0.1);
+      const stringDecay = Math.max(baseDecay, (duration || 3.5) * decayMultiplier);
+      const decayEndTarget = Math.max(noteStartTime + attackTime + stringDecay + releaseTime, sustainTarget + 0.1);
       this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
     }
 
@@ -522,7 +523,7 @@ export class FeltPianoVoice {
     this.startTime = noteStartTime;
 
     // Mark inactive when done and update polyphonic headroom
-    const noteTotalDuration = isCS80 ? (Math.max(duration || 3.5, 3.5) * decayMultiplier) : baseDecay;
+    const noteTotalDuration = isCS80 ? (Math.max(duration || 3.5, 3.5) * decayMultiplier) : Math.max(baseDecay, (duration || 3.5) * decayMultiplier);
     const totalLifetime = (noteTotalDuration + releaseTime + (isStealing ? declickRampTime : 0)) * 1000;
     setTimeout(() => {
       if (this.startTime === noteStartTime) {

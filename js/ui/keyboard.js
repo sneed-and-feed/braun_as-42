@@ -86,17 +86,36 @@ export class BraunPlaySurface {
           clearPointerTimer = null;
         }
         if (activeVoice) {
-          if (typeof activeVoice.release === 'function') activeVoice.release();
+          if (typeof activeVoice.release === 'function') {
+            activeVoice.release();
+          } else if (activeVoice && typeof activeVoice.then === 'function') {
+            activeVoice.then(v => { if (v && typeof v.release === 'function') v.release(); });
+          }
           activeVoice = null;
         }
+        try {
+          if (keyEl.setPointerCapture && e.pointerId != null) {
+            keyEl.setPointerCapture(e.pointerId);
+          }
+        } catch (err) {}
         activeVoice = triggerStrike(e.clientY, keyEl.getBoundingClientRect(), true);
       });
 
-      keyEl.addEventListener('pointerup', () => {
+      keyEl.addEventListener('pointerup', (e) => {
+        try {
+          if (keyEl.releasePointerCapture && e.pointerId != null) {
+            keyEl.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {}
         handleKeyRelease();
       });
 
-      keyEl.addEventListener('pointercancel', () => {
+      keyEl.addEventListener('pointercancel', (e) => {
+        try {
+          if (keyEl.releasePointerCapture && e.pointerId != null) {
+            keyEl.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {}
         handleKeyRelease();
       });
 
@@ -253,10 +272,10 @@ export class BraunPlaySurface {
   /**
    * Play single note with visual feedback
    */
-  async playNote(freq, midi, velocity = 0.6, duration = 3.5) {
+  playNote(freq, midi, velocity = 0.6, duration = 3.5) {
     this.flashKey(midi);
     if (this.onPlay) {
-      await this.onPlay(freq, midi, velocity);
+      this.onPlay(freq, midi, velocity);
     }
     if (!this.engine || !this.engine.isInitialized || !this.engine.feltPiano) return null;
 
@@ -381,15 +400,34 @@ export class BraunPlaySurface {
       'KeyZ': 11, 'KeyX': 12, 'KeyC': 13, 'KeyV': 14
     };
 
+    const chordKeyMap = {
+      'Digit1': 0, 'Digit2': 1, 'Digit3': 2, 'Digit4': 3, 'Digit5': 4, 'Digit6': 5,
+      'Digit7': 6, 'Digit8': 7, 'Digit9': 8, 'Digit0': 9,
+      'Minus': 10, 'Equal': 11
+    };
+
+    const getChordIndex = (e) => {
+      if (chordKeyMap[e.code] !== undefined) return chordKeyMap[e.code];
+      if (e.key >= '1' && e.key <= '9') return parseInt(e.key, 10) - 1;
+      if (e.key === '0') return 9;
+      if (e.key === '-' || e.key === '_') return 10;
+      if (e.key === '=' || e.key === '+') return 11;
+      return null;
+    };
+
+    this.activeHeldKeys = new Map();
+    this.activeHeldChords = new Map();
+
     if (typeof window === 'undefined') return;
 
     window.addEventListener('keydown', (e) => {
       // Ignore if user is in an input field
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
 
       // Prevent key repeat machine-gun note bursts
       if (e.repeat) return;
 
+      // Playable chime keys with continuous hold sustain
       if (keyMap[e.code] !== undefined) {
         const keys = Array.from(this.keyElements.values());
         const keyEl = keys[keyMap[e.code]];
@@ -397,36 +435,26 @@ export class BraunPlaySurface {
           e.preventDefault();
           const freq = parseFloat(keyEl.getAttribute('data-freq'));
           const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
-          this.playNote(freq, midi, 0.65);
+          keyEl.classList.add('is-active');
+          const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0);
+          this.activeHeldKeys.set(e.code, { keyEl, voiceOrPromise });
         }
+        return;
       }
 
-      // 1 to 9, 0, and - triggers chord macros
-      if (e.key >= '1' && e.key <= '9') {
-        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
-        const idx = parseInt(e.key, 10) - 1;
-        if (chordBtns[idx]) {
+      // Chord clusters with continuous hold sustain
+      const chordIdx = getChordIndex(e);
+      if (chordIdx !== null) {
+        const chordBtns = this.chordsContainer ? this.chordsContainer.querySelectorAll('.braun-chord-macro-btn') : [];
+        const btn = chordBtns[chordIdx];
+        if (btn) {
           e.preventDefault();
-          chordBtns[idx].click();
+          const voicingId = btn.getAttribute('data-chord');
+          btn.classList.add('is-active');
+          const session = this.startChord(voicingId, true);
+          this.activeHeldChords.set(e.code, { btn, session });
         }
-      } else if (e.key === '0') {
-        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
-        if (chordBtns[9]) {
-          e.preventDefault();
-          chordBtns[9].click();
-        }
-      } else if (e.key === '-' || e.key === '_') {
-        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
-        if (chordBtns[10]) {
-          e.preventDefault();
-          chordBtns[10].click();
-        }
-      } else if (e.key === '=' || e.key === '+') {
-        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
-        if (chordBtns[11]) {
-          e.preventDefault();
-          chordBtns[11].click();
-        }
+        return;
       }
 
       // Spacebar toggles freeze
@@ -435,6 +463,52 @@ export class BraunPlaySurface {
         const freezeToggle = document.getElementById('toggle-freeze');
         if (freezeToggle) freezeToggle.click();
       }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+
+      if (this.activeHeldKeys.has(e.code)) {
+        const { keyEl, voiceOrPromise } = this.activeHeldKeys.get(e.code);
+        if (keyEl) keyEl.classList.remove('is-active');
+        if (voiceOrPromise) {
+          if (typeof voiceOrPromise.release === 'function') {
+            voiceOrPromise.release();
+          } else if (typeof voiceOrPromise.then === 'function') {
+            voiceOrPromise.then(v => {
+              if (v && typeof v.release === 'function') v.release();
+            });
+          }
+        }
+        this.activeHeldKeys.delete(e.code);
+      }
+
+      const chordIdx = getChordIndex(e);
+      if (chordIdx !== null && this.activeHeldChords.has(e.code)) {
+        const { btn, session } = this.activeHeldChords.get(e.code);
+        if (btn) btn.classList.remove('is-active');
+        if (session) {
+          this.stopChordSession(session);
+        }
+        this.activeHeldChords.delete(e.code);
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      this.activeHeldKeys.forEach(({ keyEl, voiceOrPromise }) => {
+        if (keyEl) keyEl.classList.remove('is-active');
+        if (voiceOrPromise) {
+          if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
+          else if (typeof voiceOrPromise.then === 'function') voiceOrPromise.then(v => v?.release?.());
+        }
+      });
+      this.activeHeldKeys.clear();
+
+      this.activeHeldChords.forEach(({ btn, session }) => {
+        if (btn) btn.classList.remove('is-active');
+        if (session) this.stopChordSession(session);
+      });
+      this.activeHeldChords.clear();
     });
   }
 }

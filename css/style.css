@@ -195,6 +195,50 @@ body {
   50% { opacity: 0.75; }
 }
 
+/* --- Preset / Reset Button --- */
+.braun-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--bg-panel-inset);
+  border: 1px solid var(--border-line);
+  border-radius: 3px;
+  padding: 6px 12px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.braun-reset-btn:hover {
+  border-color: var(--text-muted);
+  background-color: var(--bg-knob-track);
+}
+
+.braun-reset-btn:active,
+.braun-reset-btn.is-active {
+  background-color: var(--braun-orange);
+  color: #FFF;
+  border-color: var(--braun-orange);
+  box-shadow: 0 0 10px var(--braun-orange-glow);
+}
+
+.braun-reset-icon {
+  font-size: 13px;
+  line-height: 1;
+  display: inline-block;
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.braun-reset-btn:active .braun-reset-icon,
+.braun-reset-btn.is-active .braun-reset-icon {
+  transform: rotate(-360deg);
+}
+
 /* --- Theme Toggle & Selects --- */
 .braun-select-group {
   display: flex;

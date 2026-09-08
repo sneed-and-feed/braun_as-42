@@ -294,12 +294,12 @@ export class BraunVectorPad {
     }
   }
 
-  resetToCenter() {
+  resetToCenter(updateEngine = true) {
     if (this._animId) {
       cancelAnimationFrame(this._animId);
       this._animId = null;
     }
-    this.setCoordinates(this.defaultX, this.defaultY, true);
+    this.setCoordinates(this.defaultX, this.defaultY, updateEngine);
   }
 
   setCoordinates(x, y, updateEngine = true) {
