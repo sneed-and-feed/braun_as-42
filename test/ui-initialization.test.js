@@ -129,14 +129,32 @@ class MockElement {
   }
 
   dispatchEvent(event) {
+    if (!event.target) event.target = this;
     const handlers = this.listeners.get(event.type) || [];
     for (const h of handlers) {
       h.call(this, event);
+    }
+    if (!event._propagationStopped && this.parentElement && typeof this.parentElement.dispatchEvent === 'function') {
+      this.parentElement.dispatchEvent(event);
     }
   }
 
   click() {
     this.dispatchEvent({ type: 'click', target: this, preventDefault: () => {} });
+  }
+
+  focus() {
+    if (typeof globalThis.document !== 'undefined') {
+      globalThis.document.activeElement = this;
+    }
+    this.dispatchEvent({ type: 'focus', target: this, preventDefault: () => {} });
+  }
+
+  blur() {
+    if (typeof globalThis.document !== 'undefined' && globalThis.document.activeElement === this) {
+      globalThis.document.activeElement = globalThis.document.body || null;
+    }
+    this.dispatchEvent({ type: 'blur', target: this, preventDefault: () => {} });
   }
 
   change(newVal) {
@@ -369,15 +387,29 @@ function setupMockBrowser() {
 
   const mockDocument = {
     body,
+    activeElement: body,
     readyState: 'complete',
     getElementById: (id) => elementsById.get(id) || body.querySelector('#' + id) || null,
     createElement: (tag) => new MockElement(tag),
     querySelectorAll: (sel) => {
-      if (sel.startsWith('.')) {
-        const cls = sel.slice(1);
-        return body.querySelectorAll('.' + cls);
+      const results = [];
+      const parts = sel.split(',').map(s => s.trim());
+      for (const part of parts) {
+        if (part.startsWith('.')) {
+          results.push(...body.querySelectorAll(part));
+        } else if (part.startsWith('#')) {
+          const el = body.querySelector(part) || elementsById.get(part.slice(1));
+          if (el) results.push(el);
+        } else {
+          for (const el of elementsById.values()) {
+            if (el.tagName.toLowerCase() === part.toLowerCase()) {
+              results.push(el);
+            }
+          }
+          results.push(...body.querySelectorAll(part));
+        }
       }
-      return [];
+      return Array.from(new Set(results));
     },
     addEventListener: () => {}
   };
@@ -1104,5 +1136,237 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     assert.strictEqual(releasedChord, true, 'Held pointer chord session voices must be released on window blur');
     assert.strictEqual(app.playSurface.activePointerVoices.size, 0, 'Pointer voices set must be cleared');
     assert.strictEqual(app.playSurface.activePointerChordSessions.size, 0, 'Pointer chord sessions set must be cleared');
+  });
+
+  it('verifies dropdown selectors release focus immediately on user selection/change and click', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetSelect = elementsById.get('select-preset');
+    const scaleSelect = elementsById.get('select-scale');
+    const rootSelect = elementsById.get('select-root');
+    const themeSelect = elementsById.get('select-theme');
+    const tuningSelect = elementsById.get('select-tuning');
+
+    // 1. Change on select-preset releases focus
+    presetSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, presetSelect, 'presetSelect must be focused before change');
+    presetSelect.change('HAROLD_BUDD');
+    assert.notStrictEqual(globalThis.document.activeElement, presetSelect, 'presetSelect must release focus after change');
+
+    // 2. Change on select-scale releases focus
+    scaleSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, scaleSelect, 'scaleSelect must be focused before change');
+    scaleSelect.change('AVALON_SPIRITED');
+    assert.notStrictEqual(globalThis.document.activeElement, scaleSelect, 'scaleSelect must release focus after change');
+
+    // 3. Change on select-root releases focus
+    rootSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, rootSelect, 'rootSelect must be focused before change');
+    rootSelect.change('2');
+    assert.notStrictEqual(globalThis.document.activeElement, rootSelect, 'rootSelect must release focus after change');
+
+    // 4. Change on select-theme releases focus
+    themeSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, themeSelect, 'themeSelect must be focused before change');
+    themeSelect.change('dark');
+    assert.notStrictEqual(globalThis.document.activeElement, themeSelect, 'themeSelect must release focus after change');
+
+    // 5. Change on select-tuning releases focus
+    tuningSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, tuningSelect, 'tuningSelect must be focused before change');
+    tuningSelect.change('432');
+    assert.notStrictEqual(globalThis.document.activeElement, tuningSelect, 'tuningSelect must release focus after change');
+
+    // 6. Click on option releases focus
+    presetSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, presetSelect);
+    const opt = new MockElement('option');
+    presetSelect.appendChild(opt);
+    opt.dispatchEvent({ type: 'click', target: opt, preventDefault: () => {} });
+    assert.notStrictEqual(globalThis.document.activeElement, presetSelect, 'Clicking option must release select focus');
+  });
+
+  it('verifies pressing a musical note key while preset selector is focused blurs selector, prevents type-ahead, and plays note', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetSelect = elementsById.get('select-preset');
+    assert.ok(presetSelect, 'select-preset element must exist');
+    const initialPresetValue = presetSelect.value;
+
+    // Focus preset selector
+    presetSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, presetSelect, 'preset selector must have active focus');
+
+    let playedFreq = null;
+    let playedMidi = null;
+    let voiceReleased = false;
+    const origPlayNote = app.playSurface.playNote.bind(app.playSurface);
+    app.playSurface.playNote = (freq, midi, vel, dur, isHeld) => {
+      playedFreq = freq;
+      playedMidi = midi;
+      return {
+        release: () => { voiceReleased = true; }
+      };
+    };
+
+    let prevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'KeyA',
+      key: 'a',
+      repeat: false,
+      target: presetSelect,
+      preventDefault: () => { prevented = true; }
+    });
+
+    // Verify type-ahead is prevented
+    assert.strictEqual(prevented, true, 'preventDefault must be called to block native select type-ahead');
+
+    // Verify selector is blurred and focus returns to body/document
+    assert.notStrictEqual(globalThis.document.activeElement, presetSelect, 'preset selector must be blurred immediately on note keystroke');
+
+    // Verify note sounded immediately
+    assert.ok(playedFreq !== null, 'Musical note frequency must sound immediately on keydown');
+    assert.ok(playedMidi !== null, 'Musical note MIDI pitch must be registered');
+    assert.strictEqual(presetSelect.value, initialPresetValue, 'Preset selection must not change due to type-ahead');
+
+    // Verify keyup releases note cleanly
+    window.dispatchEvent({
+      type: 'keyup',
+      code: 'KeyA',
+      key: 'a',
+      target: presetSelect
+    });
+    assert.strictEqual(voiceReleased, true, 'Releasing key must release sounding voice');
+
+    app.playSurface.playNote = origPlayNote;
+  });
+
+  it('verifies pressing chord triggers and freeze hotkey while a selector is focused triggers audio and removes focus', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const scaleSelect = elementsById.get('select-scale');
+    scaleSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, scaleSelect);
+
+    let chordTriggered = false;
+    let chordStopped = false;
+    const origStartChord = app.playSurface.startChord.bind(app.playSurface);
+    const origStopChord = app.playSurface.stopChordSession.bind(app.playSurface);
+    app.playSurface.startChord = (voicingId, hold) => {
+      chordTriggered = true;
+      return { voicingId, isReleased: false, timers: [], voices: [] };
+    };
+    app.playSurface.stopChordSession = (session) => {
+      chordStopped = true;
+    };
+
+    let chordPrevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'Digit1',
+      key: '1',
+      repeat: false,
+      target: scaleSelect,
+      preventDefault: () => { chordPrevented = true; }
+    });
+
+    assert.strictEqual(chordPrevented, true, 'preventDefault must be called on chord trigger');
+    assert.notStrictEqual(globalThis.document.activeElement, scaleSelect, 'scaleSelect must be blurred on chord trigger');
+    assert.strictEqual(chordTriggered, true, 'Chord must trigger immediately on digit keystroke');
+
+    window.dispatchEvent({
+      type: 'keyup',
+      code: 'Digit1',
+      key: '1',
+      target: scaleSelect
+    });
+    assert.strictEqual(chordStopped, true, 'Chord must be stopped on keyup');
+
+    // Freeze hotkey (Spacebar)
+    const presetSelect = elementsById.get('select-preset');
+    presetSelect.focus();
+    assert.strictEqual(globalThis.document.activeElement, presetSelect);
+
+    const freezeBtn = elementsById.get('toggle-freeze');
+    let freezeClicked = false;
+    freezeBtn.addEventListener('click', () => { freezeClicked = true; });
+
+    let freezePrevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'Space',
+      key: ' ',
+      repeat: false,
+      target: presetSelect,
+      preventDefault: () => { freezePrevented = true; }
+    });
+
+    assert.strictEqual(freezePrevented, true, 'Spacebar must be prevented from scrolling/toggling select');
+    assert.notStrictEqual(globalThis.document.activeElement, presetSelect, 'presetSelect must be blurred on spacebar');
+    assert.strictEqual(freezeClicked, true, 'Freeze toggle must be clicked on spacebar');
+
+    app.playSurface.startChord = origStartChord;
+    app.playSurface.stopChordSession = origStopChord;
+  });
+
+  it('verifies non-playable keys (ArrowDown, Tab) on select do not prevent default and preserve navigation', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetSelect = elementsById.get('select-preset');
+    presetSelect.focus();
+
+    let arrowPrevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'ArrowDown',
+      key: 'ArrowDown',
+      repeat: false,
+      target: presetSelect,
+      preventDefault: () => { arrowPrevented = true; }
+    });
+
+    assert.strictEqual(arrowPrevented, false, 'ArrowDown must NOT be prevented on select element');
+    assert.strictEqual(globalThis.document.activeElement, presetSelect, 'ArrowDown must NOT blur select element');
+  });
+
+  it('verifies true text inputs (knob direct entry) retain focus and allow typing without triggering notes', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const textInput = new MockElement('input');
+    textInput.setAttribute('type', 'text');
+    textInput.classList.add('braun-knob-direct-input');
+    textInput.focus();
+    assert.strictEqual(globalThis.document.activeElement, textInput);
+
+    let notePlayed = false;
+    const origPlayNote = app.playSurface.playNote.bind(app.playSurface);
+    app.playSurface.playNote = () => { notePlayed = true; };
+
+    let keyPrevented = false;
+    window.dispatchEvent({
+      type: 'keydown',
+      code: 'KeyA',
+      key: 'a',
+      repeat: false,
+      target: textInput,
+      preventDefault: () => { keyPrevented = true; }
+    });
+
+    assert.strictEqual(keyPrevented, false, 'Typing in text input must NOT be prevented');
+    assert.strictEqual(notePlayed, false, 'Musical note must NOT play while typing in text input');
+    assert.strictEqual(globalThis.document.activeElement, textInput, 'Text input must retain focus while user types');
+
+    app.playSurface.playNote = origPlayNote;
   });
 });

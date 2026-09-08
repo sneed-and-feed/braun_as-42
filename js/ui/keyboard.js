@@ -6,6 +6,62 @@
 
 import { getScaleDegreesInOctaves, CHORD_VOICINGS, getChordFrequencies, SCALES } from '../generative/scales.js';
 
+export const CHIME_KEY_MAP = {
+  'KeyA': 0, 'KeyS': 1, 'KeyD': 2, 'KeyF': 3,
+  'KeyG': 4, 'KeyH': 5, 'KeyJ': 6, 'KeyK': 7,
+  'KeyL': 8, 'Semicolon': 9, 'Quote': 10,
+  'KeyZ': 11, 'KeyX': 12, 'KeyC': 13, 'KeyV': 14
+};
+
+export const CHIME_CHAR_MAP = {
+  'a': 0, 's': 1, 'd': 2, 'f': 3, 'g': 4, 'h': 5, 'j': 6, 'k': 7,
+  'l': 8, ';': 9, "'": 10, 'z': 11, 'x': 12, 'c': 13, 'v': 14
+};
+
+export const CHORD_KEY_MAP = {
+  'Digit1': 0, 'Digit2': 1, 'Digit3': 2, 'Digit4': 3, 'Digit5': 4, 'Digit6': 5,
+  'Digit7': 6, 'Digit8': 7, 'Digit9': 8, 'Digit0': 9,
+  'Minus': 10, 'Equal': 11
+};
+
+export function getChimeKeyIndex(e) {
+  if (!e) return null;
+  if (e.code && CHIME_KEY_MAP[e.code] !== undefined) return CHIME_KEY_MAP[e.code];
+  const lower = e.key ? e.key.toLowerCase() : '';
+  return CHIME_CHAR_MAP[lower] !== undefined ? CHIME_CHAR_MAP[lower] : null;
+}
+
+export function getChordKeyIndex(e) {
+  if (!e) return null;
+  if (e.code && CHORD_KEY_MAP[e.code] !== undefined) return CHORD_KEY_MAP[e.code];
+  if (e.key >= '1' && e.key <= '9') return parseInt(e.key, 10) - 1;
+  if (e.key === '0') return 9;
+  if (e.key === '-' || e.key === '_') return 10;
+  if (e.key === '=' || e.key === '+') return 11;
+  return null;
+}
+
+export function isFreezeHotkey(e) {
+  if (!e) return false;
+  return e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar';
+}
+
+export function isPlayableSynthesizerKey(e) {
+  return getChimeKeyIndex(e) !== null || getChordKeyIndex(e) !== null || isFreezeHotkey(e);
+}
+
+export function isTextInputElement(el) {
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName.toUpperCase();
+  if (tag === 'TEXTAREA') return true;
+  if (tag === 'INPUT') {
+    const type = (el.type || 'text').toLowerCase();
+    return !['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file', 'image'].includes(type);
+  }
+  if (el.isContentEditable) return true;
+  return false;
+}
+
 export class BraunPlaySurface {
   /**
    * @param {HTMLElement} stripContainer
@@ -553,37 +609,8 @@ export class BraunPlaySurface {
   }
 
   _attachKeyboardShortcuts() {
-    const keyMap = {
-      'KeyA': 0, 'KeyS': 1, 'KeyD': 2, 'KeyF': 3,
-      'KeyG': 4, 'KeyH': 5, 'KeyJ': 6, 'KeyK': 7,
-      'KeyL': 8, 'Semicolon': 9, 'Quote': 10,
-      'KeyZ': 11, 'KeyX': 12, 'KeyC': 13, 'KeyV': 14
-    };
-
-    const chordKeyMap = {
-      'Digit1': 0, 'Digit2': 1, 'Digit3': 2, 'Digit4': 3, 'Digit5': 4, 'Digit6': 5,
-      'Digit7': 6, 'Digit8': 7, 'Digit9': 8, 'Digit0': 9,
-      'Minus': 10, 'Equal': 11
-    };
-
-    const getKeyIndex = (e) => {
-      if (keyMap[e.code] !== undefined) return keyMap[e.code];
-      const charMap = {
-        'a': 0, 's': 1, 'd': 2, 'f': 3, 'g': 4, 'h': 5, 'j': 6, 'k': 7,
-        'l': 8, ';': 9, "'": 10, 'z': 11, 'x': 12, 'c': 13, 'v': 14
-      };
-      const lower = e.key ? e.key.toLowerCase() : '';
-      return charMap[lower] !== undefined ? charMap[lower] : null;
-    };
-
-    const getChordIndex = (e) => {
-      if (chordKeyMap[e.code] !== undefined) return chordKeyMap[e.code];
-      if (e.key >= '1' && e.key <= '9') return parseInt(e.key, 10) - 1;
-      if (e.key === '0') return 9;
-      if (e.key === '-' || e.key === '_') return 10;
-      if (e.key === '=' || e.key === '+') return 11;
-      return null;
-    };
+    const getKeyIndex = (e) => getChimeKeyIndex(e);
+    const getChordIndex = (e) => getChordKeyIndex(e);
 
     this.activeHeldKeys = new Map();
     this.activeHeldChords = new Map();
@@ -591,17 +618,46 @@ export class BraunPlaySurface {
     if (typeof window === 'undefined') return;
 
     window.addEventListener('keydown', (e) => {
-      // Ignore if user is in an input field
-      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+      // 1. Ignore if user is in a true text input field (e.g. knob direct numerical input)
+      if (isTextInputElement(e.target) || (typeof document !== 'undefined' && isTextInputElement(document.activeElement))) {
+        return;
+      }
 
       const chimeIdx = getKeyIndex(e);
       const chordIdx = getChordIndex(e);
+      const isFreeze = isFreezeHotkey(e);
+      const isPlayable = (chimeIdx !== null || chordIdx !== null || isFreeze);
 
-      // Prevent key repeat machine-gun bursts, but preventDefault to stop browser hotkeys/scrolling
-      if (e.repeat) {
-        if (chimeIdx !== null || chordIdx !== null || e.code === 'Space') {
-          e.preventDefault();
+      // If not a playable synthesizer key or hotkey, allow native input/select behavior (arrow navigation, tab, enter)
+      if (!isPlayable) {
+        if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT')) return;
+        if (typeof document !== 'undefined' && document.activeElement &&
+            (document.activeElement.tagName === 'SELECT' || document.activeElement.tagName === 'INPUT')) {
+          return;
         }
+        return;
+      }
+
+      // 2. Playable note key, chord trigger, or hotkey was pressed!
+      // If the active element or target is a <select>, button, or non-text-input,
+      // release focus immediately and prevent default type-ahead navigation / scrolling / clicking.
+      if (typeof document !== 'undefined' && document.activeElement && typeof document.activeElement.blur === 'function') {
+        if (document.activeElement !== document.body) {
+          document.activeElement.blur();
+        }
+      }
+      if (e.target && typeof e.target.blur === 'function') {
+        if (typeof document === 'undefined' || e.target !== document.body) {
+          e.target.blur();
+        }
+      }
+
+      if (typeof e.preventDefault === 'function') {
+        e.preventDefault();
+      }
+
+      // Prevent key repeat machine-gun bursts
+      if (e.repeat) {
         return;
       }
 
@@ -610,7 +666,6 @@ export class BraunPlaySurface {
         const keys = Array.from(this.keyElements.values());
         const keyEl = keys[chimeIdx];
         if (keyEl) {
-          e.preventDefault();
           const freq = parseFloat(keyEl.getAttribute('data-freq'));
           const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
           keyEl._isHeld = true;
@@ -628,7 +683,6 @@ export class BraunPlaySurface {
         const chordBtns = this.chordsContainer ? this.chordsContainer.querySelectorAll('.braun-chord-macro-btn') : [];
         const btn = chordBtns[chordIdx];
         if (btn) {
-          e.preventDefault();
           const voicingId = btn.getAttribute('data-chord');
           btn._isHeld = true;
           btn.classList.add('is-active');
@@ -640,15 +694,24 @@ export class BraunPlaySurface {
       }
 
       // Spacebar toggles freeze
-      if (e.code === 'Space') {
-        e.preventDefault();
-        const freezeToggle = document.getElementById('toggle-freeze');
-        if (freezeToggle) freezeToggle.click();
+      if (isFreeze) {
+        const freezeToggle = (typeof document !== 'undefined') ? document.getElementById('toggle-freeze') : null;
+        if (freezeToggle && typeof freezeToggle.click === 'function') freezeToggle.click();
       }
     });
 
     window.addEventListener('keyup', (e) => {
-      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+      if (isTextInputElement(e.target) || (typeof document !== 'undefined' && isTextInputElement(document.activeElement))) {
+        return;
+      }
+
+      if (typeof document !== 'undefined' && document.activeElement &&
+          (document.activeElement.tagName === 'SELECT' || document.activeElement.tagName === 'BUTTON')) {
+        if (typeof document.activeElement.blur === 'function') document.activeElement.blur();
+      }
+      if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON')) {
+        if (typeof e.target.blur === 'function') e.target.blur();
+      }
 
       const code = e.code;
       const key = e.key;

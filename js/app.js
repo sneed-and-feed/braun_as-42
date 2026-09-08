@@ -7,7 +7,7 @@
 import { AudioEngine } from './audio/engine.js';
 import { BraunKnob } from './ui/knob.js';
 import { BraunOscilloscope } from './ui/oscilloscope.js';
-import { BraunPlaySurface } from './ui/keyboard.js';
+import { BraunPlaySurface, isPlayableSynthesizerKey } from './ui/keyboard.js';
 import { BraunVectorPad } from './ui/vector-pad.js';
 import { SCALES, NOTE_NAMES } from './generative/scales.js';
 
@@ -229,6 +229,67 @@ export class AmbientApp {
     this._initDom();
   }
 
+  _setupSelectFocusRelease(selectEl) {
+    if (!selectEl || selectEl._hasSelectFocusReleaseWired) return;
+    selectEl._hasSelectFocusReleaseWired = true;
+
+    const releaseFocus = () => {
+      if (typeof selectEl.blur === 'function') {
+        selectEl.blur();
+      }
+      if (typeof document !== 'undefined' && document.activeElement === selectEl) {
+        if (document.body && typeof document.body.focus === 'function') {
+          document.body.focus();
+        }
+      }
+    };
+
+    // 1. Immediately release focus upon user selection / change / input
+    selectEl.addEventListener('change', releaseFocus);
+    selectEl.addEventListener('input', releaseFocus);
+
+    // 2. On mouseup / click after selecting an option
+    let wasFocusedOnMouseDown = false;
+    selectEl.addEventListener('mousedown', () => {
+      wasFocusedOnMouseDown = (typeof document !== 'undefined' && document.activeElement === selectEl);
+    });
+
+    selectEl.addEventListener('mouseup', (e) => {
+      if (wasFocusedOnMouseDown || (e && e.target && e.target.tagName === 'OPTION')) {
+        releaseFocus();
+        wasFocusedOnMouseDown = false;
+      }
+    });
+
+    selectEl.addEventListener('click', (e) => {
+      if (wasFocusedOnMouseDown || (e && e.target && e.target.tagName === 'OPTION')) {
+        releaseFocus();
+        wasFocusedOnMouseDown = false;
+      }
+    });
+
+    // 3. Keydown on the select itself:
+    // If user presses any playable musical key, chord trigger, or freeze spacebar while select is focused:
+    // Prevent default browser type-ahead navigation immediately and release focus to body!
+    selectEl.addEventListener('keydown', (e) => {
+      if (isPlayableSynthesizerKey(e)) {
+        if (typeof e.preventDefault === 'function') {
+          e.preventDefault();
+        }
+        releaseFocus();
+      }
+    });
+
+    // 4. Wire up child <option> elements if available
+    if (typeof selectEl.querySelectorAll === 'function') {
+      const options = selectEl.querySelectorAll('option');
+      options.forEach(opt => {
+        opt.addEventListener('click', releaseFocus);
+        opt.addEventListener('mouseup', releaseFocus);
+      });
+    }
+  }
+
   _initDom() {
     // Theme Switcher (Apply current selected finish immediately on boot)
     const themeSelect = document.getElementById('select-theme');
@@ -236,7 +297,9 @@ export class AmbientApp {
       document.body.setAttribute('data-theme', themeSelect.value);
       themeSelect.addEventListener('change', (e) => {
         document.body.setAttribute('data-theme', e.target.value);
+        if (typeof themeSelect.blur === 'function') themeSelect.blur();
       });
+      this._setupSelectFocusRelease(themeSelect);
     }
 
     // Populate Root note selector
@@ -247,6 +310,12 @@ export class AmbientApp {
         const opt = document.createElement('option');
         opt.value = idx;
         opt.textContent = note;
+        opt.addEventListener('click', () => {
+          if (typeof rootSelect.blur === 'function') rootSelect.blur();
+        });
+        opt.addEventListener('mouseup', () => {
+          if (typeof rootSelect.blur === 'function') rootSelect.blur();
+        });
         rootSelect.appendChild(opt);
       });
       rootSelect.value = this.engine.rootPitchClass;
@@ -256,7 +325,9 @@ export class AmbientApp {
         this.engine.setScale(this.engine.currentScaleKey, root);
         if (this.playSurface) this.playSurface.rebuildKeys();
         this.updateLoopNotes();
+        if (typeof rootSelect.blur === 'function') rootSelect.blur();
       });
+      this._setupSelectFocusRelease(rootSelect);
     }
 
     // Populate Scale selector
@@ -267,6 +338,12 @@ export class AmbientApp {
         const opt = document.createElement('option');
         opt.value = sc.id;
         opt.textContent = sc.name;
+        opt.addEventListener('click', () => {
+          if (typeof scaleSelect.blur === 'function') scaleSelect.blur();
+        });
+        opt.addEventListener('mouseup', () => {
+          if (typeof scaleSelect.blur === 'function') scaleSelect.blur();
+        });
         scaleSelect.appendChild(opt);
       });
       scaleSelect.value = this.engine.currentScaleKey;
@@ -276,7 +353,9 @@ export class AmbientApp {
         this.engine.setScale(scaleKey, this.engine.rootPitchClass);
         if (this.playSurface) this.playSurface.rebuildKeys();
         this.updateLoopNotes();
+        if (typeof scaleSelect.blur === 'function') scaleSelect.blur();
       });
+      this._setupSelectFocusRelease(scaleSelect);
     }
 
     // Master Power Button
@@ -284,6 +363,7 @@ export class AmbientApp {
     if (powerBtn) {
       powerBtn.addEventListener('click', async () => {
         await this.togglePower();
+        if (typeof powerBtn.blur === 'function') powerBtn.blur();
       });
     }
 
@@ -295,6 +375,7 @@ export class AmbientApp {
         btn.classList.add('is-active');
         const wave = btn.getAttribute('data-wave');
         this.engine.setFeltWaveform(wave);
+        if (typeof btn.blur === 'function') btn.blur();
       });
     });
 
@@ -342,7 +423,9 @@ export class AmbientApp {
         this.engine.setTuningReference(a4);
         if (this.playSurface) this.playSurface.rebuildKeys();
         this.updateLoopNotes();
+        if (typeof tuningSelect.blur === 'function') tuningSelect.blur();
       });
+      this._setupSelectFocusRelease(tuningSelect);
     }
 
     // Oscilloscope Mode Tabs
@@ -476,7 +559,9 @@ export class AmbientApp {
     if (presetSelect) {
       presetSelect.addEventListener('change', (e) => {
         this.applyPreset(e.target.value, { animate: true, duration: 350 });
+        if (typeof presetSelect.blur === 'function') presetSelect.blur();
       });
+      this._setupSelectFocusRelease(presetSelect);
     }
 
     // Master Preset / Reset Switch (Dieter Rams "Reset All")
@@ -484,6 +569,7 @@ export class AmbientApp {
     if (resetBtn) {
       resetBtn.addEventListener('click', () => {
         this.resetAllKnobs({ animate: true, duration: 350 });
+        if (typeof resetBtn.blur === 'function') resetBtn.blur();
       });
     }
 
@@ -492,6 +578,12 @@ export class AmbientApp {
 
     // Calibrate all parameters, knobs, and vector pad to pristine default preset on boot
     this.applyPreset('DEFAULT', { animate: false });
+
+    // Ensure all dropdown selects release focus on selection and prevent key interception
+    if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+      const allSelects = document.querySelectorAll('select, .braun-select');
+      allSelects.forEach(sel => this._setupSelectFocusRelease(sel));
+    }
   }
 
   /**
