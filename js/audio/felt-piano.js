@@ -258,6 +258,10 @@ export class FeltPianoVoice {
 
     this.osc1Gain.gain.setValueAtTime(osc1Vol, noteStartTime);
     this.osc2Gain.gain.setValueAtTime(osc2Vol, noteStartTime);
+    if (typeof this.osc1.detune.cancelScheduledValues === 'function') {
+      this.osc1.detune.cancelScheduledValues(cancelTime);
+      this.osc2.detune.cancelScheduledValues(cancelTime);
+    }
     this.osc1.detune.setValueAtTime(this.dispersionOffset, noteStartTime);
     this.osc2.detune.setValueAtTime(this.dispersionOffset + this.overtoneSpread, noteStartTime);
 
@@ -409,10 +413,38 @@ export class FeltPianoSynthesizer {
     this.wavetables = wavetables;
     this.currentWaveform = 'felt';
 
+    // Master voice mixer bus for polyphonic summation
+    this.voiceMixer = ctx.createGain();
+    this.voiceMixer.gain.setValueAtTime(1.0, ctx.currentTime);
+
     // Calibrated piano bus headroom (0.38 base gain)
     this.baseOutputGain = 0.38;
     this.output = ctx.createGain();
     this.output.gain.setValueAtTime(this.baseOutputGain, ctx.currentTime);
+
+    // Natural sympathetic string resonance & soundboard acoustic coupling:
+    // Models undamped open string and soundboard body sympathetic resonance
+    // (EP-1320 multisampled blend style: binds chords into unified acoustic instrument)
+    this.sympatheticFilter1 = ctx.createBiquadFilter();
+    this.sympatheticFilter1.type = 'bandpass';
+    this.sympatheticFilter1.frequency.setValueAtTime(290, ctx.currentTime); // Wood cavity mode
+    this.sympatheticFilter1.Q.setValueAtTime(3.2, ctx.currentTime);
+
+    this.sympatheticFilter2 = ctx.createBiquadFilter();
+    this.sympatheticFilter2.type = 'bandpass';
+    this.sympatheticFilter2.frequency.setValueAtTime(560, ctx.currentTime); // Spruce soundboard bridge mode
+    this.sympatheticFilter2.Q.setValueAtTime(3.5, ctx.currentTime);
+
+    this.sympatheticGain = ctx.createGain();
+    this.sympatheticGain.gain.setValueAtTime(0.14, ctx.currentTime);
+
+    // Routing: voiceMixer feeds direct piano output and parallel sympathetic resonance
+    this.voiceMixer.connect(this.output);
+    this.voiceMixer.connect(this.sympatheticFilter1);
+    this.voiceMixer.connect(this.sympatheticFilter2);
+    this.sympatheticFilter1.connect(this.sympatheticGain);
+    this.sympatheticFilter2.connect(this.sympatheticGain);
+    this.sympatheticGain.connect(this.output);
 
     this.params = {
       tone: 0.60,      // Felt lowpass damping (0 = ultra soft Harold Budd, 1 = chime)
@@ -464,7 +496,7 @@ export class FeltPianoSynthesizer {
     // Polyphonic Voice Pool with synth backreference and per-voice index for acoustic micro-dispersion
     this.voices = [];
     for (let i = 0; i < voiceCount; i++) {
-      this.voices.push(new FeltPianoVoice(ctx, this.output, wavetables, this.hammerBuffer, this, i));
+      this.voices.push(new FeltPianoVoice(ctx, this.voiceMixer, wavetables, this.hammerBuffer, this, i));
     }
     this.voiceIndex = 0;
   }
@@ -538,13 +570,42 @@ export class FeltPianoSynthesizer {
     this.params.tone = Math.max(0, Math.min(1.0, val));
     if (this.ctx) {
       const now = this.ctx.currentTime;
+
+      // Modulate shared sympathetic resonance filters to track acoustic felt damping
+      if (this.sympatheticFilter1 && this.sympatheticFilter1.frequency && this.sympatheticFilter1.frequency.setTargetAtTime) {
+        this.sympatheticFilter1.frequency.setTargetAtTime(220 + this.params.tone * 120, now, 0.025);
+      }
+      if (this.sympatheticFilter2 && this.sympatheticFilter2.frequency && this.sympatheticFilter2.frequency.setTargetAtTime) {
+        this.sympatheticFilter2.frequency.setTargetAtTime(440 + this.params.tone * 200, now, 0.025);
+      }
+      if (this.sympatheticGain && this.sympatheticGain.gain && this.sympatheticGain.gain.setTargetAtTime) {
+        this.sympatheticGain.gain.setTargetAtTime(0.08 + this.params.tone * 0.10, now, 0.025);
+      }
+
       for (const voice of this.voices) {
         if (voice.isActive && voice.currentFreq) {
-          const rest = Math.min(2400, Math.max(140, voice.currentFreq * (0.9 + this.params.tone * 0.4)));
+          // Register-dependent rest cutoff calculation matching acoustic modeling
+          const isBass = (voice.currentMidi != null && voice.currentMidi < 48) || voice.currentFreq < 130.8;
+          const isTreble = (voice.currentMidi != null && voice.currentMidi >= 72) || voice.currentFreq > 523.25;
+          let rest;
+          if (isBass) {
+            rest = Math.min(1800, Math.max(120, voice.currentFreq * (0.8 + this.params.tone * 0.5)));
+          } else if (isTreble) {
+            rest = Math.min(4800, Math.max(280, voice.currentFreq * (1.1 + this.params.tone * 0.8)));
+          } else {
+            rest = Math.min(2800, Math.max(160, voice.currentFreq * (0.9 + this.params.tone * 0.6)));
+          }
+
           if (voice.filter1 && voice.filter1.frequency && voice.filter1.frequency.setTargetAtTime) {
+            if (typeof voice.filter1.frequency.cancelAndHoldAtTime === 'function') {
+              voice.filter1.frequency.cancelAndHoldAtTime(now);
+            }
             voice.filter1.frequency.setTargetAtTime(rest, now, 0.025);
           }
           if (voice.filter2 && voice.filter2.frequency && voice.filter2.frequency.setTargetAtTime) {
+            if (typeof voice.filter2.frequency.cancelAndHoldAtTime === 'function') {
+              voice.filter2.frequency.cancelAndHoldAtTime(now);
+            }
             voice.filter2.frequency.setTargetAtTime(rest, now, 0.025);
           }
         }

@@ -8,6 +8,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { AudioEngine } from '../js/audio/engine.js';
 import { FeltPianoSynthesizer, FeltPianoVoice } from '../js/audio/felt-piano.js';
+import { TapeDelay } from '../js/audio/tape-delay.js';
+import { SolarDroneVoice } from '../js/audio/drone-voice.js';
+import { BraunVectorPad } from '../js/ui/vector-pad.js';
 import { midiToFrequency } from '../js/generative/scales.js';
 
 describe('Volume Output Balancing and Drone Ambient Underbed', () => {
@@ -175,6 +178,29 @@ describe('Multisampled / Acoustic Blend Modeling (Teenage Engineering EP-1320 St
     assert.strictEqual(synth.params.tone, 0.95);
     assert.ok(v1.filter1.frequency.value > 100);
   });
+
+  it('verifies natural sympathetic string resonance and soundboard acoustic coupling filter network', () => {
+    const ctx = createMockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 6);
+
+    assert.ok(synth.sympatheticFilter1, 'Synthesizer must instantiate primary soundboard sympathetic resonator');
+    assert.ok(synth.sympatheticFilter2, 'Synthesizer must instantiate secondary bridge coupling sympathetic resonator');
+    assert.ok(synth.sympatheticGain, 'Synthesizer must instantiate sympathetic resonance gain stage');
+
+    // Check filter types and frequency centers
+    assert.strictEqual(synth.sympatheticFilter1.type, 'bandpass');
+    assert.strictEqual(synth.sympatheticFilter2.type, 'bandpass');
+    assert.strictEqual(synth.sympatheticFilter1.frequency.value, 290);
+    assert.strictEqual(synth.sympatheticFilter2.frequency.value, 560);
+    assert.ok(synth.sympatheticFilter1.Q.value >= 3.0, 'Sympathetic resonator must have sharp acoustic Q');
+    assert.ok(synth.sympatheticGain.gain.value > 0.05 && synth.sympatheticGain.gain.value <= 0.25, 'Sympathetic gain must provide subtle acoustic halo');
+
+    // Changing tone should modulate sympathetic resonance
+    synth.setTone(0.20);
+    assert.ok(synth.sympatheticFilter1.frequency.value < 290);
+    synth.setTone(0.80);
+    assert.ok(synth.sympatheticFilter1.frequency.value > 290);
+  });
 });
 
 describe('Solar 42n Drone Quick-Snap Tuning Presets', () => {
@@ -247,5 +273,103 @@ describe('Solar 42n Drone Quick-Snap Tuning Presets', () => {
     assert.strictEqual(engine.a4, 432);
     assert.ok(Math.abs(engine.drone1Freq - midiToFrequency(26, 432)) < 0.1);
     assert.ok(Math.abs(engine.drone2Freq - (engine.drone1Freq * 1.5)) < 1e-4);
+  });
+
+  it('verifies scale updates keep currentScaleKey synchronized across tuning reference changes', () => {
+    const engine = new AudioEngine();
+    engine.setScale('AVALON_MODAL', 5);
+    assert.strictEqual(engine.currentScaleKey, 'AVALON_MODAL');
+
+    engine.setTuningReference(432);
+    assert.strictEqual(engine.currentScaleKey, 'AVALON_MODAL');
+  });
+});
+
+describe('Vector Modulation Audio Slewing & Anti-Zipper DSP', () => {
+  function createSlewingMockCtx() {
+    let cancelCount = 0;
+    let setTargetCalls = [];
+
+    const createParam = (init = 0) => ({
+      value: init,
+      cancelAndHoldAtTime(t) { cancelCount++; },
+      cancelScheduledValues(t) { cancelCount++; },
+      setTargetAtTime(target, start, tau) {
+        this.value = target;
+        setTargetCalls.push({ target, start, tau });
+      },
+      setValueAtTime(v, t) { this.value = v; }
+    });
+
+    return {
+      currentTime: 1.0,
+      sampleRate: 48000,
+      getStats: () => ({ cancelCount, setTargetCalls }),
+      createGain: () => ({ gain: createParam(1.0), connect: () => {} }),
+      createDelay: () => ({ delayTime: createParam(0.48), connect: () => {} }),
+      createBiquadFilter: () => ({ frequency: createParam(1000), Q: createParam(1), connect: () => {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect: () => {} }),
+      createOscillator: () => ({
+        frequency: createParam(440),
+        detune: createParam(0),
+        connect: () => {},
+        start: () => {},
+        stop: () => {}
+      })
+    };
+  }
+
+  it('verifies TapeDelay.setTime cancels pending scheduled values and slews smoothly with time constant', () => {
+    const ctx = createSlewingMockCtx();
+    const delay = new TapeDelay(ctx, { delayTimeL: 0.35 });
+
+    delay.setTime(0.82);
+    const stats = ctx.getStats();
+
+    assert.ok(stats.cancelCount >= 2, 'TapeDelay.setTime must cancel pending curve values on L and R channels');
+    const lastTarget = stats.setTargetCalls[stats.setTargetCalls.length - 1];
+    assert.ok(lastTarget.tau >= 0.05 && lastTarget.tau <= 0.08, 'Time constant tau must be calibrated between 0.05s and 0.08s');
+    assert.strictEqual(delay.delayTimeL, 0.82);
+  });
+
+  it('verifies SolarDroneVoice.setCutoff cancels pending values and slews with 0.025s time constant', () => {
+    const ctx = createSlewingMockCtx();
+    const drone = new SolarDroneVoice(ctx, null, null, 1);
+
+    drone.setCutoff(1850);
+    const stats = ctx.getStats();
+
+    assert.ok(stats.cancelCount >= 2, 'SolarDroneVoice.setCutoff must cancel pending curve values on dual filters');
+    const lastTarget = stats.setTargetCalls[stats.setTargetCalls.length - 1];
+    assert.strictEqual(lastTarget.tau, 0.025, 'Cutoff time constant must be exactly 0.025s to eliminate parameter stepping');
+    assert.strictEqual(drone.cutoff, 1850);
+  });
+
+  it('verifies BraunVectorPad coordinates modulate delay wet mix and delay feedback on Y axis for lush wash', () => {
+    let captured = null;
+    const mockEngine = {
+      setFeltTone: () => {},
+      setDroneCutoff: () => {},
+      setDelayTime: () => {},
+      setReverbShimmer: () => {},
+      setReverbWet: () => {},
+      setDelayWet: (v) => { if (!captured) captured = {}; captured.delayWet = v; },
+      setDelayFeedback: (v) => { if (!captured) captured = {}; captured.delayFeedback = v; }
+    };
+
+    const mockContainer = {
+      innerHTML: '',
+      appendChild: () => {},
+      querySelector: () => null
+    };
+
+    const pad = new BraunVectorPad(mockContainer, { engine: mockEngine });
+    pad.setCoordinates(0.60, 0.75, true);
+
+    assert.ok(captured, 'setCoordinates must update audio parameters');
+    // Y=0.75: delayWet = 0.15 + 0.75 * 0.55 = 0.5625
+    assert.ok(Math.abs(captured.delayWet - 0.5625) < 1e-3, `delayWet must be ~0.5625, got ${captured.delayWet}`);
+    // Y=0.75: delayFeedback = 0.35 + 0.75 * 0.38 = 0.635
+    assert.ok(Math.abs(captured.delayFeedback - 0.635) < 1e-3, `delayFeedback must be ~0.635, got ${captured.delayFeedback}`);
   });
 });

@@ -39,6 +39,7 @@ export class BraunVectorPad {
   }
 
   _render() {
+    if (typeof document === 'undefined' || !this.container) return;
     this.container.innerHTML = '';
 
     this.wrapper = document.createElement('div');
@@ -129,6 +130,14 @@ export class BraunVectorPad {
       });
     }
 
+    if (typeof ResizeObserver !== 'undefined' && this.surfaceBox) {
+      this._resizeObserver = new ResizeObserver(() => {
+        this._resize();
+        this.draw();
+      });
+      this._resizeObserver.observe(this.surfaceBox);
+    }
+
     if (this.modeBtn) {
       this.modeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -149,6 +158,15 @@ export class BraunVectorPad {
     let pendingNormY = null;
     let moveRafId = null;
 
+    const safeRaf = (cb) => {
+      if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(cb);
+      return setTimeout(cb, 16);
+    };
+    const safeCaf = (id) => {
+      if (typeof cancelAnimationFrame === 'function') return cancelAnimationFrame(id);
+      return clearTimeout(id);
+    };
+
     const handlePointerMove = (e) => {
       if (!this.isEngaged) return;
       e.preventDefault();
@@ -163,7 +181,7 @@ export class BraunVectorPad {
 
       // Throttle pointer movement to animation frames to avoid audio AudioParam thrashing/zipper noise
       if (!moveRafId) {
-        moveRafId = requestAnimationFrame(() => {
+        moveRafId = safeRaf(() => {
           moveRafId = null;
           if (pendingNormX !== null && pendingNormY !== null) {
             this.setCoordinates(pendingNormX, pendingNormY, true);
@@ -178,7 +196,7 @@ export class BraunVectorPad {
       this._updateStatusUi();
 
       if (moveRafId) {
-        cancelAnimationFrame(moveRafId);
+        safeCaf(moveRafId);
         moveRafId = null;
       }
       if (pendingNormX !== null && pendingNormY !== null) {
@@ -339,7 +357,7 @@ export class BraunVectorPad {
     this.engine.setDroneCutoff(1, drone1Cutoff);
     this.engine.setDroneCutoff(2, drone2Cutoff);
 
-    // Y Axis: Tape Delay Time (0.10s to 0.95s) & Shimmer Bloom
+    // Y Axis: Tape Delay Time (0.10s to 0.95s), Space & Bloom
     const delayTimeSec = 0.10 + this.y * 0.85;
     this.engine.setDelayTime(delayTimeSec);
 
@@ -350,8 +368,12 @@ export class BraunVectorPad {
     this.engine.setReverbWet(reverbWet);
 
     // Smoothly slew delay wet mix along with Y axis for lush ambient wash
-    const delayWet = 0.20 + this.y * 0.40;
+    const delayWet = 0.15 + this.y * 0.55;
     this.engine.setDelayWet(delayWet);
+
+    // Slew tape saturation / feedback along with Y axis
+    const delayFeedback = 0.35 + this.y * 0.38;
+    this.engine.setDelayFeedback(delayFeedback);
 
     if (notifyChange && this.onChange) {
       this.onChange({
@@ -362,7 +384,8 @@ export class BraunVectorPad {
         delayTimeSec,
         shimmerAmount,
         reverbWet,
-        delayWet
+        delayWet,
+        delayFeedback
       });
     }
   }
@@ -408,6 +431,14 @@ export class BraunVectorPad {
     const dpr = this.dpr || ((typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1);
     const w = this.width;
     const h = this.height;
+
+    // Verify buffer resolution matches devicePixelRatio
+    const targetW = Math.floor(w * dpr);
+    const targetH = Math.floor(h * dpr);
+    if (this.canvas && (this.canvas.width !== targetW || this.canvas.height !== targetH)) {
+      this.canvas.width = targetW;
+      this.canvas.height = targetH;
+    }
 
     // High-DPI / Retina canvas pixel ratio scaling on every frame:
     // ctx.setTransform(dpr, 0, 0, dpr, 0, 0) resets and enforces crisp coordinate mapping

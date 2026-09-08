@@ -169,13 +169,23 @@ export class TapeDelay {
 
   setTime(timeSeconds) {
     const t = Math.max(0.05, Math.min(2.0, timeSeconds));
-    if (Math.abs(this.delayTimeL - t) < 0.001) return;
+    if (Math.abs(this.delayTimeL - t) < 0.002) return;
     this.delayTimeL = t;
     this.delayTimeR = t * 1.5; // Harmonic 3:2 stereo offset
     const now = this.ctx.currentTime;
-    if (this.delayNodeL.delayTime.setTargetAtTime) {
-      this.delayNodeL.delayTime.setTargetAtTime(this.delayTimeL, now, 0.08);
-      this.delayNodeR.delayTime.setTargetAtTime(this.delayTimeR, now, 0.08);
+
+    // Clear prior pending target curves to prevent Doppler fluttering / zipper rasp pileup
+    if (typeof this.delayNodeL.delayTime.cancelAndHoldAtTime === 'function') {
+      this.delayNodeL.delayTime.cancelAndHoldAtTime(now);
+      this.delayNodeR.delayTime.cancelAndHoldAtTime(now);
+    } else if (typeof this.delayNodeL.delayTime.cancelScheduledValues === 'function') {
+      this.delayNodeL.delayTime.cancelScheduledValues(now);
+      this.delayNodeR.delayTime.cancelScheduledValues(now);
+    }
+
+    if (typeof this.delayNodeL.delayTime.setTargetAtTime === 'function') {
+      this.delayNodeL.delayTime.setTargetAtTime(this.delayTimeL, now, 0.065);
+      this.delayNodeR.delayTime.setTargetAtTime(this.delayTimeR, now, 0.065);
     } else {
       this.delayNodeL.delayTime.value = this.delayTimeL;
       this.delayNodeR.delayTime.value = this.delayTimeR;
@@ -187,6 +197,19 @@ export class TapeDelay {
     const directFb = this.feedback * 0.7;
     const crossFb = this.feedback * 0.3;
     const now = this.ctx.currentTime;
+
+    if (typeof this.fbGainLL.gain.cancelAndHoldAtTime === 'function') {
+      this.fbGainLL.gain.cancelAndHoldAtTime(now);
+      this.fbGainRR.gain.cancelAndHoldAtTime(now);
+      this.fbGainLR.gain.cancelAndHoldAtTime(now);
+      this.fbGainRL.gain.cancelAndHoldAtTime(now);
+    } else if (typeof this.fbGainLL.gain.cancelScheduledValues === 'function') {
+      this.fbGainLL.gain.cancelScheduledValues(now);
+      this.fbGainRR.gain.cancelScheduledValues(now);
+      this.fbGainLR.gain.cancelScheduledValues(now);
+      this.fbGainRL.gain.cancelScheduledValues(now);
+    }
+
     this.fbGainLL.gain.setTargetAtTime(directFb, now, 0.04);
     this.fbGainRR.gain.setTargetAtTime(directFb, now, 0.04);
     this.fbGainLR.gain.setTargetAtTime(crossFb, now, 0.04);
@@ -207,17 +230,36 @@ export class TapeDelay {
   setTone(cutoffHz) {
     const c = Math.max(800, Math.min(12000, cutoffHz));
     const now = this.ctx.currentTime;
+    if (typeof this.filterL.frequency.cancelAndHoldAtTime === 'function') {
+      this.filterL.frequency.cancelAndHoldAtTime(now);
+      this.filterR.frequency.cancelAndHoldAtTime(now);
+    } else if (typeof this.filterL.frequency.cancelScheduledValues === 'function') {
+      this.filterL.frequency.cancelScheduledValues(now);
+      this.filterR.frequency.cancelScheduledValues(now);
+    }
     this.filterL.frequency.setTargetAtTime(c, now, 0.04);
     this.filterR.frequency.setTargetAtTime(c, now, 0.04);
   }
 
   setWet(wet) {
     this.wetLevel = Math.max(0, Math.min(1.0, wet));
-    this.wetGain.gain.setTargetAtTime(this.wetLevel, this.ctx.currentTime, 0.03);
+    const now = this.ctx.currentTime;
+    if (typeof this.wetGain.gain.cancelAndHoldAtTime === 'function') {
+      this.wetGain.gain.cancelAndHoldAtTime(now);
+    } else if (typeof this.wetGain.gain.cancelScheduledValues === 'function') {
+      this.wetGain.gain.cancelScheduledValues(now);
+    }
+    this.wetGain.gain.setTargetAtTime(this.wetLevel, now, 0.03);
   }
 
   setDry(dry) {
     this.dryLevel = Math.max(0, Math.min(1.0, dry));
-    this.dryGain.gain.setTargetAtTime(this.dryLevel, this.ctx.currentTime, 0.03);
+    const now = this.ctx.currentTime;
+    if (typeof this.dryGain.gain.cancelAndHoldAtTime === 'function') {
+      this.dryGain.gain.cancelAndHoldAtTime(now);
+    } else if (typeof this.dryGain.gain.cancelScheduledValues === 'function') {
+      this.dryGain.gain.cancelScheduledValues(now);
+    }
+    this.dryGain.gain.setTargetAtTime(this.dryLevel, now, 0.03);
   }
 }

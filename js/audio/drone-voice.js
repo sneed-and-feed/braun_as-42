@@ -154,8 +154,20 @@ export class SolarDroneVoice {
   setFrequency(freq) {
     this.baseFreq = Math.max(20, Math.min(2000, freq));
     const now = this.ctx.currentTime;
-    this.oscA.frequency.setTargetAtTime(this.baseFreq, now, 0.04);
-    this.oscB.frequency.setTargetAtTime(this.baseFreq + this.subHertzBeat, now, 0.04);
+    if (typeof this.oscA.frequency.cancelAndHoldAtTime === 'function') {
+      this.oscA.frequency.cancelAndHoldAtTime(now);
+      this.oscB.frequency.cancelAndHoldAtTime(now);
+    } else if (typeof this.oscA.frequency.cancelScheduledValues === 'function') {
+      this.oscA.frequency.cancelScheduledValues(now);
+      this.oscB.frequency.cancelScheduledValues(now);
+    }
+    if (typeof this.oscA.frequency.setTargetAtTime === 'function') {
+      this.oscA.frequency.setTargetAtTime(this.baseFreq, now, 0.04);
+      this.oscB.frequency.setTargetAtTime(this.baseFreq + this.subHertzBeat, now, 0.04);
+    } else {
+      this.oscA.frequency.value = this.baseFreq;
+      this.oscB.frequency.value = this.baseFreq + this.subHertzBeat;
+    }
   }
 
   /**
@@ -173,6 +185,11 @@ export class SolarDroneVoice {
   setBeatingHz(hz) {
     this.subHertzBeat = Math.max(-15.0, Math.min(15.0, hz));
     const now = this.ctx.currentTime;
+    if (typeof this.oscB.frequency.cancelAndHoldAtTime === 'function') {
+      this.oscB.frequency.cancelAndHoldAtTime(now);
+    } else if (typeof this.oscB.frequency.cancelScheduledValues === 'function') {
+      this.oscB.frequency.cancelScheduledValues(now);
+    }
     this.oscB.frequency.setTargetAtTime(this.baseFreq + this.subHertzBeat, now, 0.04);
   }
 
@@ -191,8 +208,20 @@ export class SolarDroneVoice {
   setCutoff(hz) {
     this.cutoff = Math.max(40, Math.min(14000, hz));
     const now = this.ctx.currentTime;
-    this.filter1.frequency.setTargetAtTime(this.cutoff, now, 0.025);
-    this.filter2.frequency.setTargetAtTime(this.cutoff, now, 0.025);
+    if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
+      this.filter1.frequency.cancelAndHoldAtTime(now);
+      this.filter2.frequency.cancelAndHoldAtTime(now);
+    } else if (typeof this.filter1.frequency.cancelScheduledValues === 'function') {
+      this.filter1.frequency.cancelScheduledValues(now);
+      this.filter2.frequency.cancelScheduledValues(now);
+    }
+    if (typeof this.filter1.frequency.setTargetAtTime === 'function') {
+      this.filter1.frequency.setTargetAtTime(this.cutoff, now, 0.025);
+      this.filter2.frequency.setTargetAtTime(this.cutoff, now, 0.025);
+    } else {
+      this.filter1.frequency.value = this.cutoff;
+      this.filter2.frequency.value = this.cutoff;
+    }
   }
 
   /**
@@ -202,8 +231,20 @@ export class SolarDroneVoice {
     this.resonance = Math.max(0.5, Math.min(12.0, q));
     const qSqrt = Math.sqrt(this.resonance);
     const now = this.ctx.currentTime;
-    this.filter1.Q.setTargetAtTime(qSqrt, now, 0.03);
-    this.filter2.Q.setTargetAtTime(qSqrt, now, 0.03);
+    if (typeof this.filter1.Q.cancelAndHoldAtTime === 'function') {
+      this.filter1.Q.cancelAndHoldAtTime(now);
+      this.filter2.Q.cancelAndHoldAtTime(now);
+    } else if (typeof this.filter1.Q.cancelScheduledValues === 'function') {
+      this.filter1.Q.cancelScheduledValues(now);
+      this.filter2.Q.cancelScheduledValues(now);
+    }
+    if (typeof this.filter1.Q.setTargetAtTime === 'function') {
+      this.filter1.Q.setTargetAtTime(qSqrt, now, 0.03);
+      this.filter2.Q.setTargetAtTime(qSqrt, now, 0.03);
+    } else {
+      this.filter1.Q.value = qSqrt;
+      this.filter2.Q.value = qSqrt;
+    }
   }
 
   /**

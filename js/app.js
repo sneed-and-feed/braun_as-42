@@ -291,6 +291,12 @@ export class AmbientApp {
     if (this.knobs.reverbWet) {
       this.knobs.reverbWet.setValue(Math.round(data.reverbWet * 100), false);
     }
+    if (this.knobs.delayWet && data.delayWet !== undefined) {
+      this.knobs.delayWet.setValue(Math.round(data.delayWet * 100), false);
+    }
+    if (this.knobs.delayFeedback && data.delayFeedback !== undefined) {
+      this.knobs.delayFeedback.setValue(Math.round(data.delayFeedback * 100), false);
+    }
   }
 
   _renderLoopRows() {
@@ -506,7 +512,7 @@ export class AmbientApp {
       }
     });
 
-    new BraunKnob(document.getElementById('knob-delay-fb'), {
+    this.knobs.delayFeedback = new BraunKnob(document.getElementById('knob-delay-fb'), {
       label: 'FEEDBACK',
       min: 0,
       max: 90,
@@ -537,7 +543,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setDelayTone(v)
     });
 
-    new BraunKnob(document.getElementById('knob-delay-wet'), {
+    this.knobs.delayWet = new BraunKnob(document.getElementById('knob-delay-wet'), {
       label: 'DELAY MIX',
       min: 0,
       max: 100,
@@ -650,7 +656,7 @@ export class AmbientApp {
     });
 
     // Microtonal Beating (Continuous sub-hertz offset)
-    new BraunKnob(document.getElementById(`knob-${prefix}-beat`), {
+    this.knobs[`${prefix}Beat`] = new BraunKnob(document.getElementById(`knob-${prefix}-beat`), {
       label: 'BEATING',
       min: 0.0,
       max: 5.0,
@@ -729,15 +735,28 @@ export class AmbientApp {
         if (!this.isPowerOn) {
           await this.startAudio();
         }
+        // Auto-activate drone voice so user immediately hears the snapped note
+        if (!this.engine.droneParams[id].active) {
+          this.engine.setDroneActive(id, true);
+          if (activeBtn) {
+            activeBtn.classList.add('is-active');
+            const textEl = activeBtn.querySelector('.braun-status-text');
+            if (textEl) textEl.textContent = `DRONE ${id} ON`;
+          }
+        }
         snapBtns.forEach(b => b.classList.remove('is-active'));
         btn.classList.add('is-active');
         const snapKey = btn.getAttribute('data-snap');
         this.engine.setDroneSnap(id, snapKey);
+        if (id === 2 && snapKey === 'beating-unison') {
+          const beatKnob = this.knobs[`${prefix}Beat`];
+          if (beatKnob) beatKnob.setValue(0.35, false);
+        }
       });
     });
 
     // Volume (Calibrated default 55% for lush, non-overpowering ambient underbed)
-    new BraunKnob(document.getElementById(`knob-${prefix}-vol`), {
+    this.knobs[`${prefix}Vol`] = new BraunKnob(document.getElementById(`knob-${prefix}-vol`), {
       label: 'LEVEL',
       min: 0,
       max: 100,

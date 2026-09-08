@@ -749,6 +749,7 @@ describe('UI Initialization and DOM Wiring Verification', () => {
 
     assert.strictEqual(app.isPowerOn, true, 'Clicking snap button must auto-power on synth');
     assert.strictEqual(app.engine.droneSnap[1], 'sub-bass');
+    assert.strictEqual(app.engine.droneParams[1].active, true, 'Clicking snap button must auto-activate drone voice');
     assert.ok(subBassBtn.classList.contains('is-active'));
     assert.ok(Math.abs(app.engine.drone1Freq - 32.7) < 1.0, 'Sub bass should be ~32.7 Hz');
 
@@ -759,15 +760,26 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     await new Promise(resolve => setTimeout(resolve, 20));
 
     assert.strictEqual(app.engine.droneSnap[2], 'sus-4th');
+    assert.strictEqual(app.engine.droneParams[2].active, true, 'Clicking snap button must auto-activate drone 2');
     assert.ok(sus4Btn.classList.contains('is-active'));
     assert.ok(Math.abs(app.engine.drone2Freq - (app.engine.drone1Freq * 4 / 3)) < 0.1, 'Sus 4th must be 4:3 ratio');
+
+    // Clicking Beating Unison updates snap and synchronizes beating knob
+    const beatingBtn = snap2Btns.find(b => b.getAttribute('data-snap') === 'beating-unison');
+    assert.ok(beatingBtn);
+    beatingBtn.click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.strictEqual(app.engine.droneSnap[2], 'beating-unison');
+    if (app.knobs && app.knobs.drone2Beat) {
+      assert.ok(Math.abs(app.knobs.drone2Beat.value - 0.35) < 1e-4);
+    }
 
     // Test changing scale root re-snaps frequencies smoothly
     app.engine.setScale('BUDD_PENTATONIC', 7); // Root = G
     // Drone 1 (Sub Bass of G1 = MIDI 31) ~ 49.0 Hz
     assert.ok(Math.abs(app.engine.drone1Freq - 49.0) < 1.0, 'Sub bass of G should be ~49 Hz');
-    // Drone 2 maintains 4:3 ratio above Drone 1
-    assert.ok(Math.abs(app.engine.drone2Freq - (app.engine.drone1Freq * 4 / 3)) < 0.1);
+    // Drone 2 maintains beating unison (f2 = f1)
+    assert.ok(Math.abs(app.engine.drone2Freq - app.engine.drone1Freq) < 0.1);
   });
 
   it('verifies Braun AS 42 Vector Touchpad supports high-DPI scaling and setTransform', async () => {
