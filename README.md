@@ -138,4 +138,4 @@ The project includes an extensive automated test suite verifying scale quantizer
 ```bash
 npm test
 ```
-All 112 unit and integration tests run with Node's built-in test runner.
+All 117 unit and integration tests run with Node's built-in test runner.

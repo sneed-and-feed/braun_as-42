@@ -101,6 +101,10 @@ export class BraunPlaySurface {
       };
 
       const activateKey = (clientY, clientRect) => {
+        // Prevent duplicate trigger if key is already actively held
+        if (this._currentGlissandoKey === keyEl && keyEl._isHeld) {
+          return;
+        }
         // If transitioning from another key during glissando swipe, release previous key smoothly
         if (this._currentGlissandoKey && this._currentGlissandoKey !== keyEl) {
           if (typeof this._releaseCurrentGlissando === 'function') {
@@ -142,6 +146,11 @@ export class BraunPlaySurface {
       keyEl.addEventListener('pointerdown', (e) => {
         if (e.button !== undefined && e.button !== 0) return;
         if (e.preventDefault) e.preventDefault();
+        try {
+          if (e.target && e.target.releasePointerCapture && e.pointerId != null) {
+            e.target.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {}
         this._isPointerGlissandoActive = true;
         activateKey(e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
       });
@@ -149,6 +158,7 @@ export class BraunPlaySurface {
       keyEl.addEventListener('pointerenter', (e) => {
         // Expressive glissando: slide horizontally across keys while holding mouse button
         if ((e.buttons === 1 || this._isPointerGlissandoActive) && this._currentGlissandoKey !== keyEl) {
+          this._isPointerGlissandoActive = true;
           activateKey(e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
         }
       });
@@ -175,19 +185,52 @@ export class BraunPlaySurface {
       this.keyElements.set(note.midi, keyEl);
     });
 
-    // Support container-level drag tracking for smooth glissando on touch & mouse swipe
-    if (this.stripContainer && typeof this.stripContainer.addEventListener === 'function') {
-      this.stripContainer.addEventListener('pointermove', (e) => {
-        if (e.buttons === 1 || this._isPointerGlissandoActive) {
-          if (typeof document !== 'undefined' && typeof document.elementFromPoint === 'function') {
-            const el = document.elementFromPoint(e.clientX, e.clientY);
-            const targetKey = el ? (el.classList && el.classList.contains && el.classList.contains('braun-chime-key') ? el : (el.closest ? el.closest('.braun-chime-key') : null)) : null;
-            if (targetKey && targetKey !== this._currentGlissandoKey && typeof targetKey._activateGlissando === 'function') {
-              targetKey._activateGlissando(e.clientY);
+    // Support container & window level drag tracking for smooth glissando on touch & mouse swipe
+    const findKeyAtPoint = (clientX, clientY) => {
+      if (typeof document === 'undefined') return null;
+      // 1. Direct hit via elementFromPoint
+      if (typeof document.elementFromPoint === 'function') {
+        const el = document.elementFromPoint(clientX, clientY);
+        const target = el ? (el.classList && el.classList.contains && el.classList.contains('braun-chime-key') ? el : (el.closest ? el.closest('.braun-chime-key') : null)) : null;
+        if (target) return target;
+      }
+      // 2. Horizontal band fallback if cursor drifted slightly vertically during horizontal swipe
+      if (this.stripContainer && typeof this.stripContainer.getBoundingClientRect === 'function') {
+        const stripRect = this.stripContainer.getBoundingClientRect();
+        if (stripRect && clientY >= stripRect.top - 40 && clientY <= stripRect.bottom + 40) {
+          for (const keyEl of this.keyElements.values()) {
+            if (typeof keyEl.getBoundingClientRect === 'function') {
+              const r = keyEl.getBoundingClientRect();
+              if (r && clientX >= r.left && clientX <= r.right) {
+                return keyEl;
+              }
             }
           }
         }
-      });
+      }
+      return null;
+    };
+
+    const handlePointerMove = (e) => {
+      if (e.buttons === 0 && (e.pointerType === 'mouse' || e.pointerType === undefined)) {
+        if (this._isPointerGlissandoActive) {
+          this._isPointerGlissandoActive = false;
+          if (typeof this._releaseCurrentGlissando === 'function') {
+            this._releaseCurrentGlissando();
+          }
+        }
+        return;
+      }
+      if (e.buttons === 1 || this._isPointerGlissandoActive) {
+        const targetKey = findKeyAtPoint(e.clientX, e.clientY);
+        if (targetKey && targetKey !== this._currentGlissandoKey && typeof targetKey._activateGlissando === 'function') {
+          targetKey._activateGlissando(e.clientY);
+        }
+      }
+    };
+
+    if (this.stripContainer && typeof this.stripContainer.addEventListener === 'function') {
+      this.stripContainer.addEventListener('pointermove', handlePointerMove);
 
       this.stripContainer.addEventListener('pointerleave', (e) => {
         if (this._isPointerGlissandoActive && e.buttons === 0) {
@@ -195,6 +238,14 @@ export class BraunPlaySurface {
           if (typeof this._releaseCurrentGlissando === 'function') {
             this._releaseCurrentGlissando();
           }
+        }
+      });
+    }
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('pointermove', (e) => {
+        if (this._isPointerGlissandoActive) {
+          handlePointerMove(e);
         }
       });
     }
@@ -685,7 +736,7 @@ export class BraunPlaySurface {
         keyEl.classList.remove('is-active');
       });
 
-      if (this.chordsContainer) {
+      if (this.chordsContainer && typeof this.chordsContainer.querySelectorAll === 'function') {
         const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
         chordBtns.forEach(btn => {
           btn._isHeld = false;
@@ -713,13 +764,17 @@ export class BraunPlaySurface {
     });
 
     window.addEventListener('pointerup', () => {
+      if (typeof this._releaseCurrentGlissando === 'function') {
+        this._releaseCurrentGlissando();
+      }
+
       this.keyElements.forEach(keyEl => {
         keyEl._isHeld = false;
         keyEl.classList.remove('is-pressed');
         keyEl.classList.remove('is-active');
       });
 
-      if (this.chordsContainer) {
+      if (this.chordsContainer && typeof this.chordsContainer.querySelectorAll === 'function') {
         const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
         chordBtns.forEach(btn => {
           btn._isHeld = false;

@@ -212,6 +212,98 @@ describe('Mouse Click + Drag Glissando on Chime Strip', () => {
       }
     }
   });
+
+  it('prevents double-attack popping when pointerenter fires immediately before pointerdown on the same key', () => {
+    const playedNotes = [];
+    const mockStrip = { innerHTML: '', listeners: new Map(), addEventListener: () => {}, appendChild: () => {} };
+    const mockChords = { innerHTML: '', children: [], classList: { add: () => {} }, appendChild: () => {} };
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: (freq, vel, dur, isHold) => {
+          const voice = { freq, vel, isHold, release: () => {} };
+          playedNotes.push(voice);
+          return voice;
+        }
+      }
+    };
+
+    let createdCount = 0;
+    const origCreateElement = globalThis.document ? globalThis.document.createElement : null;
+    if (typeof globalThis.document === 'undefined') globalThis.document = {};
+    globalThis.document.createElement = () => new MockKeyElement(60 + createdCount++);
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      const key0 = Array.from(surface.keyElements.values())[0];
+
+      // Browser generates pointerenter with buttons=1, then pointerdown 2ms later
+      key0.dispatchEvent('pointerenter', { clientY: 50, buttons: 1 });
+      assert.strictEqual(playedNotes.length, 1, 'pointerenter with buttons=1 must trigger initial note');
+
+      // pointerdown on the same actively held key must NOT trigger a second note
+      key0.dispatchEvent('pointerdown', { preventDefault: () => {}, clientY: 50, buttons: 1 });
+      assert.strictEqual(playedNotes.length, 1, 'pointerdown on already active glissando key must NOT re-trigger');
+    } finally {
+      if (origCreateElement) globalThis.document.createElement = origCreateElement;
+    }
+  });
+
+  it('releases active glissando note and resets active tracking when window pointerup fires', () => {
+    const releasedVoices = [];
+    const windowListeners = new Map();
+    const origWindow = globalThis.window;
+    globalThis.window = {
+      addEventListener: (t, cb) => {
+        if (!windowListeners.has(t)) windowListeners.set(t, []);
+        windowListeners.get(t).push(cb);
+      }
+    };
+
+    const mockStrip = { innerHTML: '', listeners: new Map(), addEventListener: () => {}, appendChild: () => {} };
+    const mockChords = { innerHTML: '', children: [], classList: { add: () => {} }, appendChild: () => {} };
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: (freq, vel, dur, isHold) => {
+          const voice = { freq, isHold, release: () => { releasedVoices.push(voice); } };
+          return voice;
+        }
+      }
+    };
+
+    let createdCount = 0;
+    const origCreateElement = globalThis.document ? globalThis.document.createElement : null;
+    if (typeof globalThis.document === 'undefined') globalThis.document = {};
+    globalThis.document.createElement = () => new MockKeyElement(60 + createdCount++);
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      const key0 = Array.from(surface.keyElements.values())[0];
+
+      key0.dispatchEvent('pointerdown', { preventDefault: () => {}, clientY: 50, buttons: 1 });
+      assert.strictEqual(surface._isPointerGlissandoActive, true);
+      assert.strictEqual(key0._isHeld, true);
+
+      // Window fires pointerup
+      const pointerUpCallbacks = windowListeners.get('pointerup') || [];
+      pointerUpCallbacks.forEach(cb => cb({}));
+
+      assert.strictEqual(releasedVoices.length, 1, 'window pointerup must call release on the active glissando voice');
+      assert.strictEqual(key0._isHeld, false, 'key hold must be cleared');
+      assert.strictEqual(surface._isPointerGlissandoActive, false, 'glissando state must be deactivated');
+      assert.strictEqual(surface._currentGlissandoKey, null, 'currentGlissandoKey must be cleared');
+    } finally {
+      if (origCreateElement) globalThis.document.createElement = origCreateElement;
+      globalThis.window = origWindow;
+    }
+  });
 });
 
 describe('Anti-Clipping, Headroom & DSP Continuity Verification', () => {
@@ -415,5 +507,140 @@ describe('Anti-Clipping, Headroom & DSP Continuity Verification', () => {
 
     synth._updatePolyphonicHeadroom();
     assert.ok(cancelCount >= 1, '_updatePolyphonicHeadroom must cancel pending values before scheduling target');
+  });
+
+  it('verifies TapeDelay flutter LFO is a smooth sine wave and input is padded by 0.707 (-3dB) to prevent summing overloads', () => {
+    class MockAudioParam {
+      constructor(v = 0) { this.value = v; }
+      setValueAtTime(v) { this.value = v; }
+      setTargetAtTime(v) { this.value = v; }
+      cancelScheduledValues() {}
+      cancelAndHoldAtTime() {}
+    }
+
+    let createdOscs = [];
+    let createdGains = [];
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 0,
+      createGain: () => {
+        const g = { gain: new MockAudioParam(1), connect: () => {} };
+        createdGains.push(g);
+        return g;
+      },
+      createDelay: () => ({ delayTime: new MockAudioParam(0.5), connect: () => {} }),
+      createBiquadFilter: () => ({ frequency: new MockAudioParam(1000), connect: () => {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect: () => {} }),
+      createStereoPanner: () => ({ pan: new MockAudioParam(0), connect: () => {} }),
+      createOscillator: () => {
+        const osc = {
+          type: 'sine',
+          frequency: new MockAudioParam(440),
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+        createdOscs.push(osc);
+        return osc;
+      }
+    };
+
+    const delay = new TapeDelay(mockCtx);
+
+    // flutterOsc is the second oscillator created in _buildWowFlutterLFOs
+    assert.strictEqual(delay.flutterOsc.type, 'sine', 'flutterOsc must use sine wave to eliminate triangle velocity step pops');
+    assert.ok(delay.inputPad, 'TapeDelay must have inputPad');
+    assert.strictEqual(delay.inputPad.gain.value, 0.707, 'inputPad must attenuate input by 0.707 (-3dB) to protect against drone + Poisson summing overloads');
+  });
+
+  it('verifies SolarDroneVoice setActive and setVolume cancel and hold scheduled values', () => {
+    let cancelAndHoldCount = 0;
+    class MockAudioParam {
+      constructor(v = 0) { this.value = v; }
+      setValueAtTime(v) { this.value = v; }
+      setTargetAtTime(v) { this.value = v; }
+      cancelScheduledValues() {}
+      cancelAndHoldAtTime() { cancelAndHoldCount++; }
+    }
+
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 0,
+      createGain: () => ({ gain: new MockAudioParam(1), connect: () => {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect: () => {} }),
+      createBiquadFilter: () => ({
+        frequency: new MockAudioParam(500),
+        Q: new MockAudioParam(1),
+        connect: () => {}
+      }),
+      createOscillator: () => ({
+        frequency: new MockAudioParam(440),
+        detune: new MockAudioParam(0),
+        connect: () => {},
+        start: () => {},
+        stop: () => {}
+      }),
+      createStereoPanner: () => ({ pan: new MockAudioParam(0), connect: () => {} })
+    };
+
+    const drone = new SolarDroneVoice(mockCtx, null, null, 1);
+    cancelAndHoldCount = 0;
+
+    drone.setActive(true);
+    assert.ok(cancelAndHoldCount >= 1, 'setActive must cancel and hold scheduled gain values before ramping');
+
+    const prevCount = cancelAndHoldCount;
+    drone.setVolume(0.75);
+    assert.ok(cancelAndHoldCount > prevCount, 'setVolume must cancel and hold scheduled gain values before ramping');
+  });
+
+  it('verifies FeltPianoVoice starts amplitude envelope strictly from 0.0 when not stealing', () => {
+    let initialSetGain = null;
+    class MockGainParam {
+      constructor(v = 1) { this.value = v; }
+      setValueAtTime(v) { this.value = v; }
+      setTargetAtTime(v) { this.value = v; }
+      linearRampToValueAtTime(v) { this.value = v; }
+      exponentialRampToValueAtTime(v) { this.value = v; }
+      cancelScheduledValues() {}
+      cancelAndHoldAtTime() {}
+    }
+
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 0,
+      createGain: () => ({ gain: new MockGainParam(0.0), connect: () => {} }),
+      createBuffer: (ch, len) => ({ getChannelData: () => new Float32Array(len), length: len, sampleRate: 48000 }),
+      createBufferSource: () => ({ connect: () => {}, start: () => {}, stop: () => {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect: () => {} }),
+      createBiquadFilter: () => ({
+        frequency: new MockGainParam(440),
+        Q: new MockGainParam(1),
+        gain: new MockGainParam(1),
+        connect: () => {}
+      }),
+      createOscillator: () => ({
+        frequency: new MockGainParam(440),
+        detune: new MockGainParam(0),
+        connect: () => {},
+        start: () => {},
+        stop: () => {}
+      })
+    };
+
+    const synth = new FeltPianoSynthesizer(mockCtx, null, 1);
+    const voice = synth.voices[0];
+    voice.isActive = false;
+    voice.voiceGain.gain.value = 0.0;
+
+    let voiceInitialGain = null;
+    const origSetValue = voice.voiceGain.gain.setValueAtTime.bind(voice.voiceGain.gain);
+    voice.voiceGain.gain.setValueAtTime = (v, t) => {
+      if (voiceInitialGain === null) voiceInitialGain = v;
+      return origSetValue(v, t);
+    };
+
+    voice.trigger(261.63, 0.6, 3.5, synth.params, false);
+    assert.strictEqual(voiceInitialGain, 0.0, 'Idle voice must anchor amplitude envelope strictly at 0.0 to eliminate DC pedestal pops');
   });
 });

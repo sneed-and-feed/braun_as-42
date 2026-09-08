@@ -476,11 +476,13 @@ export class FeltPianoVoice {
       } else {
         this.filter1.frequency.cancelScheduledValues(cancelTime);
         this.filter2.frequency.cancelScheduledValues(cancelTime);
+        if (isStealing) {
+          this.filter1.frequency.setValueAtTime(curCutoff1, cancelTime);
+          this.filter2.frequency.setValueAtTime(curCutoff2, cancelTime);
+        }
       }
 
       if (isStealing) {
-        this.filter1.frequency.setValueAtTime(curCutoff1, cancelTime);
-        this.filter2.frequency.setValueAtTime(curCutoff2, cancelTime);
         this.filter1.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
         this.filter2.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
       } else {
@@ -502,7 +504,7 @@ export class FeltPianoVoice {
     }
 
     // --- Master Amplitude Envelope ---
-    // Smooth micro-attack ramp from 0.0001 to peakGain eliminates step discontinuity clicks.
+    // Smooth micro-attack ramp from 0.0 to peakGain eliminates step discontinuity clicks.
     // In CS-80 mode, peakGain is calibrated to match the Solar 42n drone's authoritative sonic presence.
     const attackTime = isCS80 ? 0.024 : 0.007;
     const peakGain = isCS80
@@ -511,7 +513,7 @@ export class FeltPianoVoice {
 
     if (!isStealing) {
       this.voiceGain.gain.cancelScheduledValues(cancelTime);
-      this.voiceGain.gain.setValueAtTime(0.0001, cancelTime);
+      this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
     }
     // When stealing, the voice gain has already smoothly ramped down to 0.0001 at noteStartTime.
     // Ramping directly to peakGain from noteStartTime prevents redundant setValueAtTime collisions.

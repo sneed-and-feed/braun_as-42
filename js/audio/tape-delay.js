@@ -89,9 +89,12 @@ export class TapeDelay {
     this.wetGain = ctx.createGain();
     this.wetGain.gain.setValueAtTime(this.wetLevel, ctx.currentTime);
 
-    // Input to Delays
-    this.input.connect(this.delayNodeL);
-    this.input.connect(this.delayNodeR);
+    // Input attenuation pad: provides -3dB headroom so simultaneous drone + Poisson note bursts never overload the tape saturation waveshaper
+    this.inputPad = ctx.createGain();
+    this.inputPad.gain.setValueAtTime(0.707, ctx.currentTime);
+    this.input.connect(this.inputPad);
+    this.inputPad.connect(this.delayNodeL);
+    this.inputPad.connect(this.delayNodeR);
 
     // Delay L chain: DelayL -> Highpass -> Filter -> Shaper
     this.delayNodeL.connect(this.highpassL);
@@ -148,9 +151,9 @@ export class TapeDelay {
     this.wowGainL.connect(this.delayNodeL.delayTime);
     this.wowGainR.connect(this.delayNodeR.delayTime);
 
-    // Flutter LFO (Fast mechanical scrape ~5.8 Hz)
+    // Flutter LFO (Fast mechanical scrape ~5.8 Hz - smooth sine eliminates triangle wave velocity step pops)
     this.flutterOsc = ctx.createOscillator();
-    this.flutterOsc.type = 'triangle';
+    this.flutterOsc.type = 'sine';
     this.flutterOsc.frequency.setValueAtTime(5.8, ctx.currentTime);
 
     this.flutterGainL = ctx.createGain();

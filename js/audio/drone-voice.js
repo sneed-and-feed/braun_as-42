@@ -235,6 +235,13 @@ export class SolarDroneVoice {
     if (this.lfoGain1 && this.lfoGain1.gain) {
       if (Math.abs((this._appliedLfoDepth ?? -1) - safeDepth) > 0.5) {
         this._appliedLfoDepth = safeDepth;
+        if (typeof this.lfoGain1.gain.cancelAndHoldAtTime === 'function') {
+          this.lfoGain1.gain.cancelAndHoldAtTime(now);
+          this.lfoGain2.gain.cancelAndHoldAtTime(now);
+        } else if (typeof this.lfoGain1.gain.cancelScheduledValues === 'function') {
+          this.lfoGain1.gain.cancelScheduledValues(now);
+          this.lfoGain2.gain.cancelScheduledValues(now);
+        }
         if (typeof this.lfoGain1.gain.setTargetAtTime === 'function') {
           this.lfoGain1.gain.setTargetAtTime(safeDepth, now, 0.05);
           this.lfoGain2.gain.setTargetAtTime(safeDepth, now, 0.05);
@@ -299,8 +306,14 @@ export class SolarDroneVoice {
    */
   setVolume(v) {
     this.volume = Math.max(0, Math.min(1.0, v));
-    if (this.isActive) {
-      this.voiceGain.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.04);
+    if (this.isActive && this.voiceGain && this.voiceGain.gain) {
+      const now = this.ctx.currentTime;
+      if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
+        this.voiceGain.gain.cancelAndHoldAtTime(now);
+      } else if (typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
+        this.voiceGain.gain.cancelScheduledValues(now);
+      }
+      this.voiceGain.gain.setTargetAtTime(this.volume, now, 0.04);
     }
   }
 
@@ -311,7 +324,11 @@ export class SolarDroneVoice {
     this.isActive = active;
     const now = this.ctx.currentTime;
     const targetGain = this.isActive ? this.volume : 0.0001;
-    this.voiceGain.gain.cancelScheduledValues(now);
+    if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
+      this.voiceGain.gain.cancelAndHoldAtTime(now);
+    } else if (typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
+      this.voiceGain.gain.cancelScheduledValues(now);
+    }
     this.voiceGain.gain.setTargetAtTime(targetGain, now, 0.06);
     return this.isActive;
   }
