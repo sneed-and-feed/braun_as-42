@@ -32,6 +32,7 @@ export class FeltPianoVoice {
     this.isActive = false;
     this.isHold = false;
     this._decayTimer = null;
+    this._releaseTimer = null;
     this.currentMidi = null;
     this.currentFreq = null;
     this.currentVelocity = 0.6;
@@ -273,6 +274,10 @@ export class FeltPianoVoice {
     if (this._decayTimer) {
       clearTimeout(this._decayTimer);
       this._decayTimer = null;
+    }
+    if (this._releaseTimer) {
+      clearTimeout(this._releaseTimer);
+      this._releaseTimer = null;
     }
 
     const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
@@ -560,6 +565,10 @@ export class FeltPianoVoice {
       clearTimeout(this._decayTimer);
       this._decayTimer = null;
     }
+    if (this._releaseTimer) {
+      clearTimeout(this._releaseTimer);
+      this._releaseTimer = null;
+    }
     const now = this.ctx.currentTime;
     const cancelTime = Math.max(now, this.ctx.currentTime);
     const curGain = Math.max(0.0001, this.voiceGain.gain.value || 0.0001);
@@ -588,11 +597,16 @@ export class FeltPianoVoice {
       this.filter1.frequency.exponentialRampToValueAtTime(Math.max(160, this.currentFreq * 1.1), releaseTarget);
       this.filter2.frequency.exponentialRampToValueAtTime(Math.max(160, this.currentFreq * 1.1), releaseTarget);
     }
-    setTimeout(() => {
-      this.isActive = false;
-      if (this.synth) {
-        this.synth._updatePolyphonicHeadroom();
+
+    const releaseStartTime = this.startTime;
+    this._releaseTimer = setTimeout(() => {
+      if (this.startTime === releaseStartTime && !this.isHold) {
+        this.isActive = false;
+        if (this.synth) {
+          this.synth._updatePolyphonicHeadroom();
+        }
       }
+      this._releaseTimer = null;
     }, Math.round((relDuration + 0.05) * 1000));
   }
 }
@@ -737,9 +751,13 @@ export class FeltPianoSynthesizer {
       }
     }
 
-    // 2. If all voices are active, steal the quietest or oldest sounding voice
+    // 2. If all voices are active, steal the quietest or oldest sounding voice,
+    // prioritizing stealing non-held voices over actively held voices to protect user sustained notes.
     if (!voice) {
       voice = this.voices.reduce((best, v) => {
+        if (v.isHold && !best.isHold) return best;
+        if (!v.isHold && best.isHold) return v;
+
         const vGain = v.voiceGain ? v.voiceGain.gain.value : 0;
         const bestGain = best.voiceGain ? best.voiceGain.gain.value : 0;
         if (vGain < bestGain) return v;

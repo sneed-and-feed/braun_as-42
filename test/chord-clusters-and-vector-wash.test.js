@@ -557,6 +557,91 @@ describe('Press & Hold Sustain, Header Layout, and Dark Theme Legibility Verific
       css.includes('touch-action: none;'),
       'Play surface elements must specify touch-action: none to prevent mobile hold cancellation'
     );
+
+    // 5. Dark theme active/pressed state text contrast overrides (prevent white-on-white text)
+    assert.ok(
+      css.includes('[data-theme="dark"] .braun-chime-key.is-pressed .braun-key-name') &&
+      css.includes('color: #141517;'),
+      'Dark theme pressed chime keys must flip text to dark color #141517 on white background'
+    );
+    assert.ok(
+      css.includes('[data-theme="dark"] .braun-chord-macro-btn.is-active .braun-chord-title') &&
+      css.includes('color: #141517;'),
+      'Dark theme active chord macros must flip title to dark color #141517 on white background'
+    );
+    assert.ok(
+      css.includes('.braun-led.is-active {') && css.includes('background-color: var(--braun-orange);'),
+      'Active LEDs must illuminate with bright braun-orange'
+    );
+    assert.ok(
+      css.includes('--knob-track;') || css.includes('var(--knob-track);'),
+      'Reset button hover must reference valid --knob-track variable'
+    );
+  });
+
+  it('guarantees releasing voice re-triggered within release window stays active and held without premature deactivation', async () => {
+    const ctx = createDSPMockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 4);
+    const voice = synth.voices[0];
+
+    // 1. Initial trigger with hold
+    voice.trigger(440, 0.8, Infinity, synth.params, true);
+    assert.strictEqual(voice.isHold, true);
+    assert.strictEqual(voice.isActive, true);
+
+    // 2. Call release()
+    voice.release();
+    assert.strictEqual(voice.isHold, false);
+    assert.ok(voice._releaseTimer, '_releaseTimer must be set upon release()');
+
+    // 3. Re-trigger within release window (e.g. 50ms later)
+    voice.trigger(440, 0.8, Infinity, synth.params, true);
+    assert.strictEqual(voice.isHold, true);
+    assert.strictEqual(voice.isActive, true);
+    assert.strictEqual(voice._releaseTimer, null, '_releaseTimer must be cleared upon re-trigger');
+
+    // Wait for the release timeout duration to elapse (500ms)
+    await new Promise(resolve => setTimeout(resolve, 520));
+
+    // Must still be active and held!
+    assert.strictEqual(voice.isActive, true, 'Re-triggered voice must remain active after release timeout elapses');
+    assert.strictEqual(voice.isHold, true, 'Re-triggered voice must remain held');
+  });
+
+  it('protects actively held voices from polyphonic voice stealing across full voice pool', () => {
+    const ctx = createDSPMockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 24);
+
+    // Trigger 6 held chord voices
+    const heldVoices = [];
+    for (let i = 0; i < 6; i++) {
+      const v = synth.playNote(220 + i * 20, 0.7, Infinity, true);
+      heldVoices.push(v);
+    }
+
+    // Trigger remaining 18 voices as non-held notes
+    const nonHeldVoices = [];
+    for (let i = 0; i < 18; i++) {
+      const v = synth.playNote(440 + i * 10, 0.6, 3.5, false);
+      nonHeldVoices.push(v);
+    }
+
+    assert.strictEqual(synth.voices.filter(v => v.isActive).length, 24, 'All 24 voices must be active');
+
+    // Now trigger 1 more note, forcing voice stealing
+    const stolenVoice = synth.playNote(880, 0.8, 3.5, false);
+
+    // The stolen voice MUST be one of the non-held voices, NEVER one of the 6 held voices!
+    assert.strictEqual(
+      heldVoices.includes(stolenVoice),
+      false,
+      'Voice stealing must NEVER steal an actively held voice when non-held voices exist'
+    );
+    assert.ok(
+      nonHeldVoices.includes(stolenVoice),
+      'Voice stealing must steal from the pool of non-held voices'
+    );
   });
 });
+
 

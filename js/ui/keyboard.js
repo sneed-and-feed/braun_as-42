@@ -57,6 +57,9 @@ export class BraunPlaySurface {
       let handledByPointer = false;
       let clearPointerTimer = null;
 
+      keyEl.setAttribute('draggable', 'false');
+      keyEl.addEventListener('dragstart', (e) => e.preventDefault());
+
       // Pointer event for velocity-sensitive strike
       const triggerStrike = (clientY, clientRect, isHold = false) => {
         let velocity = 0.60;
@@ -69,6 +72,7 @@ export class BraunPlaySurface {
       };
 
       const handleKeyRelease = () => {
+        keyEl._isHeld = false;
         if (activeVoice) {
           this.activePointerVoices.delete(activeVoice);
           if (typeof activeVoice.release === 'function') {
@@ -88,6 +92,7 @@ export class BraunPlaySurface {
       };
 
       keyEl.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
         if (e.preventDefault) e.preventDefault();
         handledByPointer = true;
         if (clearPointerTimer) {
@@ -108,6 +113,9 @@ export class BraunPlaySurface {
             keyEl.setPointerCapture(e.pointerId);
           }
         } catch (err) {}
+        keyEl._isHeld = true;
+        keyEl.classList.add('is-pressed');
+        keyEl.classList.add('is-active');
         activeVoice = triggerStrike(e.clientY, keyEl.getBoundingClientRect(), true);
         if (activeVoice) {
           this.activePointerVoices.add(activeVoice);
@@ -182,6 +190,9 @@ export class BraunPlaySurface {
         <span class="braun-chord-desc">${voicing.description}</span>
       `;
 
+      btn.setAttribute('draggable', 'false');
+      btn.addEventListener('dragstart', (e) => e.preventDefault());
+
       btn.addEventListener('mouseenter', () => {
         this._updateChordReadout(voicing, false);
       });
@@ -191,12 +202,13 @@ export class BraunPlaySurface {
       let clearPointerTimer = null;
 
       const triggerChordRelease = () => {
+        btn._isHeld = false;
+        btn.classList.remove('is-active');
         if (activeSession) {
           this.activePointerChordSessions.delete(activeSession);
           this.stopChordSession(activeSession);
           activeSession = null;
         }
-        btn.classList.remove('is-active');
         if (clearPointerTimer) clearTimeout(clearPointerTimer);
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
@@ -205,7 +217,8 @@ export class BraunPlaySurface {
       };
 
       btn.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
+        if (e.button !== undefined && e.button !== 0) return;
+        if (e.preventDefault) e.preventDefault();
         handledByPointer = true;
         if (clearPointerTimer) {
           clearTimeout(clearPointerTimer);
@@ -222,11 +235,12 @@ export class BraunPlaySurface {
           }
         } catch (err) {}
 
+        btn._isHeld = true;
+        btn.classList.add('is-active');
         activeSession = this.startChord(voicing.id, true);
         if (activeSession) {
           this.activePointerChordSessions.add(activeSession);
         }
-        btn.classList.add('is-active');
       });
 
       btn.addEventListener('pointerup', (e) => {
@@ -318,12 +332,17 @@ export class BraunPlaySurface {
     if (keyEl) {
       if (keyEl._flashTimer) {
         clearTimeout(keyEl._flashTimer);
+        keyEl._flashTimer = null;
       }
       keyEl.classList.add('is-pressed');
-      keyEl._flashTimer = setTimeout(() => {
-        keyEl.classList.remove('is-pressed');
-        keyEl._flashTimer = null;
-      }, 250);
+      if (!keyEl._isHeld) {
+        keyEl._flashTimer = setTimeout(() => {
+          if (!keyEl._isHeld) {
+            keyEl.classList.remove('is-pressed');
+          }
+          keyEl._flashTimer = null;
+        }, 250);
+      }
     }
   }
 
@@ -339,12 +358,17 @@ export class BraunPlaySurface {
     if (btn) {
       if (btn._flashTimer) {
         clearTimeout(btn._flashTimer);
+        btn._flashTimer = null;
       }
       btn.classList.add('is-active');
-      btn._flashTimer = setTimeout(() => {
-        btn.classList.remove('is-active');
-        btn._flashTimer = null;
-      }, 250);
+      if (!btn._isHeld) {
+        btn._flashTimer = setTimeout(() => {
+          if (!btn._isHeld) {
+            btn.classList.remove('is-active');
+          }
+          btn._flashTimer = null;
+        }, 250);
+      }
     }
     const voicing = CHORD_VOICINGS[voicingId] || Object.values(CHORD_VOICINGS).find(v => v.id === voicingId);
     if (voicing) {
@@ -378,8 +402,8 @@ export class BraunPlaySurface {
 
     const triggerChordVoice = (freq, vel, midi) => {
       this.flashKey(midi);
-      if (this.engine && this.engine.isInitialized && this.engine.feltPiano) {
-        const voice = this.engine.feltPiano.playNote(freq, vel, duration, isHold);
+      const playVoice = (piano) => {
+        const voice = piano.playNote(freq, vel, duration, isHold);
         if (voice) {
           session.voices.push(voice);
           if (session.isReleased) {
@@ -387,17 +411,14 @@ export class BraunPlaySurface {
             else if (voice && typeof voice.then === 'function') voice.then(v => v?.release?.());
           }
         }
+      };
+
+      if (this.engine && this.engine.isInitialized && this.engine.feltPiano) {
+        playVoice(this.engine.feltPiano);
       } else if (this.engine && this.engine._initPromise) {
         this.engine._initPromise.then(() => {
           if (this.engine && this.engine.feltPiano) {
-            const voice = this.engine.feltPiano.playNote(freq, vel, duration, isHold);
-            if (voice) {
-              session.voices.push(voice);
-              if (session.isReleased) {
-                if (typeof voice.release === 'function') voice.release();
-                else if (voice && typeof voice.then === 'function') voice.then(v => v?.release?.());
-              }
-            }
+            playVoice(this.engine.feltPiano);
           }
         });
       }
@@ -423,6 +444,8 @@ export class BraunPlaySurface {
   stopChordSession(session) {
     if (!session || session.isReleased) return;
     session.isReleased = true;
+    session.timers.forEach(t => clearTimeout(t));
+    session.timers = [];
     session.voices.forEach(voice => {
       if (voice) {
         if (typeof voice.release === 'function') {
@@ -432,7 +455,7 @@ export class BraunPlaySurface {
         }
       }
     });
-    session.timers.forEach(t => clearTimeout(t));
+    session.voices = [];
   }
 
   /**
@@ -484,11 +507,18 @@ export class BraunPlaySurface {
       // Ignore if user is in an input field
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
 
-      // Prevent key repeat machine-gun note bursts
-      if (e.repeat) return;
+      const chimeIdx = getKeyIndex(e);
+      const chordIdx = getChordIndex(e);
+
+      // Prevent key repeat machine-gun bursts, but preventDefault to stop browser hotkeys/scrolling
+      if (e.repeat) {
+        if (chimeIdx !== null || chordIdx !== null || e.code === 'Space') {
+          e.preventDefault();
+        }
+        return;
+      }
 
       // Playable chime keys with continuous hold sustain
-      const chimeIdx = getKeyIndex(e);
       if (chimeIdx !== null) {
         const keys = Array.from(this.keyElements.values());
         const keyEl = keys[chimeIdx];
@@ -496,26 +526,28 @@ export class BraunPlaySurface {
           e.preventDefault();
           const freq = parseFloat(keyEl.getAttribute('data-freq'));
           const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
+          keyEl._isHeld = true;
           keyEl.classList.add('is-active');
+          keyEl.classList.add('is-pressed');
           const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0, true);
           const keyIdentifier = e.code || e.key;
-          this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise });
+          this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise, code: e.code, key: e.key });
         }
         return;
       }
 
       // Chord clusters with continuous hold sustain
-      const chordIdx = getChordIndex(e);
       if (chordIdx !== null) {
         const chordBtns = this.chordsContainer ? this.chordsContainer.querySelectorAll('.braun-chord-macro-btn') : [];
         const btn = chordBtns[chordIdx];
         if (btn) {
           e.preventDefault();
           const voicingId = btn.getAttribute('data-chord');
+          btn._isHeld = true;
           btn.classList.add('is-active');
           const session = this.startChord(voicingId, true);
           const chordIdentifier = e.code || e.key;
-          this.activeHeldChords.set(chordIdentifier, { btn, session });
+          this.activeHeldChords.set(chordIdentifier, { btn, session, code: e.code, key: e.key });
         }
         return;
       }
@@ -531,10 +563,27 @@ export class BraunPlaySurface {
     window.addEventListener('keyup', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
 
-      const keyIdentifier = e.code || e.key;
-      if (this.activeHeldKeys.has(keyIdentifier)) {
-        const { keyEl, voiceOrPromise } = this.activeHeldKeys.get(keyIdentifier);
-        if (keyEl) keyEl.classList.remove('is-active');
+      const code = e.code;
+      const key = e.key;
+
+      // Find held chime key
+      let heldKeyEntry = null;
+      let heldKeyId = null;
+      for (const [id, entry] of this.activeHeldKeys.entries()) {
+        if (id === code || id === key || (entry && (entry.code === code || entry.key === key))) {
+          heldKeyEntry = entry;
+          heldKeyId = id;
+          break;
+        }
+      }
+
+      if (heldKeyEntry) {
+        const { keyEl, voiceOrPromise } = heldKeyEntry;
+        if (keyEl) {
+          keyEl._isHeld = false;
+          keyEl.classList.remove('is-active');
+          keyEl.classList.remove('is-pressed');
+        }
         if (voiceOrPromise) {
           if (typeof voiceOrPromise.release === 'function') {
             voiceOrPromise.release();
@@ -544,24 +593,40 @@ export class BraunPlaySurface {
             });
           }
         }
-        this.activeHeldKeys.delete(keyIdentifier);
+        this.activeHeldKeys.delete(heldKeyId);
       }
 
-      const chordIdx = getChordIndex(e);
-      const chordIdentifier = e.code || e.key;
-      if (chordIdx !== null && this.activeHeldChords.has(chordIdentifier)) {
-        const { btn, session } = this.activeHeldChords.get(chordIdentifier);
-        if (btn) btn.classList.remove('is-active');
+      // Find held chord
+      let heldChordEntry = null;
+      let heldChordId = null;
+      for (const [id, entry] of this.activeHeldChords.entries()) {
+        if (id === code || id === key || (entry && (entry.code === code || entry.key === key))) {
+          heldChordEntry = entry;
+          heldChordId = id;
+          break;
+        }
+      }
+
+      if (heldChordEntry) {
+        const { btn, session } = heldChordEntry;
+        if (btn) {
+          btn._isHeld = false;
+          btn.classList.remove('is-active');
+        }
         if (session) {
           this.stopChordSession(session);
         }
-        this.activeHeldChords.delete(chordIdentifier);
+        this.activeHeldChords.delete(heldChordId);
       }
     });
 
     window.addEventListener('blur', () => {
       this.activeHeldKeys.forEach(({ keyEl, voiceOrPromise }) => {
-        if (keyEl) keyEl.classList.remove('is-active');
+        if (keyEl) {
+          keyEl._isHeld = false;
+          keyEl.classList.remove('is-active');
+          keyEl.classList.remove('is-pressed');
+        }
         if (voiceOrPromise) {
           if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
           else if (typeof voiceOrPromise.then === 'function') voiceOrPromise.then(v => v?.release?.());
@@ -570,10 +635,27 @@ export class BraunPlaySurface {
       this.activeHeldKeys.clear();
 
       this.activeHeldChords.forEach(({ btn, session }) => {
-        if (btn) btn.classList.remove('is-active');
+        if (btn) {
+          btn._isHeld = false;
+          btn.classList.remove('is-active');
+        }
         if (session) this.stopChordSession(session);
       });
       this.activeHeldChords.clear();
+
+      this.keyElements.forEach(keyEl => {
+        keyEl._isHeld = false;
+        keyEl.classList.remove('is-pressed');
+        keyEl.classList.remove('is-active');
+      });
+
+      if (this.chordsContainer) {
+        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
+        chordBtns.forEach(btn => {
+          btn._isHeld = false;
+          btn.classList.remove('is-active');
+        });
+      }
 
       this.activePointerVoices.forEach(voiceOrPromise => {
         if (voiceOrPromise) {
@@ -590,6 +672,20 @@ export class BraunPlaySurface {
     });
 
     window.addEventListener('pointerup', () => {
+      this.keyElements.forEach(keyEl => {
+        keyEl._isHeld = false;
+        keyEl.classList.remove('is-pressed');
+        keyEl.classList.remove('is-active');
+      });
+
+      if (this.chordsContainer) {
+        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
+        chordBtns.forEach(btn => {
+          btn._isHeld = false;
+          btn.classList.remove('is-active');
+        });
+      }
+
       this.activePointerVoices.forEach(voiceOrPromise => {
         if (voiceOrPromise) {
           if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
