@@ -47,6 +47,29 @@ export function makeSoftClipCurve(samples = 2048, drive = 1.5) {
 }
 
 /**
+ * Generate a transparent soft-knee limiter transfer curve with C1-smooth boundary knee.
+ * Exhibits exactly unity small-signal gain (0 dB, slope = 1.0) for linear signals |x| <= knee,
+ * eliminating unintended pre-amplification or gain boosting.
+ * For signals |x| > knee, smoothly glides to +/-1.0 with zero derivative at +/-1.0,
+ * eliminating slope-discontinuity clipping clicks and decimation filter ringing.
+ * @param {number} [samples=2048]
+ * @param {number} [knee=0.75]
+ * @returns {Float32Array}
+ */
+export function makeLimiterCurve(samples = 2048, knee = 0.75) {
+  const curve = new Float32Array(samples);
+  const half = (samples - 1) / 2;
+  const k = Math.max(0.20, Math.min(0.95, knee));
+
+  for (let i = 0; i < samples; i++) {
+    const x = (i - half) / half; // -1 to +1
+    curve[i] = applySmoothBoundaryKnee(x, k);
+  }
+
+  return curve;
+}
+
+/**
  * Generate a West-Coast analog wavefolding transfer curve (Solar 42n style)
  * Folds signal peaks inward to generate complex harmonic overtones from simple sines.
  * @param {number} [samples=2048]

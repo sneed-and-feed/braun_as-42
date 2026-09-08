@@ -12,7 +12,7 @@ import { ShimmerReverb } from './shimmer-reverb.js';
 import { PhaseLoopEngine } from '../generative/phase-loops.js';
 import { PoissonGenerator } from '../generative/poisson.js';
 import { SCALES, NOTE_NAMES, midiToFrequency } from '../generative/scales.js';
-import { makeSoftClipCurve, makeTapeSaturationCurve } from './wavefolder.js';
+import { makeSoftClipCurve, makeTapeSaturationCurve, makeLimiterCurve } from './wavefolder.js';
 
 export class AudioEngine {
   constructor() {
@@ -151,10 +151,10 @@ export class AudioEngine {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
 
-    // Analog Soft Limiter (prevents digital clipping, adds warm saturation if pushed)
+    // Analog Soft Limiter (prevents digital clipping, transparent unity gain below knee)
     this.masterLimiter = this.ctx.createWaveShaper();
     this.masterLimiter.oversample = '4x';
-    this.masterLimiter.curve = makeSoftClipCurve(2048, 1.10);
+    this.masterLimiter.curve = makeLimiterCurve(2048, 0.80);
 
     // Analog Master Bus Tape Saturation Stage (adds warmth, musical harmonics, and tape glue)
     this.masterTapeSaturator = this.ctx.createWaveShaper();
@@ -191,7 +191,8 @@ export class AudioEngine {
       delayTimeR: this.delayParams.time * 1.5,
       feedback: this.delayParams.feedback,
       wetLevel: this.delayParams.wet,
-      dryLevel: 0.0
+      dryLevel: 0.0,
+      inputPad: 0.38 // Calibrated -8.4dB headroom ensures max velocity polyphonic chords never overdrive delay line
     });
     this.tapeDelay.setTone(this.delayParams.tone);
     this.tapeDelay.setWowFlutter(this.delayParams.wow);
@@ -208,15 +209,28 @@ export class AudioEngine {
     }
 
     // Connect Delay into Reverb for lush cascade and into Master Bus
-    // Calibrated Delay Return bus with soft limiting prevents circulating delay buildup from overdriving master or shimmer
+    // Calibrated Delay Return bus with compressor and soft limiting prevents circulating delay buildup from overdriving master or shimmer
     this.delayReturn = this.ctx.createGain();
     this.delayReturn.gain.setValueAtTime(1.0, this.ctx.currentTime);
     this.delayReturnLimiter = this.ctx.createWaveShaper();
     this.delayReturnLimiter.oversample = '4x';
-    this.delayReturnLimiter.curve = makeSoftClipCurve(2048, 1.05);
+    this.delayReturnLimiter.curve = makeLimiterCurve(2048, 0.78);
 
-    this.tapeDelay.output.connect(this.delayReturn);
-    this.delayReturn.connect(this.delayReturnLimiter);
+    if (this.ctx.createDynamicsCompressor) {
+      this.delayReturnCompressor = this.ctx.createDynamicsCompressor();
+      this.delayReturnCompressor.threshold.setValueAtTime(-6.0, this.ctx.currentTime); // -6 dBFS
+      this.delayReturnCompressor.knee.setValueAtTime(4.0, this.ctx.currentTime);
+      this.delayReturnCompressor.ratio.setValueAtTime(4.0, this.ctx.currentTime);
+      this.delayReturnCompressor.attack.setValueAtTime(0.003, this.ctx.currentTime);
+      this.delayReturnCompressor.release.setValueAtTime(0.080, this.ctx.currentTime);
+
+      this.tapeDelay.output.connect(this.delayReturn);
+      this.delayReturn.connect(this.delayReturnCompressor);
+      this.delayReturnCompressor.connect(this.delayReturnLimiter);
+    } else {
+      this.tapeDelay.output.connect(this.delayReturn);
+      this.delayReturn.connect(this.delayReturnLimiter);
+    }
     this.delayReturnLimiter.connect(this.shimmerReverb.input);
     this.delayReturnLimiter.connect(this.masterGain);
     this.shimmerReverb.output.connect(this.masterGain);

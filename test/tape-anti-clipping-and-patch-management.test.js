@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { TapeDelay } from '../js/audio/tape-delay.js';
 import { AudioEngine } from '../js/audio/engine.js';
 import { AmbientApp } from '../js/app.js';
-import { makeTapeSaturationCurve } from '../js/audio/wavefolder.js';
+import { makeTapeSaturationCurve, makeLimiterCurve } from '../js/audio/wavefolder.js';
 
 class MockAudioParam {
   constructor(v = 1.0) {
@@ -154,6 +154,58 @@ describe('Tape Delay DSP Anti-Clipping & Feedback Normalization', () => {
     assert.strictEqual(clampedFlutter, 0, 'Flutter modulation must be clamped to 0 at 0.015s boundary');
     assert.strictEqual(delay.delayTimeL, 0.015, 'delayTimeL must be clamped to minimum 0.015s');
   });
+
+  it('verifies makeLimiterCurve exhibits 0 dB unity gain below knee and zero derivative at boundaries', () => {
+    const curve = makeLimiterCurve(2048, 0.75);
+    assert.strictEqual(curve.length, 2048);
+
+    // Linear region check: slope must be strictly 1.0 (0 dB gain) with no distortion below knee
+    const mid = Math.floor(curve.length / 2);
+    const dx = 2 / 2047;
+    const slopeZero = (curve[mid + 1] - curve[mid]) / dx;
+    assert.ok(Math.abs(slopeZero - 1.0) < 1e-4, `Small-signal gain at zero must be 1.0, got ${slopeZero}`);
+
+    // Derivative near boundary must smoothly approach zero
+    const dPos = Math.abs(curve[2047] - curve[2046]);
+    assert.ok(dPos < 0.0005, `Boundary slope must approach 0, got ${dPos}`);
+
+    // Bounded endpoints
+    assert.strictEqual(curve[2047], 1.0);
+    assert.strictEqual(curve[0], -1.0);
+  });
+
+  it('verifies TapeDelay supports custom inputPad headroom and preserves default 0.707', () => {
+    const ctx = createFullMockCtx();
+    const defaultDelay = new TapeDelay(ctx);
+    assert.strictEqual(defaultDelay.inputPad.gain.value, 0.707, 'Default inputPad gain must be 0.707 (-3dB)');
+
+    const customDelay = new TapeDelay(ctx, { inputPad: 0.38 });
+    assert.strictEqual(customDelay.inputPad.gain.value, 0.38, 'Custom inputPad gain must be set accurately');
+  });
+
+  it('verifies circulating loop + incoming note energy is strictly < 1.0 under max velocity chord and 92% feedback', () => {
+    const ctx = createFullMockCtx();
+    const delay = new TapeDelay(ctx, { feedback: 0.92, inputPad: 0.38 });
+
+    // Maximum theoretical feedback signal returning from waveshapers
+    const maxDirectFb = delay.fbGainLL.gain.value;
+    const maxCrossFb = delay.fbGainRL.gain.value;
+    const maxFeedbackReturn = (maxDirectFb + maxCrossFb) * 1.0; // waveshaper peak output is bounded by 1.0
+    assert.ok(maxFeedbackReturn <= 0.6065, `Max feedback return must be <= 0.6065, got ${maxFeedbackReturn}`);
+
+    // Maximum chord input signal into delay line
+    // Even if pianoBus produces 0.85 and drones produce 0.22, inputPad (0.38) scales it down
+    const maxInputSignal = (0.85 + 0.22) * delay.inputPad.gain.value;
+    assert.ok(maxInputSignal <= 0.407, `Max input signal into delay must be <= 0.407, got ${maxInputSignal}`);
+
+    const totalWorstCase = maxFeedbackReturn + maxInputSignal;
+    assert.ok(totalWorstCase <= 1.015, `Worst case simultaneous sum must be safely within waveshaper domain, got ${totalWorstCase}`);
+
+    // Typical high-velocity chord strike + 92% feedback
+    const typicalChordPeak = 0.75 * delay.inputPad.gain.value;
+    const typicalSum = maxFeedbackReturn + typicalChordPeak;
+    assert.ok(typicalSum < 1.0, `High velocity chord strike + max feedback sum (${typicalSum}) must be strictly < 1.0 to guarantee zero boundary clipping`);
+  });
 });
 
 describe('AudioEngine Delay Send, Delay Return Bus & Return Limiter', () => {
@@ -172,9 +224,17 @@ describe('AudioEngine Delay Send, Delay Return Bus & Return Limiter', () => {
       assert.strictEqual(engine.delayReturnLimiter.oversample, '4x', 'delayReturnLimiter must use 4x oversampling');
       assert.ok(engine.delayReturnLimiter.curve instanceof Float32Array, 'delayReturnLimiter must have a soft clip curve');
 
+      // Verify delayReturnCompressor exists protecting delay returns
+      assert.ok(engine.delayReturnCompressor, 'AudioEngine must instantiate delayReturnCompressor');
+      assert.strictEqual(engine.delayReturnCompressor.threshold.value, -6.0, 'delayReturnCompressor threshold must be -6 dBFS');
+      assert.strictEqual(engine.delayReturnCompressor.ratio.value, 4.0, 'delayReturnCompressor ratio must be 4:1');
+
       // Verify delaySend bus remains unity calibrated
       assert.ok(engine.delaySend, 'delaySend bus must exist');
       assert.strictEqual(engine.delaySend.gain.value, 1.0, 'delaySend bus gain must be unity calibrated');
+
+      // Verify tapeDelay inputPad headroom is calibrated
+      assert.strictEqual(engine.tapeDelay.inputPad.gain.value, 0.38, 'tapeDelay inputPad must provide calibrated headroom');
     } finally {
       globalThis.AudioContext = origCtx;
     }

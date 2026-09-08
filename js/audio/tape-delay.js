@@ -20,6 +20,7 @@ export class TapeDelay {
     this.flutterAmount = options.flutterAmount ?? 0.0008; // High-frequency flutter
     this.wetLevel = options.wetLevel ?? 0.45;
     this.dryLevel = options.dryLevel ?? 1.0;
+    this.inputPadGain = options.inputPad ?? 0.707; // Calibrated input headroom pad
 
     this._buildGraph();
   }
@@ -102,9 +103,9 @@ export class TapeDelay {
     this.wetGain = ctx.createGain();
     this.wetGain.gain.setValueAtTime(this.wetLevel, ctx.currentTime);
 
-    // Input attenuation pad: provides -3dB headroom so simultaneous drone + Poisson note bursts never overload the tape saturation waveshaper
+    // Input attenuation pad: provides calibrated headroom so simultaneous drone + Poisson note bursts never overload the tape saturation waveshaper
     this.inputPad = ctx.createGain();
-    this.inputPad.gain.setValueAtTime(0.707, ctx.currentTime);
+    this.inputPad.gain.setValueAtTime(this.inputPadGain, ctx.currentTime);
     this.input.connect(this.inputPad);
     this.inputPad.connect(this.delayNodeL);
     this.inputPad.connect(this.delayNodeR);
@@ -232,8 +233,14 @@ export class TapeDelay {
       this.delayNodeL.delayTime.cancelAndHoldAtTime(now);
       this.delayNodeR.delayTime.cancelAndHoldAtTime(now);
     } else if (typeof this.delayNodeL.delayTime.cancelScheduledValues === 'function') {
+      const curDelayL = this.delayNodeL.delayTime.value ?? this.delayTimeL;
+      const curDelayR = this.delayNodeR.delayTime.value ?? this.delayTimeR;
       this.delayNodeL.delayTime.cancelScheduledValues(now);
       this.delayNodeR.delayTime.cancelScheduledValues(now);
+      if (typeof this.delayNodeL.delayTime.setValueAtTime === 'function') {
+        this.delayNodeL.delayTime.setValueAtTime(curDelayL, now);
+        this.delayNodeR.delayTime.setValueAtTime(curDelayR, now);
+      }
     }
 
     if (typeof this.delayNodeL.delayTime.setTargetAtTime === 'function') {
@@ -258,10 +265,20 @@ export class TapeDelay {
       this.fbGainLR.gain.cancelAndHoldAtTime(now);
       this.fbGainRL.gain.cancelAndHoldAtTime(now);
     } else if (typeof this.fbGainLL.gain.cancelScheduledValues === 'function') {
+      const curLL = this.fbGainLL.gain.value ?? directFb;
+      const curRR = this.fbGainRR.gain.value ?? directFb;
+      const curLR = this.fbGainLR.gain.value ?? crossFb;
+      const curRL = this.fbGainRL.gain.value ?? crossFb;
       this.fbGainLL.gain.cancelScheduledValues(now);
       this.fbGainRR.gain.cancelScheduledValues(now);
       this.fbGainLR.gain.cancelScheduledValues(now);
       this.fbGainRL.gain.cancelScheduledValues(now);
+      if (typeof this.fbGainLL.gain.setValueAtTime === 'function') {
+        this.fbGainLL.gain.setValueAtTime(curLL, now);
+        this.fbGainRR.gain.setValueAtTime(curRR, now);
+        this.fbGainLR.gain.setValueAtTime(curLR, now);
+        this.fbGainRL.gain.setValueAtTime(curRL, now);
+      }
     }
 
     this.fbGainLL.gain.setTargetAtTime(directFb, now, 0.025);
@@ -284,16 +301,24 @@ export class TapeDelay {
       this.filterL.frequency.cancelAndHoldAtTime(now);
       this.filterR.frequency.cancelAndHoldAtTime(now);
     } else if (typeof this.filterL.frequency.cancelScheduledValues === 'function') {
+      const curF1 = this.filterL.frequency.value ?? c;
+      const curF2 = this.filterR.frequency.value ?? c;
       this.filterL.frequency.cancelScheduledValues(now);
       this.filterR.frequency.cancelScheduledValues(now);
+      if (typeof this.filterL.frequency.setValueAtTime === 'function') {
+        this.filterL.frequency.setValueAtTime(curF1, now);
+        this.filterR.frequency.setValueAtTime(curF2, now);
+      }
     }
     this.filterL.frequency.setTargetAtTime(c, now, 0.04);
     this.filterR.frequency.setTargetAtTime(c, now, 0.04);
 
     // Keep Q bounded to <= 0.707 to prevent resonant peaks
     if (this.filterL.Q && typeof this.filterL.Q.setValueAtTime === 'function') {
-      this.filterL.Q.setValueAtTime(0.707, now);
-      this.filterR.Q.setValueAtTime(0.707, now);
+      if (this.filterL.Q.value > 0.7071 || Math.abs((this.filterL.Q.value || 0) - 0.707) > 0.001) {
+        this.filterL.Q.setValueAtTime(0.707, now);
+        this.filterR.Q.setValueAtTime(0.707, now);
+      }
     }
   }
 
@@ -303,7 +328,11 @@ export class TapeDelay {
     if (typeof this.wetGain.gain.cancelAndHoldAtTime === 'function') {
       this.wetGain.gain.cancelAndHoldAtTime(now);
     } else if (typeof this.wetGain.gain.cancelScheduledValues === 'function') {
+      const curWet = this.wetGain.gain.value ?? this.wetLevel;
       this.wetGain.gain.cancelScheduledValues(now);
+      if (typeof this.wetGain.gain.setValueAtTime === 'function') {
+        this.wetGain.gain.setValueAtTime(curWet, now);
+      }
     }
     this.wetGain.gain.setTargetAtTime(this.wetLevel, now, 0.025);
   }
@@ -314,7 +343,11 @@ export class TapeDelay {
     if (typeof this.dryGain.gain.cancelAndHoldAtTime === 'function') {
       this.dryGain.gain.cancelAndHoldAtTime(now);
     } else if (typeof this.dryGain.gain.cancelScheduledValues === 'function') {
+      const curDry = this.dryGain.gain.value ?? this.dryLevel;
       this.dryGain.gain.cancelScheduledValues(now);
+      if (typeof this.dryGain.gain.setValueAtTime === 'function') {
+        this.dryGain.gain.setValueAtTime(curDry, now);
+      }
     }
     this.dryGain.gain.setTargetAtTime(this.dryLevel, now, 0.03);
   }

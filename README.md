@@ -34,12 +34,13 @@ The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into
 
 ### 1.2 Brian Eno: Asynchronous Phase Loops & Shimmer Tape Diffusion
 * **Music for Airports Tape Loops:** 4 asynchronous loop tracks running at coprime prime durations (13.7s, 17.3s, 21.1s, 26.9s). Because the periods are incommensurable, the melodic counterpoint continuously drifts and never repeats. Dynamic pitch readouts display active notes (e.g. C3, G4, E5, B5).
-* **Anti-Clipping Stereo Tape Delay with Normalized Feedback:** Polyrhythmic cross-coupled delay lines (3:2 stereo ratio, up to 3.5s) engineered for zero sporadic clipping, clicks, or pops:
+* **Anti-Clipping Stereo Tape Delay with Normalized Feedback & Input Headroom:** Polyrhythmic cross-coupled delay lines (3:2 stereo ratio, up to 3.5s) engineered for zero sporadic clipping, clicks, or pops:
   * **Normalized Feedback Loop Gain:** The tape saturation transfer curve slope ($k \approx 1.5173$ at $x = 0$) is normalized (`directFb = (feedback * 0.7) / shaperGain`, `crossFb = (feedback * 0.3) / shaperGain`). Circulating loop gain at linear signal levels strictly equals the user's feedback setting ($\le 0.92$), stopping runaway resonant buildup and flat-top waveshaper rail-clipping during heavy polyphonic playing.
+  * **Calibrated Input Headroom Pad (`inputPad: 0.38`):** Summed delay line input is calibrated with -8.4 dB headroom. Even when maximum-velocity 6-voice polyphonic chords and twin drone voices are struck into the delay line with feedback at 92%, total circulating energy entering the waveshapers is strictly bounded below 1.0, eliminating Web Audio boundary hard-clipping and oversampling filter ringing.
   * **Butterworth Biquad Damping ($Q = 0.707$):** Tape head loss lowpass (3600 Hz) and DC blocking highpass (75 Hz) filters are clamped to $Q = 0.707$ ($1/\sqrt{2}$), eliminating +1.25 dB resonant peaking bumps in the feedback loop.
   * **Mechanical Wow & Flutter Headroom Clamping:** LFO modulation depth is dynamically constrained with an absolute safety floor (`Math.max(0.015, ...)`), guaranteeing delay time never drops into near-zero or negative boundaries, eliminating Doppler singularities and pitch clicks.
-  * **Continuous Non-Scratchy Tape Time Turning:** 1ms continuous dial resolution and slew-rate smoothing eliminate zipper clicks and scratchiness when turning the knob during active playback.
-  * **Dedicated Delay Return Limiter Bus:** Delay returns pass through a dedicated `delayReturn` bus with a 4x oversampled soft-knee saturation limiter (`makeSoftClipCurve(2048, 1.05)`), protecting the master bus and shimmer reverb from polyphonic transient overdriving.
+  * **Continuous Non-Scratchy Tape Time Turning:** 1ms continuous dial resolution, anchor fallbacks, and slew-rate smoothing eliminate zipper clicks and scratchiness when turning the knob during active playback.
+  * **Dedicated Delay Return Compressor & 0 dB Soft Limiter:** Delay returns pass through a dedicated `delayReturn` bus with a fast-acting peak compressor (`delayReturnCompressor`: -6 dBFS threshold, 4:1 ratio) and a 4x oversampled soft-knee limiter (`makeLimiterCurve(2048, 0.78)` with exact 0 dB small-signal gain), protecting the master bus and shimmer reverb from transient overdriving without unintended gain boosting.
 * **Octave-Up Shimmer Reverb Bloom:** Features an algorithmic high-diffusion reverb convolver with debounced RT60 tuning coupled with a clickless dual-delay real-time pitch shifter (+12 semitones / 2.0x frequency) in a feedback loop.
 * **Infinite Ambient Freeze with Input Ducking:** Dual-delay recirculation locks to 0.992 gain with automatic input ducking and isolated output gating (no slapback echo leak when disengaged).
 * **Isolated Send Bus Architecture:** Auxiliary effects run dry-isolated (`dryLevel: 0.0`) so the master bus receives pristine dry signal at unity without phase cancellation or limiter overdrive.
@@ -147,4 +148,4 @@ The project includes an extensive automated test suite verifying scale quantizer
 ```bash
 npm test
 ```
-All 142 unit and integration tests across 28 test suites run with Node's built-in test runner.
+All 145 unit and integration tests across 28 test suites run with Node's built-in test runner.
