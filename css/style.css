@@ -519,11 +519,40 @@ body {
   color: var(--bg-panel);
 }
 
+.braun-chord-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+}
+
 .braun-chord-title {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.braun-chord-shortcut {
+  font-size: 8px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-line);
+  border-radius: 2px;
+  padding: 1px 4px;
+  line-height: 1;
+}
+
+.braun-chord-macro-btn:hover .braun-chord-shortcut {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.braun-chord-macro-btn:active .braun-chord-shortcut {
+  background-color: var(--text-primary);
+  color: var(--bg-panel);
 }
 
 .braun-chord-desc {
@@ -554,6 +583,10 @@ body {
   cursor: pointer;
   transition: transform 0.08s ease, background 0.08s ease;
   position: relative;
+}
+
+.braun-chime-key > * {
+  pointer-events: none;
 }
 
 .braun-chime-key:hover {

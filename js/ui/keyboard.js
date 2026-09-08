@@ -67,7 +67,7 @@ export class BraunPlaySurface {
         e.preventDefault();
         pointerHandled = true;
         triggerStrike(e.clientY, keyEl.getBoundingClientRect());
-        setTimeout(() => { pointerHandled = false; }, 300);
+        setTimeout(() => { pointerHandled = false; }, 250);
       });
 
       keyEl.addEventListener('click', (e) => {
@@ -77,9 +77,19 @@ export class BraunPlaySurface {
 
       // Allow glissando swiping across keys while mouse button is held down
       keyEl.addEventListener('pointerenter', (e) => {
-        if (e.buttons === 1) {
+        if (e.buttons === 1 && !pointerHandled) {
+          pointerHandled = true;
           triggerStrike(e.clientY, keyEl.getBoundingClientRect());
+          setTimeout(() => { pointerHandled = false; }, 250);
         }
+      });
+
+      keyEl.addEventListener('pointerleave', () => {
+        pointerHandled = false;
+      });
+
+      keyEl.addEventListener('pointerup', () => {
+        setTimeout(() => { pointerHandled = false; }, 50);
       });
 
       this.stripContainer.appendChild(keyEl);
@@ -96,12 +106,17 @@ export class BraunPlaySurface {
     if (!this.chordsContainer) return;
     this.chordsContainer.innerHTML = '';
 
-    Object.values(CHORD_VOICINGS).forEach(voicing => {
+    const chordList = Object.values(CHORD_VOICINGS);
+    chordList.forEach((voicing, idx) => {
       const btn = document.createElement('button');
       btn.className = 'braun-chord-macro-btn';
       btn.setAttribute('data-chord', voicing.id);
+      const shortcutKey = idx < 9 ? `${idx + 1}` : (idx === 9 ? '0' : '');
       btn.innerHTML = `
-        <span class="braun-chord-title">${voicing.name}</span>
+        <div class="braun-chord-header">
+          <span class="braun-chord-title">${voicing.name}</span>
+          ${shortcutKey ? `<span class="braun-chord-shortcut">${shortcutKey}</span>` : ''}
+        </div>
         <span class="braun-chord-desc">${voicing.description}</span>
       `;
 

@@ -24,6 +24,7 @@ export class FeltPianoVoice {
     this.currentMidi = null;
     this.startTime = 0;
     this.currentWaveform = 'felt';
+    this.currentHammerSource = null;
 
     this._buildVoice();
   }
@@ -144,8 +145,8 @@ export class FeltPianoVoice {
     const releaseTime = params.release ?? 1.8;
 
     // Check if voice is being stolen / re-triggered while currently sounding
-    const curGain = this.voiceGain.gain.value;
-    const isStealing = this.isActive && curGain > 0.002;
+    const curGain = Math.max(0.0001, this.voiceGain.gain.value || 0.0001);
+    const isStealing = this.isActive || (curGain > 0.0005);
 
     // When stealing an active voice, give a fast 5ms micro-ramp down to silence
     // before re-tuning oscillators to eliminate phase-jump clicks.
@@ -153,8 +154,12 @@ export class FeltPianoVoice {
     const noteStartTime = isStealing ? now + declickRampTime : now;
 
     if (isStealing) {
-      this.voiceGain.gain.cancelScheduledValues(now);
-      this.voiceGain.gain.setValueAtTime(Math.max(0.0001, curGain), now);
+      if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
+        this.voiceGain.gain.cancelAndHoldAtTime(now);
+      } else {
+        this.voiceGain.gain.cancelScheduledValues(now);
+        this.voiceGain.gain.setValueAtTime(curGain, now);
+      }
       this.voiceGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
     }
 
@@ -168,6 +173,24 @@ export class FeltPianoVoice {
     const baseDecay = Math.max(1.5, Math.min(9.0, 7.5 * Math.pow(220 / Math.max(60, freq), 0.45))) * decayMultiplier;
 
     // --- Hammer Transient Impulse ---
+    // Clean up any previously running hammer buffer source
+    if (this.currentHammerSource) {
+      try {
+        this.currentHammerSource.stop(noteStartTime);
+      } catch (e) {}
+      this.currentHammerSource = null;
+    }
+
+    // Smoothly de-click hammer gain if voice was stolen, avoiding abrupt step drop
+    const curHammerGain = Math.max(0.0001, this.hammerGain.gain.value || 0.0001);
+    this.hammerGain.gain.cancelScheduledValues(now);
+    if (isStealing && curHammerGain > 0.001) {
+      this.hammerGain.gain.setValueAtTime(curHammerGain, now);
+      this.hammerGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
+    } else {
+      this.hammerGain.gain.setValueAtTime(0.0001, noteStartTime);
+    }
+
     // Use pre-allocated zero-DC noise buffer with smooth micro-attack to prevent step clicks
     if (hammerThump > 0.01 && this.hammerBuffer) {
       const thumpDuration = 0.025; // 25ms
@@ -178,14 +201,13 @@ export class FeltPianoVoice {
       this.hammerFilter.frequency.setValueAtTime(Math.min(600, freq * 1.5), noteStartTime);
 
       const targetHammerGain = Math.max(0.0001, velocity * hammerThump * 0.45);
-      this.hammerGain.gain.cancelScheduledValues(now);
-      this.hammerGain.gain.setValueAtTime(0.0001, noteStartTime);
       // Smooth 2.5ms micro-attack to peak, then exponential decay down to silence
       this.hammerGain.gain.linearRampToValueAtTime(targetHammerGain, noteStartTime + 0.0025);
       this.hammerGain.gain.exponentialRampToValueAtTime(0.0001, noteStartTime + thumpDuration);
 
       noiseSource.start(noteStartTime);
       noiseSource.stop(noteStartTime + thumpDuration);
+      this.currentHammerSource = noiseSource;
     }
 
     // --- Steep Warm Lowpass Filter Envelope (Harold Budd Dampening) ---
@@ -196,8 +218,13 @@ export class FeltPianoVoice {
     const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || restCutoff));
     const curCutoff2 = Math.max(20, Math.min(20000, this.filter2.frequency.value || restCutoff));
 
-    this.filter1.frequency.cancelScheduledValues(now);
-    this.filter2.frequency.cancelScheduledValues(now);
+    if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
+      this.filter1.frequency.cancelAndHoldAtTime(now);
+      this.filter2.frequency.cancelAndHoldAtTime(now);
+    } else {
+      this.filter1.frequency.cancelScheduledValues(now);
+      this.filter2.frequency.cancelScheduledValues(now);
+    }
 
     if (isStealing) {
       this.filter1.frequency.setValueAtTime(curCutoff1, now);
@@ -205,8 +232,9 @@ export class FeltPianoVoice {
       this.filter1.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
       this.filter2.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
     } else {
-      this.filter1.frequency.setValueAtTime(curCutoff1, now);
-      this.filter2.frequency.setValueAtTime(curCutoff2, now);
+      // Voice was idle/silent: cleanly anchor at restCutoff of struck note
+      this.filter1.frequency.setValueAtTime(restCutoff, now);
+      this.filter2.frequency.setValueAtTime(restCutoff, now);
     }
 
     // Filter attack ramp (6ms smooth rise to peak strike cutoff)
@@ -337,8 +365,17 @@ export class FeltPianoSynthesizer {
    * @param {number} [duration=3.5]
    */
   playNote(freq, velocity = 0.6, duration = 3.5) {
-    // 1. Find free inactive voice
-    let voice = this.voices.find(v => !v.isActive);
+    // 1. Find free inactive voice using round-robin rotation across pool
+    let voice = null;
+    const n = this.voices.length;
+    for (let i = 0; i < n; i++) {
+      const idx = (this.voiceIndex + i) % n;
+      if (!this.voices[idx].isActive) {
+        voice = this.voices[idx];
+        this.voiceIndex = (idx + 1) % n;
+        break;
+      }
+    }
 
     // 2. If all voices are active, steal the quietest or oldest sounding voice
     if (!voice) {

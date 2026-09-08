@@ -245,6 +245,7 @@ describe('Audio Enhancements and DSP Verification', () => {
     // 2. Play second note on same voice while sounding (voice stealing)
     testCtx.currentTime = 1.05; // 50ms later, voice is still loud
     voice.voiceGain.gain.value = 0.35; // sounding
+    voice.hammerGain.gain.value = 0.15; // hammer sounding
     synth.playNote(440.0, 0.8, 3.0);
 
     // When stealing, voice gain must ramp down to silence before frequency switch
@@ -252,6 +253,17 @@ describe('Audio Enhancements and DSP Verification', () => {
     const fadeDownRamp = stealGainEvents.find(e => e.type === 'linearRampToValueAtTime' && e.val === 0.0001);
     assert.ok(fadeDownRamp, 'Stealing must ramp gain down to 0.0001 before retrigger');
     assert.strictEqual(fadeDownRamp.time, 1.055, 'De-click ramp should take 5ms');
+
+    // Hammer gain must smoothly ramp down to 0.0001 before note restart to avoid pop
+    const stealHammerEvents = voice.hammerGain.gain.events.filter(e => e.time >= 1.05);
+    const hammerFadeDown = stealHammerEvents.find(e => e.type === 'linearRampToValueAtTime' && e.val === 0.0001);
+    assert.ok(hammerFadeDown, 'Hammer gain must ramp down to 0.0001 during stealing');
+    assert.strictEqual(hammerFadeDown.time, 1.055, 'Hammer de-click ramp should take 5ms');
+
+    // Filter frequency must smoothly ramp down to restCutoff at 1.055 before note restart
+    const stealFilterEvents = voice.filter1.frequency.events.filter(e => e.time >= 1.05);
+    const filterFadeDown = stealFilterEvents.find(e => e.type === 'linearRampToValueAtTime' && e.time === 1.055);
+    assert.ok(filterFadeDown, 'Filter frequency must smoothly ramp down to restCutoff during stealing');
 
     // Oscillator frequency switch must be scheduled at 1.055 (when silent), NOT at 1.05!
     const oscEvents = voice.osc1.frequency.events.filter(e => e.time >= 1.05);
@@ -340,5 +352,65 @@ describe('Audio Enhancements and DSP Verification', () => {
         synth.playNote(200 + (i * 15), 0.7, 1.0);
       });
     }
+  });
+
+  it('verifies polyphonic round-robin voice distribution across inactive voice pool', () => {
+    class MockCtx {
+      constructor() {
+        this.sampleRate = 48000;
+        this.currentTime = 0;
+      }
+      createGain() {
+        return {
+          gain: { value: 0, setValueAtTime: () => {}, linearRampToValueAtTime: () => {}, exponentialRampToValueAtTime: () => {}, cancelScheduledValues: () => {} },
+          connect: () => {}
+        };
+      }
+      createBuffer(ch, len, rate) {
+        return { getChannelData: () => new Float32Array(len), length: len, sampleRate: rate };
+      }
+      createWaveShaper() { return { oversample: '', curve: null, connect: () => {} }; }
+      createBiquadFilter() {
+        return {
+          frequency: { value: 350, setValueAtTime: () => {}, linearRampToValueAtTime: () => {}, exponentialRampToValueAtTime: () => {}, cancelScheduledValues: () => {} },
+          Q: { value: 1, setValueAtTime: () => {} },
+          connect: () => {}
+        };
+      }
+      createOscillator() {
+        return {
+          frequency: { value: 440, setValueAtTime: () => {}, cancelScheduledValues: () => {} },
+          detune: { value: 0, setValueAtTime: () => {} },
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+      }
+      createBufferSource() {
+        return { buffer: null, connect: () => {}, start: () => {}, stop: () => {} };
+      }
+    }
+
+    const ctx = new MockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 6);
+
+    // Trigger 4 notes sequentially while marking them inactive (as if separated in time)
+    const v1 = synth.playNote(261.63, 0.6);
+    v1.isActive = false;
+
+    const v2 = synth.playNote(293.66, 0.6);
+    v2.isActive = false;
+
+    const v3 = synth.playNote(329.63, 0.6);
+    v3.isActive = false;
+
+    const v4 = synth.playNote(349.23, 0.6);
+    v4.isActive = false;
+
+    // Must have cycled through distinct voices 0, 1, 2, 3 instead of always reusing voice 0
+    assert.strictEqual(v1, synth.voices[0]);
+    assert.strictEqual(v2, synth.voices[1]);
+    assert.strictEqual(v3, synth.voices[2]);
+    assert.strictEqual(v4, synth.voices[3]);
   });
 });
