@@ -51,45 +51,53 @@ export class BraunPlaySurface {
         <div class="braun-key-shortcut">${this._getShortcutKey(idx)}</div>
       `;
 
+      let activeVoice = null;
+      let handledByPointer = false;
+      let clearPointerTimer = null;
+
       // Pointer event for velocity-sensitive strike
-      const triggerStrike = (clientY, clientRect) => {
+      const triggerStrike = (clientY, clientRect, isHold = false) => {
         let velocity = 0.60;
         if (clientY !== undefined && clientY > 0 && clientRect && clientRect.height > 0) {
           const relY = Math.max(0, Math.min(1, (clientY - clientRect.top) / clientRect.height));
           // Lower hit gives firmer touch (0.45 .. 0.85)
           velocity = 0.35 + relY * 0.50;
         }
-        this.playNote(note.freq, note.midi, velocity);
+        return this.playNote(note.freq, note.midi, velocity, isHold ? 20.0 : 3.5);
       };
 
-      let handledByPointer = false;
-      let clearPointerTimer = null;
-
-      keyEl.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        handledByPointer = true;
-        if (clearPointerTimer) {
-          clearTimeout(clearPointerTimer);
-          clearPointerTimer = null;
+      const handleKeyRelease = () => {
+        if (activeVoice) {
+          if (typeof activeVoice.release === 'function') activeVoice.release();
+          activeVoice = null;
         }
-        triggerStrike(e.clientY, keyEl.getBoundingClientRect());
-      });
-
-      keyEl.addEventListener('pointerup', () => {
-        // Retain handledByPointer flag across trailing synthetic click event so releasing LMB does NOT re-trigger
         if (clearPointerTimer) clearTimeout(clearPointerTimer);
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
           clearPointerTimer = null;
         }, 400);
-      });
+      };
 
-      keyEl.addEventListener('pointercancel', () => {
-        handledByPointer = false;
+      keyEl.addEventListener('pointerdown', (e) => {
+        if (e.preventDefault) e.preventDefault();
+        handledByPointer = true;
         if (clearPointerTimer) {
           clearTimeout(clearPointerTimer);
           clearPointerTimer = null;
         }
+        if (activeVoice) {
+          if (typeof activeVoice.release === 'function') activeVoice.release();
+          activeVoice = null;
+        }
+        activeVoice = triggerStrike(e.clientY, keyEl.getBoundingClientRect(), true);
+      });
+
+      keyEl.addEventListener('pointerup', () => {
+        handleKeyRelease();
+      });
+
+      keyEl.addEventListener('pointercancel', () => {
+        handleKeyRelease();
       });
 
       keyEl.addEventListener('click', (e) => {
@@ -97,7 +105,7 @@ export class BraunPlaySurface {
         if (handledByPointer) {
           return;
         }
-        triggerStrike(e.clientY, keyEl.getBoundingClientRect());
+        triggerStrike(e.clientY, keyEl.getBoundingClientRect(), false);
       });
 
       // Allow glissando swiping across keys while mouse button is held down
@@ -127,11 +135,13 @@ export class BraunPlaySurface {
     this.chordsContainer.classList.add('braun-chord-macros-grid');
 
     const chordList = Object.values(CHORD_VOICINGS);
+    const chordShortcuts = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='];
+
     chordList.forEach((voicing, idx) => {
       const btn = document.createElement('button');
       btn.className = 'braun-chord-macro-btn';
       btn.setAttribute('data-chord', voicing.id);
-      const shortcutKey = idx < 9 ? `${idx + 1}` : (idx === 9 ? '0' : (idx === 10 ? '-' : ''));
+      const shortcutKey = chordShortcuts[idx] || '';
       btn.innerHTML = `
         <div class="braun-chord-header">
           <span class="braun-chord-title">${voicing.name}</span>
@@ -144,7 +154,73 @@ export class BraunPlaySurface {
         this._updateChordReadout(voicing, false);
       });
 
+      let activeSession = null;
+      let handledByPointer = false;
+      let clearPointerTimer = null;
+
+      const triggerChordRelease = () => {
+        if (activeSession) {
+          this.stopChordSession(activeSession);
+          activeSession = null;
+        }
+        btn.classList.remove('is-active');
+        if (clearPointerTimer) clearTimeout(clearPointerTimer);
+        clearPointerTimer = setTimeout(() => {
+          handledByPointer = false;
+          clearPointerTimer = null;
+        }, 400);
+      };
+
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        handledByPointer = true;
+        if (clearPointerTimer) {
+          clearTimeout(clearPointerTimer);
+          clearPointerTimer = null;
+        }
+        if (activeSession) {
+          this.stopChordSession(activeSession);
+          activeSession = null;
+        }
+        try {
+          if (btn.setPointerCapture && e.pointerId != null) {
+            btn.setPointerCapture(e.pointerId);
+          }
+        } catch (err) {}
+
+        activeSession = this.startChord(voicing.id, true);
+        btn.classList.add('is-active');
+      });
+
+      btn.addEventListener('pointerup', (e) => {
+        try {
+          if (btn.releasePointerCapture && e.pointerId != null) {
+            btn.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {}
+        triggerChordRelease();
+      });
+
+      btn.addEventListener('pointercancel', (e) => {
+        try {
+          if (btn.releasePointerCapture && e.pointerId != null) {
+            btn.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {}
+        triggerChordRelease();
+      });
+
+      btn.addEventListener('pointerleave', (e) => {
+        if (activeSession && e.buttons === 0) {
+          triggerChordRelease();
+        }
+      });
+
       btn.addEventListener('click', () => {
+        // Single strike on pointerdown: releasing LMB must NOT re-trigger a second strike
+        if (handledByPointer) {
+          return;
+        }
         this.playChord(voicing.id);
       });
 
@@ -153,7 +229,7 @@ export class BraunPlaySurface {
   }
 
   _updateChordReadout(voicing, isTriggered = false) {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
     const nameEl = document.getElementById('chord-readout-name');
     const descEl = document.getElementById('chord-readout-desc');
     const ledEl = document.getElementById('chord-status-led');
@@ -177,14 +253,14 @@ export class BraunPlaySurface {
   /**
    * Play single note with visual feedback
    */
-  async playNote(freq, midi, velocity = 0.6) {
+  async playNote(freq, midi, velocity = 0.6, duration = 3.5) {
     this.flashKey(midi);
     if (this.onPlay) {
       await this.onPlay(freq, midi, velocity);
     }
-    if (!this.engine || !this.engine.isInitialized || !this.engine.feltPiano) return;
+    if (!this.engine || !this.engine.isInitialized || !this.engine.feltPiano) return null;
 
-    this.engine.feltPiano.playNote(freq, velocity, 3.5);
+    return this.engine.feltPiano.playNote(freq, velocity, duration);
   }
 
   /**
@@ -230,30 +306,71 @@ export class BraunPlaySurface {
   }
 
   /**
-   * Play Harold Budd style chord cluster with subtle strum rubato
+   * Start playing a chord cluster with optional sustain holding
+   * @param {string} voicingId
+   * @param {boolean} [isHold=false]
+   * @returns {Object} chordSession
    */
-  async playChord(voicingId) {
+  startChord(voicingId, isHold = false) {
     this.flashChord(voicingId);
     if (this.onPlay) {
-      await this.onPlay();
+      this.onPlay();
     }
 
     const rootMidi = 48 + (this.engine ? this.engine.rootPitchClass : 0); // C3 root
     const freqs = getChordFrequencies(rootMidi, voicingId, this.engine ? this.engine.a4 : 440);
     const voicing = CHORD_VOICINGS[voicingId];
+    const duration = isHold ? 20.0 : 3.5;
+
+    const session = {
+      voicingId,
+      isReleased: false,
+      voices: [],
+      timers: []
+    };
 
     freqs.forEach((freq, idx) => {
       // Humanized micro-strum delay (18ms to 38ms per note)
       const delayMs = idx * (22 + Math.random() * 14);
-      setTimeout(() => {
+      const timerId = setTimeout(() => {
+        if (session.isReleased && isHold) {
+          return;
+        }
         const vel = 0.55 + Math.random() * 0.22;
         const midi = rootMidi + (voicing ? voicing.intervals[idx] : 0);
         this.flashKey(midi);
         if (this.engine && this.engine.isInitialized && this.engine.feltPiano) {
-          this.engine.feltPiano.playNote(freq, vel, 3.5);
+          const voice = this.engine.feltPiano.playNote(freq, vel, duration);
+          if (voice) {
+            session.voices.push(voice);
+            if (session.isReleased) {
+              voice.release();
+            }
+          }
         }
       }, delayMs);
+      session.timers.push(timerId);
     });
+
+    return session;
+  }
+
+  stopChordSession(session) {
+    if (!session || session.isReleased) return;
+    session.isReleased = true;
+    session.voices.forEach(voice => {
+      if (voice && typeof voice.release === 'function') {
+        voice.release();
+      }
+    });
+    session.timers.forEach(t => clearTimeout(t));
+  }
+
+  /**
+   * Play Harold Budd style chord cluster with subtle strum rubato
+   */
+  async playChord(voicingId) {
+    return this.startChord(voicingId, false);
   }
 
   _attachKeyboardShortcuts() {
@@ -303,6 +420,12 @@ export class BraunPlaySurface {
         if (chordBtns[10]) {
           e.preventDefault();
           chordBtns[10].click();
+        }
+      } else if (e.key === '=' || e.key === '+') {
+        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
+        if (chordBtns[11]) {
+          e.preventDefault();
+          chordBtns[11].click();
         }
       }
 

@@ -648,16 +648,16 @@ body {
   background-color: var(--bg-panel);
   border: 1px solid var(--border-line);
   border-radius: 3px;
-  padding: 6px 8px;
+  padding: 5px 6px 4px 6px;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   align-items: flex-start;
   height: 72px;
-  min-height: 72px;
+  min-height: 68px;
   max-height: 72px;
   box-sizing: border-box;
-  gap: 3px;
+  gap: 2px;
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
   position: relative;
@@ -690,23 +690,27 @@ body {
 }
 
 .braun-chord-title {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 18px);
 }
 
 .braun-chord-shortcut {
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
   font-family: var(--font-mono);
   color: var(--text-primary);
   background-color: var(--bg-panel-inset);
   border: 1px solid var(--border-line);
   border-radius: 2px;
-  padding: 1px 5px;
-  line-height: 1.2;
-  min-width: 16px;
+  padding: 1px 4px;
+  line-height: 1.1;
+  min-width: 14px;
   text-align: center;
 }
 
@@ -723,15 +727,17 @@ body {
 }
 
 .braun-chord-desc {
-  font-size: 8.5px;
+  font-size: 8px;
   color: var(--text-secondary);
-  line-height: 1.35;
+  line-height: 1.22;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   width: 100%;
+  word-break: break-word;
+  padding-bottom: 2px;
 }
 
 /* --- Braun AS 42 Precision Vector Touchpad Surface --- */

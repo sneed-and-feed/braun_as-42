@@ -223,6 +223,34 @@ export class FeltPianoVoice {
         this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
       }
     }
+
+    const now = this.ctx.currentTime;
+    if (this.osc1 && this.osc1.detune && typeof this.osc1.detune.setValueAtTime === 'function') {
+      const detune1 = isCS80 ? (this.dispersionOffset - 5.5) : this.dispersionOffset;
+      const detune2 = isCS80 ? (this.dispersionOffset + 6.5) : (this.dispersionOffset + this.overtoneSpread);
+      if (typeof this.osc1.detune.setTargetAtTime === 'function') {
+        this.osc1.detune.setTargetAtTime(detune1, now, 0.025);
+        this.osc2.detune.setTargetAtTime(detune2, now, 0.025);
+      } else {
+        this.osc1.detune.setValueAtTime(detune1, now);
+        this.osc2.detune.setValueAtTime(detune2, now);
+      }
+    }
+    if (this.osc1Gain && this.osc2Gain) {
+      const osc1Target = 0.48;
+      const osc2Target = isCS80 ? 0.46 : 0.16;
+      if (typeof this.osc1Gain.gain.setTargetAtTime === 'function') {
+        this.osc1Gain.gain.setTargetAtTime(osc1Target, now, 0.025);
+        this.osc2Gain.gain.setTargetAtTime(osc2Target, now, 0.025);
+      } else {
+        this.osc1Gain.gain.setValueAtTime(osc1Target, now);
+        this.osc2Gain.gain.setValueAtTime(osc2Target, now);
+      }
+    }
+    if (this.bodyFilter && typeof this.bodyFilter.frequency.setTargetAtTime === 'function') {
+      const bodyHz = isCS80 ? 1150 : 540;
+      this.bodyFilter.frequency.setTargetAtTime(bodyHz, now, 0.025);
+    }
   }
 
   /**
@@ -521,6 +549,21 @@ export class FeltPianoVoice {
     const relDuration = isCS80 ? 0.65 : 0.35;
     const releaseTarget = Math.max(cancelTime + relDuration, this.ctx.currentTime + 0.01);
     this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, releaseTarget);
+    if (isCS80 && this.currentFreq) {
+      const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || 800));
+      const curCutoff2 = Math.max(20, Math.min(20000, this.filter2.frequency.value || 800));
+      if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
+        this.filter1.frequency.cancelAndHoldAtTime(cancelTime);
+        this.filter2.frequency.cancelAndHoldAtTime(cancelTime);
+      } else {
+        this.filter1.frequency.cancelScheduledValues(cancelTime);
+        this.filter2.frequency.cancelScheduledValues(cancelTime);
+        this.filter1.frequency.setValueAtTime(curCutoff1, cancelTime);
+        this.filter2.frequency.setValueAtTime(curCutoff2, cancelTime);
+      }
+      this.filter1.frequency.exponentialRampToValueAtTime(Math.max(160, this.currentFreq * 1.1), releaseTarget);
+      this.filter2.frequency.exponentialRampToValueAtTime(Math.max(160, this.currentFreq * 1.1), releaseTarget);
+    }
     setTimeout(() => {
       this.isActive = false;
       if (this.synth) {

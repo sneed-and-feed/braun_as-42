@@ -264,6 +264,21 @@ describe('Blade Runner Harmonic Voicing & Polyphonic Headroom', () => {
     assert.deepStrictEqual(midis, [48, 55, 58, 62, 65, 68]);
   });
 
+  it('defines TEARS_IN_RAIN voicing with exact 1 - 5 - 7 - 9 - #11 - 13 poignant resolution cluster', () => {
+    const voicing = CHORD_VOICINGS.TEARS_IN_RAIN;
+    assert.ok(voicing, 'TEARS_IN_RAIN voicing must exist in CHORD_VOICINGS');
+    assert.strictEqual(voicing.name, 'Tears in Rain');
+    assert.deepStrictEqual(voicing.intervals, [0, 7, 11, 14, 18, 21]);
+    assert.strictEqual(voicing.description, 'Vangelis poignant resolution (1 - 5 - 7 - 9 - #11 - 13)');
+
+    // Test frequencies for C3 root (MIDI 48)
+    const freqs = getChordFrequencies(48, 'TEARS_IN_RAIN', 440);
+    assert.strictEqual(freqs.length, 6);
+    const midis = freqs.map(f => Math.round(frequencyToMidi(f, 440)));
+    // C3 (48), G3 (55), B3 (59), D4 (62), F#4 (66), A4 (69)
+    assert.deepStrictEqual(midis, [48, 55, 59, 62, 66, 69]);
+  });
+
   it('verifies 6-note BLADE_RUNNER cluster scales polyphonic headroom cleanly without clipping', () => {
     const ctx = createDSPMockCtx();
     const synth = new FeltPianoSynthesizer(ctx, null, 24);
@@ -290,6 +305,25 @@ describe('Blade Runner Harmonic Voicing & Polyphonic Headroom', () => {
     }, 0);
     const busOutputLevel = totalPeak * synth.output.gain.value;
     assert.ok(busOutputLevel < 0.25, `Summed chord level (${busOutputLevel.toFixed(4)}) must stay well under 0.25`);
+  });
+
+  it('verifies 6-note TEARS_IN_RAIN cluster scales polyphonic headroom safely', () => {
+    const ctx = createDSPMockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 24);
+    synth.setWaveform('cs80');
+
+    const chord = CHORD_VOICINGS.TEARS_IN_RAIN;
+    const rootFreq = midiToFrequency(48, 440);
+    const activeVoices = [];
+    chord.intervals.forEach(semi => {
+      const f = rootFreq * Math.pow(2, semi / 12);
+      const v = synth.playNote(f, 0.75, 4.0);
+      activeVoices.push(v);
+    });
+
+    assert.strictEqual(activeVoices.length, 6);
+    const expectedOutputGain = 0.38 * (1.0 / Math.sqrt(6)) * 0.80;
+    assert.ok(Math.abs(synth.output.gain.value - expectedOutputGain) < 1e-3);
   });
 });
 
@@ -373,4 +407,129 @@ describe('Click-and-Hold Single Strike Verification', () => {
       }
     }
   });
+
+  it('guarantees chord buttons support click-and-hold with sustain and smooth release without double attack', async () => {
+    let chordNoteStarts = 0;
+    let releasedVoices = 0;
+
+    class MockButtonElement {
+      constructor() {
+        this.listeners = new Map();
+        this.attrs = new Map();
+        this.classList = {
+          add: () => {},
+          remove: () => {},
+          contains: () => false
+        };
+      }
+      addEventListener(type, cb) {
+        if (!this.listeners.has(type)) this.listeners.set(type, []);
+        this.listeners.get(type).push(cb);
+      }
+      dispatchEvent(type, ev = {}) {
+        const cbs = this.listeners.get(type) || [];
+        cbs.forEach(cb => cb(ev));
+      }
+      setAttribute(k, v) { this.attrs.set(k, v); }
+      getAttribute(k) { return this.attrs.get(k); }
+      getBoundingClientRect() { return { top: 0, height: 72, left: 0, width: 100 }; }
+    }
+
+    const mockStrip = { innerHTML: '', appendChild: () => {} };
+    const createdButtons = [];
+    const mockChords = {
+      innerHTML: '',
+      children: createdButtons,
+      classList: { add: () => {} },
+      appendChild: (el) => { createdButtons.push(el); },
+      querySelectorAll: () => createdButtons
+    };
+
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: () => {
+          chordNoteStarts++;
+          return {
+            release: () => { releasedVoices++; }
+          };
+        }
+      }
+    };
+
+    const origCreateElement = globalThis.document ? globalThis.document.createElement : null;
+    const origGetElementById = globalThis.document ? globalThis.document.getElementById : null;
+    if (typeof globalThis.document === 'undefined') {
+      globalThis.document = {};
+    }
+    globalThis.document.createElement = (tag) => {
+      return new MockButtonElement();
+    };
+    globalThis.document.getElementById = (id) => null;
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      assert.strictEqual(createdButtons.length, 12, 'Must render exactly 12 chord buttons');
+
+      const chordBtn = createdButtons[0];
+      assert.ok(chordBtn, 'Chord button 0 must exist');
+
+      // 1. User presses LMB down on chord button
+      chordBtn.dispatchEvent('pointerdown', { preventDefault: () => {}, pointerId: 1 });
+
+      // Wait 50ms for initial notes in micro-strum to trigger
+      await new Promise(r => setTimeout(r, 60));
+      assert.ok(chordNoteStarts >= 1, 'pointerdown on chord button must start chord playback');
+      const initialStarts = chordNoteStarts;
+
+      // 2. User holds LMB for simulated time, then releases LMB (pointerup -> click)
+      chordBtn.dispatchEvent('pointerup', { pointerId: 1 });
+      assert.ok(releasedVoices >= 1, 'Releasing LMB must trigger voice.release() on sounding voices');
+
+      // 3. Browser fires trailing click event
+      chordBtn.dispatchEvent('click', {});
+
+      // Wait another 80ms: no second chord strike must occur!
+      await new Promise(r => setTimeout(r, 80));
+      assert.strictEqual(
+        chordNoteStarts,
+        initialStarts,
+        'Trailing click after pointerup must NOT trigger double attack or second strike'
+      );
+    } finally {
+      if (origCreateElement) {
+        globalThis.document.createElement = origCreateElement;
+      } else if (globalThis.document) {
+        delete globalThis.document.createElement;
+      }
+      if (origGetElementById) {
+        globalThis.document.getElementById = origGetElementById;
+      } else if (globalThis.document) {
+        delete globalThis.document.getElementById;
+      }
+    }
+  });
+
+  it('verifies rapid switching between FELT and CS-80 while voices are sustaining updates detune and gains smoothly', () => {
+    const ctx = createDSPMockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 4);
+
+    // Trigger note in felt mode
+    const v = synth.playNote(261.63, 0.75, 4.0);
+    assert.strictEqual(synth.currentWaveform, 'felt');
+
+    // Rapidly switch to CS-80 while note is sustaining
+    synth.setWaveform('cs80');
+    assert.strictEqual(synth.currentWaveform, 'cs80');
+    assert.strictEqual(v.currentWaveform, 'cs80');
+
+    // Switch back to felt mode
+    synth.setWaveform('felt');
+    assert.strictEqual(synth.currentWaveform, 'felt');
+    assert.strictEqual(v.currentWaveform, 'felt');
+  });
 });
+

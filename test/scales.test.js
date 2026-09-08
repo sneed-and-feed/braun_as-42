@@ -122,5 +122,13 @@ describe('Scales and Tuning Math', () => {
     assert.deepStrictEqual(brMidis, [60, 67, 70, 74, 77, 80]);
     assert.strictEqual(CHORD_VOICINGS.BLADE_RUNNER.name, 'Blade Runner');
     assert.strictEqual(CHORD_VOICINGS.BLADE_RUNNER.description, 'Vangelis CS-80 brass cluster (1 - 5 - b7 - 9 - 11 - b13)');
+
+    // Tears in Rain (Vangelis CS-80 Poignant Resolution): [0, 7, 11, 14, 18, 21] -> MIDI [60, 67, 71, 74, 78, 81]
+    const tirFreqs = getChordFrequencies(60, 'TEARS_IN_RAIN', 440);
+    assert.strictEqual(tirFreqs.length, 6);
+    const tirMidis = tirFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
+    assert.deepStrictEqual(tirMidis, [60, 67, 71, 74, 78, 81]);
+    assert.strictEqual(CHORD_VOICINGS.TEARS_IN_RAIN.name, 'Tears in Rain');
+    assert.strictEqual(CHORD_VOICINGS.TEARS_IN_RAIN.description, 'Vangelis poignant resolution (1 - 5 - 7 - 9 - #11 - 13)');
   });
 });

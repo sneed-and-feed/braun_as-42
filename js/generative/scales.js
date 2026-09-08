@@ -123,6 +123,12 @@ export const CHORD_VOICINGS = {
     name: 'Blade Runner',
     intervals: [0, 7, 10, 14, 17, 20],
     description: 'Vangelis CS-80 brass cluster (1 - 5 - b7 - 9 - 11 - b13)'
+  },
+  TEARS_IN_RAIN: {
+    id: 'TEARS_IN_RAIN',
+    name: 'Tears in Rain',
+    intervals: [0, 7, 11, 14, 18, 21],
+    description: 'Vangelis poignant resolution (1 - 5 - 7 - 9 - #11 - 13)'
   }
 };
 

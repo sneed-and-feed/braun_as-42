@@ -155,14 +155,14 @@ describe('Chord Macro Button Height & Vector Pad Layout Symmetry', () => {
       'Individual chord macro button height must be 72px'
     );
 
-    // 3. Chord description line clamp and line height
+    // 3. Chord description line clamp and line height (calibrated to prevent any text clipping)
     assert.ok(
-      css.includes('-webkit-line-clamp: 3;'),
-      'Chord description must allow up to 3 lines without text clipping'
+      css.includes('-webkit-line-clamp: 4;'),
+      'Chord description must allow up to 4 lines without text clipping'
     );
     assert.ok(
-      css.includes('line-height: 1.35;'),
-      'Chord description must have generous line-height for descenders'
+      css.includes('line-height: 1.22;'),
+      'Chord description must have calibrated line-height preventing descender clipping'
     );
 
     // 4. Vector surface box symmetry
