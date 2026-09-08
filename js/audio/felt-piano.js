@@ -137,90 +137,124 @@ export class FeltPianoVoice {
   trigger(freq, velocity, duration, params) {
     const ctx = this.ctx;
     const now = ctx.currentTime;
-    this.isActive = true;
-    this.startTime = now;
 
     const feltDamp = params.tone ?? 0.65; // 0.0 (darkest felt) to 1.0 (bright chime)
     const hammerThump = params.hammer ?? 0.50; // Felt hammer click volume
     const decayMultiplier = params.decay ?? 1.0;
     const releaseTime = params.release ?? 1.8;
 
-    // Pitch setting with microtonal detune
-    this.osc1.frequency.setValueAtTime(freq, now);
-    this.osc2.frequency.setValueAtTime(freq, now);
+    // Check if voice is being stolen / re-triggered while currently sounding
+    const curGain = this.voiceGain.gain.value;
+    const isStealing = this.isActive && curGain > 0.002;
+
+    // When stealing an active voice, give a fast 5ms micro-ramp down to silence
+    // before re-tuning oscillators to eliminate phase-jump clicks.
+    const declickRampTime = 0.005; // 5ms
+    const noteStartTime = isStealing ? now + declickRampTime : now;
+
+    if (isStealing) {
+      this.voiceGain.gain.cancelScheduledValues(now);
+      this.voiceGain.gain.setValueAtTime(Math.max(0.0001, curGain), now);
+      this.voiceGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
+    }
+
+    // Pitch setting scheduled at noteStartTime (no pitch bending or phase click while sounding)
+    this.osc1.frequency.cancelScheduledValues(now);
+    this.osc2.frequency.cancelScheduledValues(now);
+    this.osc1.frequency.setValueAtTime(freq, noteStartTime);
+    this.osc2.frequency.setValueAtTime(freq, noteStartTime);
 
     // Frequency-dependent acoustic string decay (low notes ring longer, high notes decay faster)
     const baseDecay = Math.max(1.5, Math.min(9.0, 7.5 * Math.pow(220 / Math.max(60, freq), 0.45))) * decayMultiplier;
 
     // --- Hammer Transient Impulse ---
-    // Use pre-allocated noise buffer to eliminate garbage-collection stutter
+    // Use pre-allocated zero-DC noise buffer with smooth micro-attack to prevent step clicks
     if (hammerThump > 0.01 && this.hammerBuffer) {
       const thumpDuration = 0.025; // 25ms
       const noiseSource = ctx.createBufferSource();
       noiseSource.buffer = this.hammerBuffer;
       noiseSource.connect(this.hammerGain);
 
-      this.hammerFilter.frequency.setValueAtTime(Math.min(600, freq * 1.5), now);
-      this.hammerGain.gain.cancelScheduledValues(now);
-      this.hammerGain.gain.setValueAtTime(velocity * hammerThump * 0.45, now);
-      this.hammerGain.gain.exponentialRampToValueAtTime(0.0001, now + thumpDuration);
+      this.hammerFilter.frequency.setValueAtTime(Math.min(600, freq * 1.5), noteStartTime);
 
-      noiseSource.start(now);
-      noiseSource.stop(now + thumpDuration);
+      const targetHammerGain = Math.max(0.0001, velocity * hammerThump * 0.45);
+      this.hammerGain.gain.cancelScheduledValues(now);
+      this.hammerGain.gain.setValueAtTime(0.0001, noteStartTime);
+      // Smooth 2.5ms micro-attack to peak, then exponential decay down to silence
+      this.hammerGain.gain.linearRampToValueAtTime(targetHammerGain, noteStartTime + 0.0025);
+      this.hammerGain.gain.exponentialRampToValueAtTime(0.0001, noteStartTime + thumpDuration);
+
+      noiseSource.start(noteStartTime);
+      noiseSource.stop(noteStartTime + thumpDuration);
     }
 
     // --- Steep Warm Lowpass Filter Envelope (Harold Budd Dampening) ---
-    // Strike cutoff spikes up to 600 - 2400 Hz then rapidly drops down to the warm fundamental
     const maxCutoff = Math.min(8000, Math.max(freq * 1.8, 450 + (feltDamp * 2800 * velocity)));
     const restCutoff = Math.min(2200, Math.max(160, freq * 1.15));
 
-    // Anchor current filter cutoff to prevent biquad step clicks
-    const curCutoff1 = this.filter1.frequency.value;
-    const curCutoff2 = this.filter2.frequency.value;
+    // Anchor current filter cutoff to eliminate biquad filter leap clicks
+    const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || restCutoff));
+    const curCutoff2 = Math.max(20, Math.min(20000, this.filter2.frequency.value || restCutoff));
+
     this.filter1.frequency.cancelScheduledValues(now);
     this.filter2.frequency.cancelScheduledValues(now);
-    this.filter1.frequency.setValueAtTime(curCutoff1, now);
-    this.filter2.frequency.setValueAtTime(curCutoff2, now);
 
-    // Fast 3.5ms attack to strike peak
-    this.filter1.frequency.linearRampToValueAtTime(maxCutoff, now + 0.0035);
-    this.filter2.frequency.linearRampToValueAtTime(maxCutoff, now + 0.0035);
+    if (isStealing) {
+      this.filter1.frequency.setValueAtTime(curCutoff1, now);
+      this.filter2.frequency.setValueAtTime(curCutoff2, now);
+      this.filter1.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
+      this.filter2.frequency.linearRampToValueAtTime(restCutoff, noteStartTime);
+    } else {
+      this.filter1.frequency.setValueAtTime(curCutoff1, now);
+      this.filter2.frequency.setValueAtTime(curCutoff2, now);
+    }
 
-    // Rapid exponential decay down to fundamental within 180ms - 450ms
+    // Filter attack ramp (6ms smooth rise to peak strike cutoff)
+    const filterAttackTime = 0.006;
+    this.filter1.frequency.linearRampToValueAtTime(maxCutoff, noteStartTime + filterAttackTime);
+    this.filter2.frequency.linearRampToValueAtTime(maxCutoff, noteStartTime + filterAttackTime);
+
+    // Rapid exponential decay down to fundamental
     const filterDecayTime = 0.18 + (1.0 - feltDamp) * 0.25;
-    this.filter1.frequency.exponentialRampToValueAtTime(restCutoff, now + filterDecayTime);
-    this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, now + filterDecayTime);
+    this.filter1.frequency.exponentialRampToValueAtTime(restCutoff, noteStartTime + filterAttackTime + filterDecayTime);
+    this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, noteStartTime + filterAttackTime + filterDecayTime);
 
     // --- Master Amplitude Envelope ---
-    // Anchor current voice gain to eliminate voice stealing / retrigger pop
-    const curGain = this.voiceGain.gain.value;
+    // Smooth 7ms micro-attack ramp from 0.0001 to peakGain eliminates step discontinuity clicks
+    const attackTime = 0.007;
     const peakGain = Math.max(0.01, velocity * 0.55);
 
-    this.voiceGain.gain.cancelScheduledValues(now);
-    this.voiceGain.gain.setValueAtTime(Math.max(0.0001, curGain), now);
+    if (!isStealing) {
+      this.voiceGain.gain.cancelScheduledValues(now);
+      this.voiceGain.gain.setValueAtTime(0.0001, now);
+    }
 
-    // 2.5ms click-free attack
-    this.voiceGain.gain.linearRampToValueAtTime(peakGain, now + 0.0025);
+    this.voiceGain.gain.setValueAtTime(0.0001, noteStartTime);
+    this.voiceGain.gain.linearRampToValueAtTime(peakGain, noteStartTime + attackTime);
 
     // Long acoustic string decay
     const sustainLevel = peakGain * 0.4;
-    this.voiceGain.gain.exponentialRampToValueAtTime(sustainLevel, now + 0.5);
-    this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, now + baseDecay + releaseTime);
+    this.voiceGain.gain.exponentialRampToValueAtTime(sustainLevel, noteStartTime + attackTime + 0.5);
+    this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, noteStartTime + attackTime + baseDecay + releaseTime);
+
+    this.isActive = true;
+    this.startTime = noteStartTime;
 
     // Mark inactive when done
+    const totalLifetime = (baseDecay + releaseTime + (isStealing ? declickRampTime : 0)) * 1000;
     setTimeout(() => {
-      if (this.startTime === now) {
+      if (this.startTime === noteStartTime) {
         this.isActive = false;
       }
-    }, (baseDecay + releaseTime) * 1000);
+    }, totalLifetime);
   }
 
   release() {
     if (!this.isActive) return;
     const now = this.ctx.currentTime;
-    const curGain = this.voiceGain.gain.value;
+    const curGain = Math.max(0.0001, this.voiceGain.gain.value);
     this.voiceGain.gain.cancelScheduledValues(now);
-    this.voiceGain.gain.setValueAtTime(Math.max(0.0001, curGain), now);
+    this.voiceGain.gain.setValueAtTime(curGain, now);
     this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
     setTimeout(() => {
       this.isActive = false;
@@ -232,9 +266,9 @@ export class FeltPianoSynthesizer {
   /**
    * @param {AudioContext} ctx
    * @param {Object} wavetables
-   * @param {number} [voiceCount=16]
+   * @param {number} [voiceCount=24]
    */
-  constructor(ctx, wavetables, voiceCount = 16) {
+  constructor(ctx, wavetables, voiceCount = 24) {
     this.ctx = ctx;
     this.wavetables = wavetables;
     this.currentWaveform = 'felt';
@@ -250,13 +284,43 @@ export class FeltPianoSynthesizer {
     };
 
     // Pre-allocate single hammer noise burst buffer once for all voices
+    // Ensure zero DC offset and smooth windowed attack to prevent click/pop
     const thumpDuration = 0.025; // 25ms
     const thumpSamples = Math.floor(ctx.sampleRate * thumpDuration);
     this.hammerBuffer = ctx.createBuffer(1, thumpSamples, ctx.sampleRate);
     const d = this.hammerBuffer.getChannelData(0);
+
+    // 1. Generate windowed noise with 2ms attack and exponential decay
+    const attackSamples = Math.max(1, Math.floor(ctx.sampleRate * 0.002));
     for (let i = 0; i < thumpSamples; i++) {
-      d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.007));
+      let s = Math.random() * 2 - 1;
+      if (i < attackSamples) {
+        // Hann / raised-cosine window starting at 0.0
+        s *= 0.5 * (1 - Math.cos((Math.PI * i) / attackSamples));
+      }
+      s *= Math.exp(-i / (ctx.sampleRate * 0.007));
+      d[i] = s;
     }
+    d[0] = 0.0;
+    d[thumpSamples - 1] = 0.0;
+
+    // 2. High-precision DC removal: subtract weighted DC baseline that tapers to 0 at boundaries
+    let sumD = 0;
+    let sumW = 0;
+    const weights = new Float32Array(thumpSamples);
+    for (let i = 0; i < thumpSamples; i++) {
+      sumD += d[i];
+      const w = Math.sin((Math.PI * i) / (thumpSamples - 1));
+      weights[i] = w;
+      sumW += w;
+    }
+
+    const dcOffsetFactor = sumW > 0 ? sumD / sumW : 0;
+    for (let i = 0; i < thumpSamples; i++) {
+      d[i] -= dcOffsetFactor * weights[i];
+    }
+    d[0] = 0.0;
+    d[thumpSamples - 1] = 0.0;
 
     // Polyphonic Voice Pool
     this.voices = [];
@@ -273,11 +337,18 @@ export class FeltPianoSynthesizer {
    * @param {number} [duration=3.5]
    */
   playNote(freq, velocity = 0.6, duration = 3.5) {
-    // Find free voice or steal least-recently-used
+    // 1. Find free inactive voice
     let voice = this.voices.find(v => !v.isActive);
+
+    // 2. If all voices are active, steal the quietest or oldest sounding voice
     if (!voice) {
-      voice = this.voices[this.voiceIndex];
-      this.voiceIndex = (this.voiceIndex + 1) % this.voices.length;
+      voice = this.voices.reduce((best, v) => {
+        const vGain = v.voiceGain ? v.voiceGain.gain.value : 0;
+        const bestGain = best.voiceGain ? best.voiceGain.gain.value : 0;
+        if (vGain < bestGain) return v;
+        if (Math.abs(vGain - bestGain) < 0.01 && v.startTime < best.startTime) return v;
+        return best;
+      }, this.voices[0]);
     }
 
     voice.trigger(freq, velocity, duration, this.params);

@@ -448,7 +448,7 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     assert.strictEqual(rootSelect.value, 0);
 
     const scaleSelect = elementsById.get('select-scale');
-    assert.strictEqual(scaleSelect.children.length, 7, 'Scale select must have 7 modal options');
+    assert.strictEqual(scaleSelect.children.length, 8, 'Scale select must have 8 modal options');
     assert.strictEqual(scaleSelect.value, 'BUDD_PENTATONIC');
 
     // 2. Airports Tape Loops List populated
@@ -460,7 +460,7 @@ describe('UI Initialization and DOM Wiring Verification', () => {
 
     // 3. Playable Chime Strip and Macro Chords populated
     const chordMacros = elementsById.get('chord-macros');
-    assert.strictEqual(chordMacros.children.length, 6, 'Chord macros must have 6 macro buttons');
+    assert.strictEqual(chordMacros.children.length, 10, 'Chord macros must have 10 macro buttons');
 
     const chimeStrip = elementsById.get('chime-strip');
     assert.ok(chimeStrip.children.length >= 10, 'Chime strip must render playable keys across octaves');

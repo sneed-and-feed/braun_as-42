@@ -191,13 +191,19 @@ export class BraunPlaySurface {
         }
       }
 
-      // 1 to 6 triggers chord macros
-      if (e.key >= '1' && e.key <= '6') {
+      // 1 to 9 and 0 triggers chord macros
+      if (e.key >= '1' && e.key <= '9') {
         const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
         const idx = parseInt(e.key, 10) - 1;
         if (chordBtns[idx]) {
           e.preventDefault();
           chordBtns[idx].click();
+        }
+      } else if (e.key === '0') {
+        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
+        if (chordBtns[9]) {
+          e.preventDefault();
+          chordBtns[9].click();
         }
       }
 

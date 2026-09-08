@@ -2,6 +2,7 @@ import { test, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { PhaseLoopEngine } from '../js/generative/phase-loops.js';
 import { SCALES, NOTE_NAMES, midiToFrequency } from '../js/generative/scales.js';
+import { FeltPianoSynthesizer } from '../js/audio/felt-piano.js';
 
 describe('Audio Enhancements and DSP Verification', () => {
   it('verifies phase loops populate and update human-readable noteName', () => {
@@ -112,5 +113,232 @@ describe('Audio Enhancements and DSP Verification', () => {
     // Wait 80ms for debounce timer to settle
     await new Promise(resolve => setTimeout(resolve, 80));
     assert.strictEqual(callCount, 1, 'Debounced impulse generation should execute only once');
+  });
+
+  it('verifies hammer buffer has zero DC offset and windowed click-free boundaries', () => {
+    class MockAudioContext {
+      constructor() {
+        this.sampleRate = 48000;
+        this.currentTime = 0;
+      }
+      createGain() {
+        return { gain: { value: 1, setValueAtTime: () => {} }, connect: () => {} };
+      }
+      createBuffer(ch, len, rate) {
+        const arr = new Float32Array(len);
+        return {
+          getChannelData: () => arr,
+          length: len,
+          sampleRate: rate
+        };
+      }
+      createWaveShaper() { return { oversample: '', curve: null, connect: () => {} }; }
+      createBiquadFilter() {
+        return {
+          frequency: { value: 440, setValueAtTime: () => {} },
+          Q: { value: 1, setValueAtTime: () => {} },
+          connect: () => {}
+        };
+      }
+      createOscillator() {
+        return {
+          frequency: { value: 440, setValueAtTime: () => {} },
+          detune: { value: 0, setValueAtTime: () => {} },
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+      }
+    }
+
+    const mockCtx = new MockAudioContext();
+    const synth = new FeltPianoSynthesizer(mockCtx, null, 2);
+
+    const d = synth.hammerBuffer.getChannelData(0);
+    assert.ok(d.length > 0);
+
+    // Initial and final samples must be exactly zero to prevent boundary clicks
+    assert.strictEqual(d[0], 0.0, 'First sample of hammer buffer must be 0.0');
+    assert.strictEqual(d[d.length - 1], 0.0, 'Last sample of hammer buffer must be 0.0');
+
+    // Mean DC offset must be negligible (< 1e-4)
+    let sum = 0;
+    for (let i = 0; i < d.length; i++) {
+      sum += d[i];
+    }
+    const mean = sum / d.length;
+    assert.ok(Math.abs(mean) < 1e-4, `DC offset mean must be ~0, got ${mean}`);
+  });
+
+  it('verifies voice attack ramp and voice stealing micro-ramp prevent pops', () => {
+    class ParamRecorder {
+      constructor(init = 0) {
+        this.value = init;
+        this.events = [];
+      }
+      setValueAtTime(val, time) {
+        this.value = val;
+        this.events.push({ type: 'setValueAtTime', val, time });
+      }
+      linearRampToValueAtTime(val, time) {
+        this.value = val;
+        this.events.push({ type: 'linearRampToValueAtTime', val, time });
+      }
+      exponentialRampToValueAtTime(val, time) {
+        this.value = val;
+        this.events.push({ type: 'exponentialRampToValueAtTime', val, time });
+      }
+      cancelScheduledValues(time) {
+        this.events.push({ type: 'cancelScheduledValues', time });
+      }
+    }
+
+    class TestAudioContext {
+      constructor() {
+        this.sampleRate = 48000;
+        this.currentTime = 1.0;
+      }
+      createGain() {
+        return { gain: new ParamRecorder(0), connect: () => {} };
+      }
+      createBuffer(ch, len, rate) {
+        const arr = new Float32Array(len);
+        return { getChannelData: () => arr, length: len, sampleRate: rate };
+      }
+      createWaveShaper() { return { oversample: '', curve: null, connect: () => {} }; }
+      createBiquadFilter() {
+        return {
+          frequency: new ParamRecorder(350),
+          Q: new ParamRecorder(1),
+          connect: () => {}
+        };
+      }
+      createOscillator() {
+        return {
+          frequency: new ParamRecorder(440),
+          detune: new ParamRecorder(0),
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+      }
+      createBufferSource() {
+        return { buffer: null, connect: () => {}, start: () => {}, stop: () => {} };
+      }
+    }
+
+    const testCtx = new TestAudioContext();
+    const synth = new FeltPianoSynthesizer(testCtx, null, 1);
+    const voice = synth.voices[0];
+
+    // 1. Play first note from silence
+    testCtx.currentTime = 1.0;
+    synth.playNote(261.63, 0.7, 3.0);
+
+    // Voice gain should have a smooth micro-attack ramp >= 5ms
+    const gainEvents = voice.voiceGain.gain.events;
+    const attackRamp = gainEvents.find(e => e.type === 'linearRampToValueAtTime');
+    assert.ok(attackRamp, 'Attack ramp must be scheduled');
+    const attackDuration = attackRamp.time - 1.0;
+    assert.ok(attackDuration >= 0.005 && attackDuration <= 0.010, `Attack duration must be between 5ms and 10ms, got ${attackDuration}s`);
+
+    // 2. Play second note on same voice while sounding (voice stealing)
+    testCtx.currentTime = 1.05; // 50ms later, voice is still loud
+    voice.voiceGain.gain.value = 0.35; // sounding
+    synth.playNote(440.0, 0.8, 3.0);
+
+    // When stealing, voice gain must ramp down to silence before frequency switch
+    const stealGainEvents = voice.voiceGain.gain.events.filter(e => e.time >= 1.05);
+    const fadeDownRamp = stealGainEvents.find(e => e.type === 'linearRampToValueAtTime' && e.val === 0.0001);
+    assert.ok(fadeDownRamp, 'Stealing must ramp gain down to 0.0001 before retrigger');
+    assert.strictEqual(fadeDownRamp.time, 1.055, 'De-click ramp should take 5ms');
+
+    // Oscillator frequency switch must be scheduled at 1.055 (when silent), NOT at 1.05!
+    const oscEvents = voice.osc1.frequency.events.filter(e => e.time >= 1.05);
+    const freqSet = oscEvents.find(e => e.type === 'setValueAtTime' && Math.round(e.val) === 440);
+    assert.ok(freqSet, 'New frequency must be scheduled');
+    assert.strictEqual(freqSet.time, 1.055, 'Frequency change must happen at noteStartTime after 5ms ramp-down');
+  });
+
+  it('handles edge case parameters (boundary velocities, extreme pitches, rapid burst stealing) without NaN', () => {
+    class MockCtx {
+      constructor() {
+        this.sampleRate = 48000;
+        this.currentTime = 0;
+      }
+      createGain() {
+        return {
+          gain: {
+            value: 0,
+            setValueAtTime: (v) => { assert.ok(!Number.isNaN(v)); },
+            linearRampToValueAtTime: (v) => { assert.ok(!Number.isNaN(v)); },
+            exponentialRampToValueAtTime: (v) => { assert.ok(!Number.isNaN(v)); assert.ok(v > 0); },
+            cancelScheduledValues: () => {}
+          },
+          connect: () => {}
+        };
+      }
+      createBuffer(ch, len, rate) {
+        const arr = new Float32Array(len);
+        return { getChannelData: () => arr, length: len, sampleRate: rate };
+      }
+      createWaveShaper() { return { oversample: '', curve: null, connect: () => {} }; }
+      createBiquadFilter() {
+        return {
+          frequency: {
+            value: 350,
+            setValueAtTime: (v) => { assert.ok(!Number.isNaN(v)); assert.ok(v > 0); },
+            linearRampToValueAtTime: (v) => { assert.ok(!Number.isNaN(v)); assert.ok(v > 0); },
+            exponentialRampToValueAtTime: (v) => { assert.ok(!Number.isNaN(v)); assert.ok(v > 0); },
+            cancelScheduledValues: () => {}
+          },
+          Q: { value: 1, setValueAtTime: () => {} },
+          connect: () => {}
+        };
+      }
+      createOscillator() {
+        return {
+          frequency: {
+            value: 440,
+            setValueAtTime: (v) => { assert.ok(!Number.isNaN(v)); },
+            cancelScheduledValues: () => {}
+          },
+          detune: { value: 0, setValueAtTime: () => {} },
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+      }
+      createBufferSource() {
+        return { buffer: null, connect: () => {}, start: () => {}, stop: () => {} };
+      }
+    }
+
+    const ctx = new MockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 4);
+
+    // Test extreme boundary values
+    const testCases = [
+      { freq: 20, vel: 0.0, tone: 0.0, hammer: 0.0 },     // Sub-bass, zero velocity, darkest tone
+      { freq: 10000, vel: 1.0, tone: 1.0, hammer: 1.0 },  // High treble, max velocity, brightest tone
+      { freq: 440, vel: 0.001, tone: 0.5, hammer: 0.5 },  // Barely audible touch
+      { freq: 261.63, vel: 0.5, tone: 0.0, hammer: 0.0 }  // Darkest felt with hammer off
+    ];
+
+    testCases.forEach(tc => {
+      synth.setTone(tc.tone);
+      synth.setHammer(tc.hammer);
+      assert.doesNotThrow(() => {
+        synth.playNote(tc.freq, tc.vel, 2.0);
+      });
+    });
+
+    // Rapid burst: 60 note triggers in short time with 4 voices (forces heavy voice stealing)
+    for (let i = 0; i < 60; i++) {
+      ctx.currentTime += 0.01;
+      assert.doesNotThrow(() => {
+        synth.playNote(200 + (i * 15), 0.7, 1.0);
+      });
+    }
   });
 });

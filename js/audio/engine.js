@@ -180,7 +180,7 @@ export class AudioEngine {
 
     // --- Instruments ---
     // Harold Budd Felt Piano & Pluck
-    this.feltPiano = new FeltPianoSynthesizer(this.ctx, this.wavetables, 16);
+    this.feltPiano = new FeltPianoSynthesizer(this.ctx, this.wavetables, 24);
     this.feltPiano.setTone(this.feltParams.tone);
     this.feltPiano.setHammer(this.feltParams.hammer);
     this.feltPiano.setDecay(this.feltParams.decay);

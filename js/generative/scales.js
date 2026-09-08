@@ -48,6 +48,12 @@ export const SCALES = {
     name: 'Weightless Whole Tone',
     intervals: [0, 2, 4, 6, 8, 10],
     description: 'Zero gravity, suspended dream-like impressionist space'
+  },
+  AVALON_SPIRITED: {
+    id: 'AVALON_SPIRITED',
+    name: 'Avalon / Spirited Modal',
+    intervals: [0, 2, 4, 5, 7, 9, 11],
+    description: 'Joe Hisaishi & Harold Budd nostalgic modal space (Spirited Away / Avalon Sutra)'
   }
 };
 
@@ -87,6 +93,30 @@ export const CHORD_VOICINGS = {
     name: 'Solar Beating Drone',
     intervals: [0, 0.08, 7, 7.06, 12],
     description: 'Microtonally detuned acoustic beating cluster'
+  },
+  AVALON_MAJ9: {
+    id: 'AVALON_MAJ9',
+    name: 'Avalon Maj9',
+    intervals: [0, 7, 11, 14, 16],
+    description: 'Harold Budd luminous open Maj9 (1 - 5 - 7 - 9 - 10)'
+  },
+  SUMMERS_DAY: {
+    id: 'SUMMERS_DAY',
+    name: "Summer's Day",
+    intervals: [0, 7, 14, 16, 19],
+    description: 'Hisaishi nostalgic open 9th voicing (1 - 5 - 9 - 10 - 12)'
+  },
+  SPIRITED_SUS: {
+    id: 'SPIRITED_SUS',
+    name: 'Spirited Sus',
+    intervals: [0, 7, 12, 14, 17],
+    description: 'Hisaishi / Budd suspended floating cluster (1 - 5 - 8va - 9 - 11)'
+  },
+  NOSTALGIA_11TH: {
+    id: 'NOSTALGIA_11TH',
+    name: 'Nostalgia 11th',
+    intervals: [0, 7, 10, 14, 15, 17],
+    description: 'Lush bittersweet minor 11th (1 - 5 - b7 - 9 - b10 - 11)'
   }
 };
 

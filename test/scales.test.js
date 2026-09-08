@@ -72,4 +72,47 @@ describe('Scales and Tuning Math', () => {
     assert.strictEqual(Math.round(frequencyToMidi(freqs[2], 440)), 74);
     assert.strictEqual(Math.round(frequencyToMidi(freqs[3], 440)), 76);
   });
+
+  it('quantizes and generates degrees for Avalon / Spirited Modal scale', () => {
+    const scale = SCALES.AVALON_SPIRITED;
+    assert.ok(scale);
+    assert.deepStrictEqual(scale.intervals, [0, 2, 4, 5, 7, 9, 11]);
+
+    // Chromatic notes quantize cleanly
+    assert.strictEqual(quantizeToScale(60, 0, scale.intervals), 60); // C4
+    assert.strictEqual(quantizeToScale(65, 0, scale.intervals), 65); // F4
+    assert.strictEqual(quantizeToScale(71, 0, scale.intervals), 71); // B4
+
+    const degrees = getScaleDegreesInOctaves(0, scale.intervals, 3, 4, 440);
+    // 2 octaves * 7 notes per octave = 14 notes
+    assert.strictEqual(degrees.length, 14);
+    assert.strictEqual(degrees[0].name, 'C3');
+    assert.strictEqual(degrees[degrees.length - 1].name, 'B4');
+  });
+
+  it('calculates chord frequencies for Avalon Maj9 and Spirited Away signature voicings', () => {
+    // Avalon Maj9: [0, 7, 11, 14, 16] -> MIDI [60, 67, 71, 74, 76]
+    const avalonFreqs = getChordFrequencies(60, 'AVALON_MAJ9', 440);
+    assert.strictEqual(avalonFreqs.length, 5);
+    const avalonMidis = avalonFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
+    assert.deepStrictEqual(avalonMidis, [60, 67, 71, 74, 76]);
+
+    // Summer's Day: [0, 7, 14, 16, 19] -> MIDI [60, 67, 74, 76, 79]
+    const summersFreqs = getChordFrequencies(60, 'SUMMERS_DAY', 440);
+    assert.strictEqual(summersFreqs.length, 5);
+    const summersMidis = summersFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
+    assert.deepStrictEqual(summersMidis, [60, 67, 74, 76, 79]);
+
+    // Spirited Sus: [0, 7, 12, 14, 17] -> MIDI [60, 67, 72, 74, 77]
+    const susFreqs = getChordFrequencies(60, 'SPIRITED_SUS', 440);
+    assert.strictEqual(susFreqs.length, 5);
+    const susMidis = susFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
+    assert.deepStrictEqual(susMidis, [60, 67, 72, 74, 77]);
+
+    // Nostalgia 11th: [0, 7, 10, 14, 15, 17] -> MIDI [60, 67, 70, 74, 75, 77]
+    const nostFreqs = getChordFrequencies(60, 'NOSTALGIA_11TH', 440);
+    assert.strictEqual(nostFreqs.length, 6);
+    const nostMidis = nostFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
+    assert.deepStrictEqual(nostMidis, [60, 67, 70, 74, 75, 77]);
+  });
 });
