@@ -241,6 +241,7 @@ function setupMockBrowser() {
 
   // Master Knobs
   register('knob-master-vol');
+  register('knob-master-drive');
   register('toggle-phase-loops', 'button');
   const loopsBtn = elementsById.get('toggle-phase-loops');
   const lText = new MockElement('span');
@@ -256,6 +257,7 @@ function setupMockBrowser() {
   aText.textContent = 'EVOLVE OFF';
   autoBtn.appendChild(aText);
   register('knob-poisson-density');
+  register('knob-poisson-humanize');
 
   // Drone Voice 1
   register('btn-drone1-active', 'button');
@@ -292,6 +294,7 @@ function setupMockBrowser() {
   // Felt Piano
   register('knob-felt-tone');
   register('knob-felt-hammer');
+  register('knob-felt-symp');
   register('knob-felt-decay');
   register('knob-felt-level');
 
@@ -815,5 +818,33 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     assert.strictEqual(transformCalledWith[0], app.vectorPad.dpr);
     assert.strictEqual(transformCalledWith[3], app.vectorPad.dpr);
     assert.ok(fillRectCalled);
+  });
+
+  it('verifies Dieter Rams additions: Tape Drive, Symp Resonance, and Poisson Humanize knobs are rendered and wired', async () => {
+    const { elementsById } = setupMockBrowser();
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    // Verify master drive knob
+    const driveEl = elementsById.get('knob-master-drive');
+    assert.ok(driveEl && driveEl.children.length > 0, 'Tape Drive knob must render in DOM');
+    assert.strictEqual(app.engine.tapeDrive, 0.18);
+    app.engine.setTapeDrive(0.40);
+    assert.strictEqual(app.engine.tapeDrive, 0.40);
+
+    // Verify sympathetic resonance knob in Harold Budd section
+    const sympEl = elementsById.get('knob-felt-symp');
+    assert.ok(sympEl && sympEl.children.length > 0, 'Symp Resonance knob must render in DOM');
+    assert.strictEqual(app.engine.feltParams.sympathetic, 0.45);
+    app.engine.setFeltSympathetic(0.65);
+    assert.strictEqual(app.engine.feltParams.sympathetic, 0.65);
+
+    // Verify humanize knob in Poisson Auto-Evolve section
+    const humanizeEl = elementsById.get('knob-poisson-humanize');
+    assert.ok(humanizeEl && humanizeEl.children.length > 0, 'Poisson Humanize knob must render in DOM');
+    assert.strictEqual(app.engine.poisson.humanize, 0.50);
+    app.engine.setPoissonHumanize(0.75);
+    assert.strictEqual(app.engine.poisson.humanize, 0.75);
   });
 });

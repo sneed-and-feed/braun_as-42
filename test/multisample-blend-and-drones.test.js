@@ -201,6 +201,20 @@ describe('Multisampled / Acoustic Blend Modeling (Teenage Engineering EP-1320 St
     synth.setTone(0.80);
     assert.ok(synth.sympatheticFilter1.frequency.value > 290);
   });
+
+  it('verifies sympathetic resonance depth knob smoothly modulates coupling gain', () => {
+    const ctx = createMockCtx();
+    const synth = new FeltPianoSynthesizer(ctx, null, 4);
+
+    assert.strictEqual(synth.params.sympathetic, 0.45);
+    synth.setSympathetic(0.90);
+    assert.strictEqual(synth.params.sympathetic, 0.90);
+    assert.ok(synth.sympatheticGain.gain.value > 0.15, 'Higher sympathetic depth should increase soundboard gain');
+
+    synth.setSympathetic(0.0);
+    assert.strictEqual(synth.params.sympathetic, 0.0);
+    assert.strictEqual(synth.sympatheticGain.gain.value, 0.0);
+  });
 });
 
 describe('Solar 42n Drone Quick-Snap Tuning Presets', () => {

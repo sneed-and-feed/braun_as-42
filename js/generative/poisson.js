@@ -22,6 +22,7 @@ export class PoissonGenerator {
     this.eventsPerMinute = options.eventsPerMinute ?? 12;
     this.minRestSeconds = options.minRestSeconds ?? 0.5;
     this.maxRestSeconds = options.maxRestSeconds ?? 9.0;
+    this.humanize = options.humanize ?? 0.50;
     this.rootPitchClass = options.rootPitchClass ?? 0;
     this.scaleIntervals = options.scaleIntervals ?? SCALES.BUDD_PENTATONIC.intervals;
     this.minMidi = options.minMidi ?? 48; // C3
@@ -47,8 +48,12 @@ export class PoissonGenerator {
     const u = Math.max(1e-7, Math.min(1 - 1e-7, Math.random()));
     const rawInterval = -Math.log(1 - u) / lambda;
 
+    // Organic rubato timing variance scaled by humanize
+    const mean = 1.0 / lambda;
+    const rubato = mean + (rawInterval - mean) * (0.35 + this.humanize * 0.65);
+
     // Constrain within organic ambient bounds
-    return Math.max(this.minRestSeconds, Math.min(this.maxRestSeconds, rawInterval));
+    return Math.max(this.minRestSeconds, Math.min(this.maxRestSeconds, rubato));
   }
 
   /**
@@ -95,8 +100,11 @@ export class PoissonGenerator {
   generateVelocity() {
     // Approximate normal distribution via sum of 3 uniforms
     const u = (Math.random() + Math.random() + Math.random()) / 3;
-    // Map to 0.28 .. 0.82
-    return 0.28 + (u * 0.54);
+    // When humanize is 0, velocity stays near Budd core ~0.55;
+    // at humanize = 1, it explores full dynamic nuance 0.28 .. 0.82
+    const varianceScale = 0.20 + (this.humanize * 0.80);
+    const vel = 0.55 + (u - 0.5) * 0.54 * varianceScale;
+    return Math.max(0.25, Math.min(0.85, vel));
   }
 
   /**
@@ -166,10 +174,11 @@ export class PoissonGenerator {
   /**
    * Update parameters live
    */
-  setParameters({ eventsPerMinute, rootPitchClass, scaleIntervals, a4 }) {
+  setParameters({ eventsPerMinute, rootPitchClass, scaleIntervals, a4, humanize }) {
     if (eventsPerMinute !== undefined) this.eventsPerMinute = eventsPerMinute;
     if (rootPitchClass !== undefined) this.rootPitchClass = rootPitchClass;
     if (scaleIntervals !== undefined) this.scaleIntervals = scaleIntervals;
     if (a4 !== undefined) this.a4 = a4;
+    if (humanize !== undefined) this.humanize = Math.max(0, Math.min(1.0, humanize));
   }
 }

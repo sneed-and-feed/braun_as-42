@@ -30,7 +30,7 @@ export class BraunVectorPad {
 
     this.dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
     this.width = 340;
-    this.height = 130;
+    this.height = 124;
 
     this._render();
     this._attachEvents();
@@ -105,10 +105,10 @@ export class BraunVectorPad {
 
   _resize() {
     if (!this.canvas || !this.surfaceBox) return;
-    const rect = this.surfaceBox.getBoundingClientRect ? this.surfaceBox.getBoundingClientRect() : { width: 340, height: 130 };
+    const rect = this.surfaceBox.getBoundingClientRect ? this.surfaceBox.getBoundingClientRect() : { width: 340, height: 124 };
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
-    const w = Math.round(rect.width || this.surfaceBox.clientWidth || 340);
-    const h = Math.round(rect.height || this.surfaceBox.clientHeight || 130);
+    const w = Math.max(10, Math.round(rect.width || this.surfaceBox.clientWidth || 340));
+    const h = Math.max(10, Math.round(rect.height || this.surfaceBox.clientHeight || 124));
 
     this.dpr = dpr;
     this.width = w;
@@ -116,10 +116,6 @@ export class BraunVectorPad {
 
     this.canvas.width = Math.floor(w * dpr);
     this.canvas.height = Math.floor(h * dpr);
-    if (this.canvas.style) {
-      this.canvas.style.width = `${w}px`;
-      this.canvas.style.height = `${h}px`;
-    }
   }
 
   _attachEvents() {

@@ -451,7 +451,8 @@ export class FeltPianoSynthesizer {
       hammer: 0.45,    // Wooden felt hammer impact
       decay: 1.0,      // Sustain length multiplier
       release: 1.8,    // Damper pedal release time
-      volume: 0.80     // Output volume
+      volume: 0.80,    // Output volume
+      sympathetic: 0.45 // EP-1320 sympathetic string soundboard coupling level
     };
 
     // Pre-allocate single hammer noise burst buffer once for all voices
@@ -579,7 +580,8 @@ export class FeltPianoSynthesizer {
         this.sympatheticFilter2.frequency.setTargetAtTime(440 + this.params.tone * 200, now, 0.025);
       }
       if (this.sympatheticGain && this.sympatheticGain.gain && this.sympatheticGain.gain.setTargetAtTime) {
-        this.sympatheticGain.gain.setTargetAtTime(0.08 + this.params.tone * 0.10, now, 0.025);
+        const sympScale = (this.params.sympathetic ?? 0.45) / 0.45;
+        this.sympatheticGain.gain.setTargetAtTime((0.08 + this.params.tone * 0.10) * sympScale, now, 0.025);
       }
 
       for (const voice of this.voices) {
@@ -609,6 +611,20 @@ export class FeltPianoSynthesizer {
             voice.filter2.frequency.setTargetAtTime(rest, now, 0.025);
           }
         }
+      }
+    }
+  }
+
+  setSympathetic(val) {
+    this.params.sympathetic = Math.max(0, Math.min(1.0, val));
+    if (this.ctx && this.sympatheticGain && this.sympatheticGain.gain) {
+      const now = this.ctx.currentTime;
+      const sympScale = this.params.sympathetic / 0.45;
+      const targetGain = (0.08 + (this.params.tone ?? 0.60) * 0.10) * sympScale;
+      if (typeof this.sympatheticGain.gain.setTargetAtTime === 'function') {
+        this.sympatheticGain.gain.setTargetAtTime(targetGain, now, 0.025);
+      } else {
+        this.sympatheticGain.gain.value = targetGain;
       }
     }
   }

@@ -12,7 +12,7 @@ import { ShimmerReverb } from './shimmer-reverb.js';
 import { PhaseLoopEngine } from '../generative/phase-loops.js';
 import { PoissonGenerator } from '../generative/poisson.js';
 import { SCALES, NOTE_NAMES, midiToFrequency } from '../generative/scales.js';
-import { makeSoftClipCurve } from './wavefolder.js';
+import { makeSoftClipCurve, makeTapeSaturationCurve } from './wavefolder.js';
 
 export class AudioEngine {
   constructor() {
@@ -30,6 +30,7 @@ export class AudioEngine {
       eventsPerMinute: 12,
       minRestSeconds: 0.6,
       maxRestSeconds: 8.5,
+      humanize: 0.50,
       rootPitchClass: this.rootPitchClass,
       scaleIntervals: SCALES[this.currentScaleKey].intervals,
       a4: this.a4
@@ -43,12 +44,14 @@ export class AudioEngine {
 
     // Control parameters (cached so UI tweaks before power-on are seamlessly preserved)
     this.masterVolume = 0.85;
+    this.tapeDrive = 0.18; // Analog master bus tape saturation
 
     this.feltParams = {
       tone: 0.62,
       hammer: 0.45,
       decay: 1.1,
       volume: 0.80,
+      sympathetic: 0.45,
       waveform: 'felt'
     };
 
@@ -151,6 +154,11 @@ export class AudioEngine {
     this.masterLimiter.oversample = '4x';
     this.masterLimiter.curve = makeSoftClipCurve(2048, 1.15);
 
+    // Analog Master Bus Tape Saturation Stage (adds warmth, musical harmonics, and tape glue)
+    this.masterTapeSaturator = this.ctx.createWaveShaper();
+    this.masterTapeSaturator.oversample = '4x';
+    this.masterTapeSaturator.curve = makeTapeSaturationCurve(2048, this.tapeDrive);
+
     // Analyser Node for Oscilloscope & Lissajous Phase Meter
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
@@ -165,10 +173,12 @@ export class AudioEngine {
       this.masterCompressor.attack.setValueAtTime(0.002, this.ctx.currentTime);
       this.masterCompressor.release.setValueAtTime(0.050, this.ctx.currentTime);
 
-      this.masterGain.connect(this.masterCompressor);
+      this.masterGain.connect(this.masterTapeSaturator);
+      this.masterTapeSaturator.connect(this.masterCompressor);
       this.masterCompressor.connect(this.masterLimiter);
     } else {
-      this.masterGain.connect(this.masterLimiter);
+      this.masterGain.connect(this.masterTapeSaturator);
+      this.masterTapeSaturator.connect(this.masterLimiter);
     }
     this.masterLimiter.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
@@ -207,6 +217,7 @@ export class AudioEngine {
     this.feltPiano.setHammer(this.feltParams.hammer);
     this.feltPiano.setDecay(this.feltParams.decay);
     this.feltPiano.setVolume(this.feltParams.volume);
+    this.feltPiano.setSympathetic(this.feltParams.sympathetic);
     this.feltPiano.setWaveform(this.feltParams.waveform);
 
     this.feltPiano.output.connect(this.masterGain);
@@ -346,6 +357,13 @@ export class AudioEngine {
     }
   }
 
+  setTapeDrive(drive) {
+    this.tapeDrive = Math.max(0, Math.min(1.0, drive));
+    if (this.ctx && this.masterTapeSaturator) {
+      this.masterTapeSaturator.curve = makeTapeSaturationCurve(2048, this.tapeDrive);
+    }
+  }
+
   setFeltTone(tone) {
     this.feltParams.tone = tone;
     if (this.feltPiano) this.feltPiano.setTone(tone);
@@ -354,6 +372,11 @@ export class AudioEngine {
   setFeltHammer(hammer) {
     this.feltParams.hammer = hammer;
     if (this.feltPiano) this.feltPiano.setHammer(hammer);
+  }
+
+  setFeltSympathetic(sympathetic) {
+    this.feltParams.sympathetic = Math.max(0, Math.min(1.0, sympathetic));
+    if (this.feltPiano) this.feltPiano.setSympathetic(this.feltParams.sympathetic);
   }
 
   setFeltDecay(decay) {
@@ -369,6 +392,12 @@ export class AudioEngine {
   setFeltWaveform(wave) {
     this.feltParams.waveform = wave;
     if (this.feltPiano) this.feltPiano.setWaveform(wave);
+  }
+
+  setPoissonHumanize(humanize) {
+    if (this.poisson) {
+      this.poisson.setParameters({ humanize });
+    }
   }
 
   setDroneActive(id, active) {

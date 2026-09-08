@@ -65,4 +65,22 @@ describe('Poisson Point Process Generator', () => {
       assert.ok(ev.freq > 50 && ev.freq < 2000);
     }
   });
+
+  it('modulates rubato interval spread and velocity variance via humanize parameter', () => {
+    const generator = new PoissonGenerator({ humanize: 0.85 });
+    assert.strictEqual(generator.humanize, 0.85);
+
+    for (let i = 0; i < 100; i++) {
+      const ev = generator.generateEvent();
+      assert.ok(ev.velocity >= 0.25 && ev.velocity <= 0.85, `Velocity ${ev.velocity} out of bounds`);
+      assert.ok(ev.nextInterval >= 0.5 && ev.nextInterval <= 9.0, `Interval ${ev.nextInterval} out of bounds`);
+      assert.ok(!Number.isNaN(ev.velocity));
+      assert.ok(!Number.isNaN(ev.nextInterval));
+    }
+
+    generator.setParameters({ humanize: 0.10 });
+    assert.strictEqual(generator.humanize, 0.10);
+    const lowHumEvent = generator.generateEvent();
+    assert.ok(lowHumEvent.velocity >= 0.25 && lowHumEvent.velocity <= 0.85);
+  });
 });

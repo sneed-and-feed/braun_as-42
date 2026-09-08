@@ -440,6 +440,16 @@ export class AmbientApp {
       onChange: (v) => this.engine.setMasterVolume(v / 100)
     });
 
+    new BraunKnob(document.getElementById('knob-master-drive'), {
+      label: 'TAPE DRIVE',
+      min: 0,
+      max: 100,
+      value: 18,
+      unit: '%',
+      size: 'medium',
+      onChange: (v) => this.engine.setTapeDrive(v / 100)
+    });
+
     // --- Harold Budd Felt Piano Knobs ---
     this.knobs.feltTone = new BraunKnob(document.getElementById('knob-felt-tone'), {
       label: 'FELT DAMP',
@@ -465,6 +475,16 @@ export class AmbientApp {
       unit: '%',
       size: 'small',
       onChange: (v) => this.engine.setFeltHammer(v / 100)
+    });
+
+    new BraunKnob(document.getElementById('knob-felt-symp'), {
+      label: 'SYMP RESONANCE',
+      min: 0,
+      max: 100,
+      value: 45,
+      unit: '%',
+      size: 'small',
+      onChange: (v) => this.engine.setFeltSympathetic(v / 100)
     });
 
     new BraunKnob(document.getElementById('knob-felt-decay'), {
@@ -601,7 +621,7 @@ export class AmbientApp {
       onChange: (v) => this.engine.setReverbWet(v / 100)
     });
 
-    // --- Generative Poisson Density Knob ---
+    // --- Generative Poisson Density & Humanize Knobs ---
     new BraunKnob(document.getElementById('knob-poisson-density'), {
       label: 'NOTE RATE',
       min: 4,
@@ -613,6 +633,20 @@ export class AmbientApp {
       onChange: (v) => {
         if (this.engine.poisson) {
           this.engine.poisson.setParameters({ eventsPerMinute: v });
+        }
+      }
+    });
+
+    new BraunKnob(document.getElementById('knob-poisson-humanize'), {
+      label: 'HUMANIZE',
+      min: 0,
+      max: 100,
+      value: 50,
+      unit: '%',
+      size: 'small',
+      onChange: (v) => {
+        if (this.engine.poisson) {
+          this.engine.poisson.setParameters({ humanize: v / 100 });
         }
       }
     });

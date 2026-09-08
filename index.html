@@ -81,7 +81,8 @@
         <div class="braun-system-section">
           <h2 class="braun-panel-title">MASTER OUTPUT</h2>
           <div class="braun-knobs-row">
-            <div id="knob-master-vol"></div>
+            <div id="knob-master-vol" title="Master Bus Volume"></div>
+            <div id="knob-master-drive" title="Analog Bus Tape Saturation"></div>
           </div>
 
           <!-- Brian Eno Asynchronous Phase Loops Panel -->
@@ -105,8 +106,9 @@
                 <span class="braun-status-text">EVOLVE OFF</span>
               </button>
             </div>
-            <div style="display: flex; justify-content: center;">
-              <div id="knob-poisson-density"></div>
+            <div class="braun-knobs-row">
+              <div id="knob-poisson-density" title="Note Event Density Rate"></div>
+              <div id="knob-poisson-humanize" title="Rubato & Velocity Timing Variance"></div>
             </div>
           </div>
         </div>
@@ -168,14 +170,18 @@
                 </div>
               </div>
 
-              <!-- Knobs Row -->
-              <div class="braun-knobs-row">
+              <!-- Knobs Row: 6 Upper Timbre Knobs -->
+              <div class="braun-drone-knobs-grid">
                 <div id="knob-drone1-beat" title="Continuous Sub-Hertz Beating Frequency"></div>
                 <div id="knob-drone1-detune" title="Fine Detuning in Cents"></div>
                 <div id="knob-drone1-fold" title="Analog Wavefolding Amount"></div>
                 <div id="knob-drone1-cutoff" title="Resonant Lowpass Cutoff"></div>
                 <div id="knob-drone1-res" title="Filter Q Resonance"></div>
                 <div id="knob-drone1-lfo" title="Slow LFO Organic Drift"></div>
+              </div>
+
+              <!-- Centered Voice Level Knob -->
+              <div class="braun-drone-level-container">
                 <div id="knob-drone1-vol" title="Voice Level"></div>
               </div>
             </div>
@@ -224,14 +230,18 @@
                 </div>
               </div>
 
-              <!-- Knobs Row -->
-              <div class="braun-knobs-row">
+              <!-- Knobs Row: 6 Upper Timbre Knobs -->
+              <div class="braun-drone-knobs-grid">
                 <div id="knob-drone2-beat" title="Continuous Sub-Hertz Beating Frequency"></div>
                 <div id="knob-drone2-detune" title="Fine Detuning in Cents"></div>
                 <div id="knob-drone2-fold" title="Analog Wavefolding Amount"></div>
                 <div id="knob-drone2-cutoff" title="Resonant Lowpass Cutoff"></div>
                 <div id="knob-drone2-res" title="Filter Q Resonance"></div>
                 <div id="knob-drone2-lfo" title="Slow LFO Organic Drift"></div>
+              </div>
+
+              <!-- Centered Voice Level Knob -->
+              <div class="braun-drone-level-container">
                 <div id="knob-drone2-vol" title="Voice Level"></div>
               </div>
             </div>
@@ -260,6 +270,7 @@
           <div class="braun-knobs-row">
             <div id="knob-felt-tone" title="Felt Cloth Lowpass Damping"></div>
             <div id="knob-felt-hammer" title="Hammer Impact Transient"></div>
+            <div id="knob-felt-symp" title="Sympathetic String & Soundboard Coupling Resonance"></div>
             <div id="knob-felt-decay" title="String Decay Time Multiplier"></div>
             <div id="knob-felt-level" title="Piano Output Level"></div>
           </div>
