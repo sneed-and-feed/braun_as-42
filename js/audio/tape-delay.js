@@ -48,8 +48,12 @@ export class TapeDelay {
     this.fbGainLR = ctx.createGain(); // Cross-feedback Left to Right
     this.fbGainRL = ctx.createGain(); // Cross-feedback Right to Left
 
-    const directFb = this.feedback * 0.7;
-    const crossFb = this.feedback * 0.3;
+    // Tape saturation curve small-signal gain factor at warmth=0.4 is ~1.5173.
+    // Compensating feedback path by this factor bounds the total loop gain to strictly <= this.feedback (<= 0.92),
+    // preventing circulating energy from accumulating and hard-clipping at the waveshaper boundary.
+    this.shaperGain = 1.5173;
+    const directFb = (this.feedback * 0.7) / this.shaperGain;
+    const crossFb = (this.feedback * 0.3) / this.shaperGain;
     this.fbGainLL.gain.setValueAtTime(directFb, ctx.currentTime);
     this.fbGainRR.gain.setValueAtTime(directFb, ctx.currentTime);
     this.fbGainLR.gain.setValueAtTime(crossFb, ctx.currentTime);
@@ -65,12 +69,17 @@ export class TapeDelay {
     this.shaperR.curve = tapeCurve;
 
     // Tape head filters (High-cut tape warmth + low rumble cut)
+    // Butterworth Q <= 0.707 eliminates resonant peaking in the recirculation feedback loop
     this.filterL = ctx.createBiquadFilter();
     this.filterR = ctx.createBiquadFilter();
     this.filterL.type = 'lowpass';
     this.filterR.type = 'lowpass';
     this.filterL.frequency.setValueAtTime(3600, ctx.currentTime);
     this.filterR.frequency.setValueAtTime(3600, ctx.currentTime);
+    if (this.filterL.Q && typeof this.filterL.Q.setValueAtTime === 'function') {
+      this.filterL.Q.setValueAtTime(0.707, ctx.currentTime);
+      this.filterR.Q.setValueAtTime(0.707, ctx.currentTime);
+    }
 
     this.highpassL = ctx.createBiquadFilter();
     this.highpassR = ctx.createBiquadFilter();
@@ -78,6 +87,10 @@ export class TapeDelay {
     this.highpassR.type = 'highpass';
     this.highpassL.frequency.setValueAtTime(75, ctx.currentTime);
     this.highpassR.frequency.setValueAtTime(75, ctx.currentTime);
+    if (this.highpassL.Q && typeof this.highpassL.Q.setValueAtTime === 'function') {
+      this.highpassL.Q.setValueAtTime(0.707, ctx.currentTime);
+      this.highpassR.Q.setValueAtTime(0.707, ctx.currentTime);
+    }
 
     // Stereo Panners
     this.pannerL = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
@@ -168,14 +181,51 @@ export class TapeDelay {
 
     this.wowOsc.start();
     this.flutterOsc.start();
+    this._updateWowFlutterHeadroom();
+  }
+
+  _updateWowFlutterHeadroom() {
+    // Safety clamp wow and flutter modulation depth so delayTime never dips below 0.015s (15ms).
+    // Delay lines in Web Audio API crackle or produce buffer wrapping discontinuities when delayTime < 0.005s.
+    const minDelay = Math.min(this.delayTimeL, this.delayTimeR);
+    const maxMod = Math.max(0, minDelay - 0.015);
+    const nominalTotal = 0.0065; // max wow (0.005) + max flutter (0.0015)
+    const scale = maxMod < nominalTotal ? (nominalTotal > 0 ? maxMod / nominalTotal : 0) : 1.0;
+
+    const effWow = this.wowAmount * scale;
+    const effFlutter = this.flutterAmount * scale;
+    const now = this.ctx.currentTime;
+
+    if (this.wowGainL && this.wowGainL.gain) {
+      if (typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
+        this.wowGainL.gain.cancelScheduledValues(now);
+        this.wowGainR.gain.cancelScheduledValues(now);
+        this.flutterGainL.gain.cancelScheduledValues(now);
+        this.flutterGainR.gain.cancelScheduledValues(now);
+      }
+      if (typeof this.wowGainL.gain.setTargetAtTime === 'function') {
+        this.wowGainL.gain.setTargetAtTime(effWow, now, 0.05);
+        this.wowGainR.gain.setTargetAtTime(-effWow, now, 0.05);
+        this.flutterGainL.gain.setTargetAtTime(effFlutter, now, 0.05);
+        this.flutterGainR.gain.setTargetAtTime(effFlutter * 0.8, now, 0.05);
+      } else {
+        this.wowGainL.gain.value = effWow;
+        this.wowGainR.gain.value = -effWow;
+        this.flutterGainL.gain.value = effFlutter;
+        this.flutterGainR.gain.value = effFlutter * 0.8;
+      }
+    }
   }
 
   setTime(timeSeconds) {
-    const t = Math.max(0.05, Math.min(2.0, timeSeconds));
-    if (Math.abs(this.delayTimeL - t) < 0.002) return;
+    const t = Math.max(0.015, Math.min(2.0, timeSeconds));
+    if (Math.abs(this.delayTimeL - t) < 0.001) return;
     this.delayTimeL = t;
-    this.delayTimeR = t * 1.5; // Harmonic 3:2 stereo offset
+    this.delayTimeR = Math.max(0.015, t * 1.5); // Harmonic 3:2 stereo offset
     const now = this.ctx.currentTime;
+
+    // Safety clamp wow and flutter modulation depth against the new delay time
+    this._updateWowFlutterHeadroom();
 
     // Clear prior pending target curves to prevent Doppler fluttering / zipper rasp pileup
     if (typeof this.delayNodeL.delayTime.cancelAndHoldAtTime === 'function') {
@@ -197,8 +247,9 @@ export class TapeDelay {
 
   setFeedback(fb) {
     this.feedback = Math.max(0.0, Math.min(0.92, fb));
-    const directFb = this.feedback * 0.7;
-    const crossFb = this.feedback * 0.3;
+    const shaperGain = this.shaperGain || 1.5173;
+    const directFb = (this.feedback * 0.7) / shaperGain;
+    const crossFb = (this.feedback * 0.3) / shaperGain;
     const now = this.ctx.currentTime;
 
     if (typeof this.fbGainLL.gain.cancelAndHoldAtTime === 'function') {
@@ -223,24 +274,7 @@ export class TapeDelay {
     const d = Math.max(0, Math.min(1.0, depth));
     this.wowAmount = 0.005 * d;
     this.flutterAmount = 0.0015 * d;
-    const now = this.ctx.currentTime;
-    if (this.wowGainL && this.wowGainL.gain) {
-      if (typeof this.wowGainL.gain.cancelAndHoldAtTime === 'function') {
-        this.wowGainL.gain.cancelAndHoldAtTime(now);
-        this.wowGainR.gain.cancelAndHoldAtTime(now);
-        this.flutterGainL.gain.cancelAndHoldAtTime(now);
-        this.flutterGainR.gain.cancelAndHoldAtTime(now);
-      } else if (typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
-        this.wowGainL.gain.cancelScheduledValues(now);
-        this.wowGainR.gain.cancelScheduledValues(now);
-        this.flutterGainL.gain.cancelScheduledValues(now);
-        this.flutterGainR.gain.cancelScheduledValues(now);
-      }
-      this.wowGainL.gain.setTargetAtTime(this.wowAmount, now, 0.05);
-      this.wowGainR.gain.setTargetAtTime(-this.wowAmount, now, 0.05);
-      this.flutterGainL.gain.setTargetAtTime(this.flutterAmount, now, 0.05);
-      this.flutterGainR.gain.setTargetAtTime(this.flutterAmount * 0.8, now, 0.05);
-    }
+    this._updateWowFlutterHeadroom();
   }
 
   setTone(cutoffHz) {
@@ -255,6 +289,12 @@ export class TapeDelay {
     }
     this.filterL.frequency.setTargetAtTime(c, now, 0.04);
     this.filterR.frequency.setTargetAtTime(c, now, 0.04);
+
+    // Keep Q bounded to <= 0.707 to prevent resonant peaks
+    if (this.filterL.Q && typeof this.filterL.Q.setValueAtTime === 'function') {
+      this.filterL.Q.setValueAtTime(0.707, now);
+      this.filterR.Q.setValueAtTime(0.707, now);
+    }
   }
 
   setWet(wet) {

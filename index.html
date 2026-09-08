@@ -79,6 +79,17 @@
               <option value="ENO_AIRPORTS">ENO · MUSIC FOR AIRPORTS</option>
             </select>
           </div>
+
+          <!-- Patch Export & Load -->
+          <div class="braun-patch-group">
+            <button id="btn-export-patch" class="braun-patch-btn" title="Export Current Synth Settings as JSON Patch File">
+              <span>EXPORT</span>
+            </button>
+            <button id="btn-load-patch" class="braun-patch-btn" title="Load Synth Settings from JSON Patch File">
+              <span>LOAD</span>
+            </button>
+            <input type="file" id="input-load-patch" accept=".json,application/json" style="display: none;">
+          </div>
         </div>
       </div>
     </header>

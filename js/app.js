@@ -640,6 +640,28 @@ export class AmbientApp {
       });
     }
 
+    // Export & Load Patch
+    const btnExportPatch = document.getElementById('btn-export-patch');
+    if (btnExportPatch) {
+      btnExportPatch.addEventListener('click', () => {
+        this.exportPatch();
+        if (typeof btnExportPatch.blur === 'function') btnExportPatch.blur();
+      });
+    }
+
+    const btnLoadPatch = document.getElementById('btn-load-patch');
+    const inputLoadPatch = document.getElementById('input-load-patch');
+    if (btnLoadPatch && inputLoadPatch) {
+      btnLoadPatch.addEventListener('click', () => {
+        inputLoadPatch.value = '';
+        inputLoadPatch.click();
+        if (typeof btnLoadPatch.blur === 'function') btnLoadPatch.blur();
+      });
+      inputLoadPatch.addEventListener('change', (e) => {
+        this._handleLoadPatchFile(e);
+      });
+    }
+
     // Render All Rotary Knobs immediately
     this._buildKnobs();
 
@@ -831,6 +853,225 @@ export class AmbientApp {
     // Center Vector Pad to origin without stomping calibrated preset knobs
     if (this.vectorPad) {
       this.vectorPad.resetToCenter(false, animate, duration);
+    }
+  }
+
+  /**
+   * Export all synthesizer settings (knobs, waveforms, scale, drones, vector pad) to a JSON patch object and download
+   * @returns {Object} Patch data object
+   */
+  exportPatch() {
+    const knobValues = {};
+    if (this.knobs) {
+      Object.keys(this.knobs).forEach(key => {
+        if (this.knobs[key] && this.knobs[key].value !== undefined) {
+          knobValues[key] = this.knobs[key].value;
+        }
+      });
+    }
+
+    const activePianoWaveBtn = (typeof document !== 'undefined' && typeof document.querySelector === 'function')
+      ? document.querySelector('.piano-wave-btn.is-active')
+      : null;
+    const pianoWave = activePianoWaveBtn ? activePianoWaveBtn.getAttribute('data-wave') : (this.engine?.feltParams?.waveform || 'felt');
+
+    const patch = {
+      format: 'BRAUN_AS42_PATCH',
+      version: 1,
+      name: 'Braun Patch ' + new Date().toISOString().slice(0, 10),
+      timestamp: new Date().toISOString(),
+      theme: (typeof document !== 'undefined' && document.body) ? (document.body.getAttribute('data-theme') || 'light') : 'light',
+      rootPitchClass: this.engine ? this.engine.rootPitchClass : 0,
+      currentScaleKey: this.engine ? this.engine.currentScaleKey : 'BUDD_PENTATONIC',
+      a4: this.engine ? this.engine.a4 : 440,
+      pianoWave,
+      knobs: knobValues,
+      drone1: {
+        active: this.engine?.droneParams?.[1]?.active ?? false,
+        waveA: this.engine?.droneParams?.[1]?.waveA ?? 'saw',
+        waveB: this.engine?.droneParams?.[1]?.waveB ?? 'warm',
+        snap: this.engine?.droneSnap?.[1] || 'deep-tonic'
+      },
+      drone2: {
+        active: this.engine?.droneParams?.[2]?.active ?? false,
+        waveA: this.engine?.droneParams?.[2]?.waveA ?? 'square',
+        waveB: this.engine?.droneParams?.[2]?.waveB ?? 'triangle',
+        snap: this.engine?.droneSnap?.[2] || 'perfect-5th'
+      },
+      vectorPad: {
+        x: this.vectorPad ? this.vectorPad.x : 0.5,
+        y: this.vectorPad ? this.vectorPad.y : 0.0
+      }
+    };
+
+    if (typeof document !== 'undefined' && typeof URL !== 'undefined' && typeof Blob !== 'undefined') {
+      const jsonStr = JSON.stringify(patch, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      if (a.style) a.style.display = 'none';
+      a.href = url;
+      a.download = `braun-patch-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      if (document.body && typeof document.body.appendChild === 'function') {
+        document.body.appendChild(a);
+      }
+      if (typeof a.click === 'function') {
+        a.click();
+      }
+      setTimeout(() => {
+        try {
+          if (typeof document !== 'undefined' && document && document.body && typeof document.body.removeChild === 'function') {
+            document.body.removeChild(a);
+          }
+          if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+            URL.revokeObjectURL(url);
+          }
+        } catch (e) {}
+      }, 1000);
+    }
+
+    return patch;
+  }
+
+  /**
+   * Load and apply a patch object across all knobs, selectors, and audio engines
+   * @param {Object} patch
+   * @param {Object} [options]
+   * @param {boolean} [options.animate=true]
+   * @param {number} [options.duration=350]
+   * @returns {boolean} Success status
+   */
+  loadPatch(patch, { animate = true, duration = 350 } = {}) {
+    if (!patch || typeof patch !== 'object') return false;
+
+    // 1. Root, Scale, and Tuning
+    if (this.engine) {
+      const root = patch.rootPitchClass !== undefined ? patch.rootPitchClass : this.engine.rootPitchClass;
+      const scaleKey = patch.currentScaleKey || this.engine.currentScaleKey;
+      this.engine.setScale(scaleKey, root);
+
+      const rootSelect = document.getElementById('select-root');
+      if (rootSelect) rootSelect.value = root;
+
+      const scaleSelect = document.getElementById('select-scale');
+      if (scaleSelect) scaleSelect.value = scaleKey;
+
+      if (this.playSurface) this.playSurface.rebuildKeys();
+      this.updateLoopNotes();
+
+      if (patch.a4 !== undefined) {
+        this.engine.setTuningReference(patch.a4);
+        const tuningSelect = document.getElementById('select-tuning');
+        if (tuningSelect) tuningSelect.value = String(patch.a4);
+      }
+    }
+
+    // Theme finish
+    if (patch.theme && typeof document !== 'undefined' && document.body) {
+      document.body.setAttribute('data-theme', patch.theme);
+      const themeSelect = document.getElementById('select-theme');
+      if (themeSelect) themeSelect.value = patch.theme;
+    }
+
+    // 2. Knobs
+    if (this.knobs && patch.knobs && typeof patch.knobs === 'object') {
+      Object.entries(patch.knobs).forEach(([key, val]) => {
+        if (this.knobs[key]) {
+          if (animate && typeof this.knobs[key].animateTo === 'function') {
+            this.knobs[key].animateTo(val, duration);
+          } else if (typeof this.knobs[key].setValue === 'function') {
+            this.knobs[key].setValue(val, true);
+          }
+        }
+      });
+      if (patch.knobs.masterVolume !== undefined && this.knobs.masterVol && patch.knobs.masterVol === undefined) {
+        if (animate && typeof this.knobs.masterVol.animateTo === 'function') {
+          this.knobs.masterVol.animateTo(patch.knobs.masterVolume, duration);
+        } else if (typeof this.knobs.masterVol.setValue === 'function') {
+          this.knobs.masterVol.setValue(patch.knobs.masterVolume, true);
+        }
+      }
+    }
+
+    // 3. Piano Waveform
+    if (patch.pianoWave && this.engine) {
+      const pianoWaveBtns = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
+        ? document.querySelectorAll('.piano-wave-btn')
+        : [];
+      pianoWaveBtns.forEach(btn => {
+        const match = btn.getAttribute('data-wave') === patch.pianoWave;
+        btn.classList.toggle('is-active', match);
+      });
+      this.engine.setFeltWaveform(patch.pianoWave);
+    }
+
+    // 4. Drone settings
+    if (this.engine) {
+      [1, 2].forEach(id => {
+        const droneData = patch[`drone${id}`];
+        if (droneData) {
+          if (droneData.waveA) {
+            const btnsA = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
+              ? document.querySelectorAll(`.drone${id}-wave-a`)
+              : [];
+            btnsA.forEach(b => b.classList.toggle('is-active', b.getAttribute('data-wave') === droneData.waveA));
+            this.engine.setDroneWaveA(id, droneData.waveA);
+          }
+          if (droneData.waveB) {
+            const btnsB = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
+              ? document.querySelectorAll(`.drone${id}-wave-b`)
+              : [];
+            btnsB.forEach(b => b.classList.toggle('is-active', b.getAttribute('data-wave') === droneData.waveB));
+            this.engine.setDroneWaveB(id, droneData.waveB);
+          }
+          if (droneData.snap) {
+            const snapBtns = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
+              ? document.querySelectorAll(`.drone${id}-snap-btn`)
+              : [];
+            snapBtns.forEach(b => b.classList.toggle('is-active', b.getAttribute('data-snap') === droneData.snap));
+            this.engine.setDroneSnap(id, droneData.snap);
+          }
+          if (droneData.active !== undefined) {
+            this.engine.setDroneActive(id, !!droneData.active);
+            const toggleBtn = document.getElementById(`toggle-drone-${id}`);
+            if (toggleBtn) {
+              toggleBtn.classList.toggle('is-active', !!droneData.active);
+              const textEl = toggleBtn.querySelector('.braun-status-text');
+              if (textEl) textEl.textContent = droneData.active ? `VOICE ${id} ON` : `VOICE ${id} OFF`;
+            }
+          }
+        }
+      });
+    }
+
+    // 5. Vector Pad
+    if (patch.vectorPad && this.vectorPad) {
+      const shouldAnimate = animate && duration > 0 && typeof requestAnimationFrame === 'function';
+      if (shouldAnimate && typeof this.vectorPad.animateTo === 'function') {
+        this.vectorPad.animateTo(patch.vectorPad.x, patch.vectorPad.y, duration, false);
+      } else {
+        this.vectorPad.setCoordinates(patch.vectorPad.x, patch.vectorPad.y, false);
+      }
+    }
+
+    return true;
+  }
+
+  _handleLoadPatchFile(e) {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+
+    if (typeof FileReader !== 'undefined') {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const patch = JSON.parse(evt.target.result);
+          this.loadPatch(patch, { animate: true, duration: 350 });
+        } catch (err) {
+          console.error('Failed to parse patch JSON:', err);
+        }
+      };
+      reader.readAsText(file);
     }
   }
 
@@ -1074,7 +1315,7 @@ export class AmbientApp {
       min: 100,
       max: 1500,
       value: 460,
-      step: 10,
+      step: 1,
       unit: 'ms',
       size: 'medium',
       onChange: (v) => {

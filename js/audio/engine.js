@@ -207,9 +207,18 @@ export class AudioEngine {
       this.shimmerReverb.setFreeze(true);
     }
 
-    // Connect Delay into Reverb for lush cascade
-    this.tapeDelay.output.connect(this.shimmerReverb.input);
-    this.tapeDelay.output.connect(this.masterGain);
+    // Connect Delay into Reverb for lush cascade and into Master Bus
+    // Calibrated Delay Return bus with soft limiting prevents circulating delay buildup from overdriving master or shimmer
+    this.delayReturn = this.ctx.createGain();
+    this.delayReturn.gain.setValueAtTime(1.0, this.ctx.currentTime);
+    this.delayReturnLimiter = this.ctx.createWaveShaper();
+    this.delayReturnLimiter.oversample = '4x';
+    this.delayReturnLimiter.curve = makeSoftClipCurve(2048, 1.05);
+
+    this.tapeDelay.output.connect(this.delayReturn);
+    this.delayReturn.connect(this.delayReturnLimiter);
+    this.delayReturnLimiter.connect(this.shimmerReverb.input);
+    this.delayReturnLimiter.connect(this.masterGain);
     this.shimmerReverb.output.connect(this.masterGain);
 
     // --- Instruments ---

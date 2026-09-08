@@ -171,6 +171,49 @@ body {
   flex-wrap: wrap;
 }
 
+/* --- Patch Export & Load Buttons --- */
+.braun-patch-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.braun-patch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background-color: var(--bg-panel-inset);
+  border: 1px solid var(--border-line);
+  border-radius: 3px;
+  height: 28px;
+  line-height: 1;
+  padding: 0 10px;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.braun-patch-btn:hover {
+  border-color: var(--text-muted);
+  background-color: var(--knob-track);
+}
+
+.braun-patch-btn:active,
+.braun-patch-btn.is-active {
+  background-color: var(--braun-orange);
+  color: #FFF;
+  border-color: var(--braun-orange);
+  box-shadow: 0 0 8px var(--braun-orange-glow);
+}
+
 /* --- Master Power & Status Buttons --- */
 .braun-power-btn {
   display: inline-flex;
@@ -312,6 +355,8 @@ body {
 
 [data-theme="dark"] .braun-reset-btn,
 [data-theme="matte-black"] .braun-reset-btn,
+[data-theme="dark"] .braun-patch-btn,
+[data-theme="matte-black"] .braun-patch-btn,
 [data-theme="dark"] .braun-record-btn,
 [data-theme="matte-black"] .braun-record-btn,
 [data-theme="dark"] .braun-power-btn,
@@ -325,6 +370,8 @@ body {
 
 [data-theme="dark"] .braun-reset-btn:hover,
 [data-theme="matte-black"] .braun-reset-btn:hover,
+[data-theme="dark"] .braun-patch-btn:hover,
+[data-theme="matte-black"] .braun-patch-btn:hover,
 [data-theme="dark"] .braun-record-btn:hover,
 [data-theme="matte-black"] .braun-record-btn:hover,
 [data-theme="dark"] .braun-power-btn:hover,

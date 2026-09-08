@@ -191,28 +191,30 @@ export class BraunKnob {
     });
 
     // Double-click direct numerical entry
-    this.element.addEventListener('dblclick', () => {
-      this.directInput.style.display = 'block';
-      this.directInput.value = this.value;
-      this.directInput.focus();
-      this.directInput.select();
-    });
+    if (this.directInput) {
+      this.element.addEventListener('dblclick', () => {
+        this.directInput.style.display = 'block';
+        this.directInput.value = this.value;
+        if (typeof this.directInput.focus === 'function') this.directInput.focus();
+        if (typeof this.directInput.select === 'function') this.directInput.select();
+      });
 
-    this.directInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const num = parseFloat(this.directInput.value);
-        if (!isNaN(num)) {
-          this.setValue(num, true);
+      this.directInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const num = parseFloat(this.directInput.value);
+          if (!isNaN(num)) {
+            this.setValue(num, true);
+          }
+          this.directInput.style.display = 'none';
+        } else if (e.key === 'Escape') {
+          this.directInput.style.display = 'none';
         }
-        this.directInput.style.display = 'none';
-      } else if (e.key === 'Escape') {
-        this.directInput.style.display = 'none';
-      }
-    });
+      });
 
-    this.directInput.addEventListener('blur', () => {
-      this.directInput.style.display = 'none';
-    });
+      this.directInput.addEventListener('blur', () => {
+        this.directInput.style.display = 'none';
+      });
+    }
   }
 
   toNormalized(val) {
