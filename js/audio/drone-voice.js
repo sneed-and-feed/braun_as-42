@@ -109,8 +109,11 @@ export class SolarDroneVoice {
 
     this.lfoGain1 = ctx.createGain();
     this.lfoGain2 = ctx.createGain();
-    this.lfoGain1.gain.setValueAtTime(this.lfoDepth, ctx.currentTime);
-    this.lfoGain2.gain.setValueAtTime(this.lfoDepth, ctx.currentTime);
+    const maxSafeDepth = Math.max(0, (this.cutoff - 30) * 0.85);
+    const initialDepth = Math.min(this.lfoDepth, maxSafeDepth);
+    this._appliedLfoDepth = initialDepth;
+    this.lfoGain1.gain.setValueAtTime(initialDepth, ctx.currentTime);
+    this.lfoGain2.gain.setValueAtTime(initialDepth, ctx.currentTime);
 
     this.lfoOsc.connect(this.lfoGain1);
     this.lfoOsc.connect(this.lfoGain2);
@@ -208,6 +211,7 @@ export class SolarDroneVoice {
   setCutoff(hz) {
     this.cutoff = Math.max(40, Math.min(14000, hz));
     const now = this.ctx.currentTime;
+    this._updateLfoModulation(now);
     if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
       this.filter1.frequency.cancelAndHoldAtTime(now);
       this.filter2.frequency.cancelAndHoldAtTime(now);
@@ -221,6 +225,24 @@ export class SolarDroneVoice {
     } else {
       this.filter1.frequency.value = this.cutoff;
       this.filter2.frequency.value = this.cutoff;
+    }
+  }
+
+  _updateLfoModulation(now = this.ctx.currentTime) {
+    // Dynamic clamp ensures filter frequency never drops below 25 Hz at negative LFO peaks
+    const maxSafeDepth = Math.max(0, (this.cutoff - 30) * 0.85);
+    const safeDepth = Math.min(this.lfoDepth, maxSafeDepth);
+    if (this.lfoGain1 && this.lfoGain1.gain) {
+      if (Math.abs((this._appliedLfoDepth ?? -1) - safeDepth) > 0.5) {
+        this._appliedLfoDepth = safeDepth;
+        if (typeof this.lfoGain1.gain.setTargetAtTime === 'function') {
+          this.lfoGain1.gain.setTargetAtTime(safeDepth, now, 0.05);
+          this.lfoGain2.gain.setTargetAtTime(safeDepth, now, 0.05);
+        } else {
+          this.lfoGain1.gain.value = safeDepth;
+          this.lfoGain2.gain.value = safeDepth;
+        }
+      }
     }
   }
 
@@ -254,9 +276,12 @@ export class SolarDroneVoice {
     this.lfoRate = Math.max(0.01, Math.min(8.0, rateHz));
     this.lfoDepth = Math.max(0, Math.min(1200, depthHz));
     const now = this.ctx.currentTime;
-    this.lfoOsc.frequency.setTargetAtTime(this.lfoRate, now, 0.05);
-    this.lfoGain1.gain.setTargetAtTime(this.lfoDepth, now, 0.05);
-    this.lfoGain2.gain.setTargetAtTime(this.lfoDepth, now, 0.05);
+    if (typeof this.lfoOsc.frequency.setTargetAtTime === 'function') {
+      this.lfoOsc.frequency.setTargetAtTime(this.lfoRate, now, 0.05);
+    } else {
+      this.lfoOsc.frequency.value = this.lfoRate;
+    }
+    this._updateLfoModulation(now);
   }
 
   /**

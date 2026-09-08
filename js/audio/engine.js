@@ -173,9 +173,9 @@ export class AudioEngine {
       this.masterCompressor.attack.setValueAtTime(0.003, this.ctx.currentTime); // 3ms attack
       this.masterCompressor.release.setValueAtTime(0.060, this.ctx.currentTime);
 
-      this.masterGain.connect(this.masterTapeSaturator);
-      this.masterTapeSaturator.connect(this.masterCompressor);
-      this.masterCompressor.connect(this.masterLimiter);
+      this.masterGain.connect(this.masterCompressor);
+      this.masterCompressor.connect(this.masterTapeSaturator);
+      this.masterTapeSaturator.connect(this.masterLimiter);
     } else {
       this.masterGain.connect(this.masterTapeSaturator);
       this.masterTapeSaturator.connect(this.masterLimiter);

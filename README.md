@@ -124,18 +124,18 @@ This automatically syncs the latest files to `sneed-and-feed.github.io`, commits
 Additionally, this repository includes `.github/workflows/deploy.yml` which deploys automatically on every push to `main`.
 
 ### Keyboard Shortcuts & Gestures
-* **A, S, D, F, G, H, J, K, L, ;, ', Z, X, C, V:** Play scale degrees on the harmonic touch strip (click-free with key repeat protection).
-* **Click & Drag Glissando:** Slide finger or mouse horizontally across keys for expressive harp/chime glissandi.
-* **1 to 6:** Trigger Harold Budd Chord Cluster Macros.
+* **A, S, D, F, G, H, J, K, L, ;, ', Z, X, C, V:** Play scale degrees on the harmonic touch strip (click-free with key repeat protection and continuous hold sustain).
+* **Click & Drag Glissando:** Slide finger or mouse horizontally across chime keys for expressive harp/chime glissandi. Each entered key articulates expressively with velocity sensitivity while smoothly releasing previous sounding notes. Holding in place maintains continuous pedal sustain until mouse release.
+* **1 to 9, 0, -, =:** Trigger Harold Budd Chord Cluster Macros (12 curated modal voicings with subtle humanized strum and hold sustain).
 * **Spacebar:** Toggle Infinite Reverb Freeze.
 
 ---
 
 ## 5. Verification & Testing
 
-The project includes an automated test suite verifying scale quantizers, Poisson distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, and wavefolder transfer curves:
+The project includes an extensive automated test suite verifying scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, mouse click & drag glissandi, and anti-clipping bus headroom staging:
 
 ```bash
 npm test
 ```
-All 36 unit and integration tests run with Node's built-in test runner.
+All 112 unit and integration tests run with Node's built-in test runner.

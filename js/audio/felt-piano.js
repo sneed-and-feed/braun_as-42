@@ -722,6 +722,11 @@ export class FeltPianoSynthesizer {
     const userVol = this.params.volume ?? 0.80;
     const targetGain = this.baseOutputGain * polyHeadroom * userVol;
     const now = this.ctx.currentTime;
+    if (typeof this.output.gain.cancelAndHoldAtTime === 'function') {
+      this.output.gain.cancelAndHoldAtTime(now);
+    } else if (typeof this.output.gain.cancelScheduledValues === 'function') {
+      this.output.gain.cancelScheduledValues(now);
+    }
     if (typeof this.output.gain.setTargetAtTime === 'function') {
       this.output.gain.setTargetAtTime(targetGain, Math.max(now, this.ctx.currentTime), 0.025);
     } else if (typeof this.output.gain.linearRampToValueAtTime === 'function') {

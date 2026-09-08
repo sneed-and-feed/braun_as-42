@@ -22,6 +22,10 @@ export class BraunPlaySurface {
     this.activeTouches = new Map();
     this.activePointerVoices = new Set();
     this.activePointerChordSessions = new Set();
+    this._isPointerGlissandoActive = false;
+    this._currentGlissandoKey = null;
+    this._currentGlissandoVoice = null;
+    this._releaseCurrentGlissando = null;
 
     this._renderChords();
     this.rebuildKeys();
@@ -84,6 +88,11 @@ export class BraunPlaySurface {
         }
         keyEl.classList.remove('is-pressed');
         keyEl.classList.remove('is-active');
+        if (this._currentGlissandoKey === keyEl) {
+          this._currentGlissandoKey = null;
+          this._currentGlissandoVoice = null;
+          this._releaseCurrentGlissando = null;
+        }
         if (clearPointerTimer) clearTimeout(clearPointerTimer);
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
@@ -91,9 +100,13 @@ export class BraunPlaySurface {
         }, 400);
       };
 
-      keyEl.addEventListener('pointerdown', (e) => {
-        if (e.button !== undefined && e.button !== 0) return;
-        if (e.preventDefault) e.preventDefault();
+      const activateKey = (clientY, clientRect) => {
+        // If transitioning from another key during glissando swipe, release previous key smoothly
+        if (this._currentGlissandoKey && this._currentGlissandoKey !== keyEl) {
+          if (typeof this._releaseCurrentGlissando === 'function') {
+            this._releaseCurrentGlissando();
+          }
+        }
         handledByPointer = true;
         if (clearPointerTimer) {
           clearTimeout(clearPointerTimer);
@@ -108,35 +121,45 @@ export class BraunPlaySurface {
           }
           activeVoice = null;
         }
-        try {
-          if (keyEl.setPointerCapture && e.pointerId != null) {
-            keyEl.setPointerCapture(e.pointerId);
-          }
-        } catch (err) {}
         keyEl._isHeld = true;
         keyEl.classList.add('is-pressed');
         keyEl.classList.add('is-active');
-        activeVoice = triggerStrike(e.clientY, keyEl.getBoundingClientRect(), true);
+        activeVoice = triggerStrike(clientY, clientRect || (keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null), true);
         if (activeVoice) {
           this.activePointerVoices.add(activeVoice);
         }
+        this._currentGlissandoKey = keyEl;
+        this._currentGlissandoVoice = activeVoice;
+        this._releaseCurrentGlissando = handleKeyRelease;
+      };
+
+      keyEl._activateGlissando = (clientY) => {
+        if (this._currentGlissandoKey !== keyEl) {
+          activateKey(clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
+        }
+      };
+
+      keyEl.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        if (e.preventDefault) e.preventDefault();
+        this._isPointerGlissandoActive = true;
+        activateKey(e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
       });
 
-      keyEl.addEventListener('pointerup', (e) => {
-        try {
-          if (keyEl.releasePointerCapture && e.pointerId != null) {
-            keyEl.releasePointerCapture(e.pointerId);
-          }
-        } catch (err) {}
+      keyEl.addEventListener('pointerenter', (e) => {
+        // Expressive glissando: slide horizontally across keys while holding mouse button
+        if ((e.buttons === 1 || this._isPointerGlissandoActive) && this._currentGlissandoKey !== keyEl) {
+          activateKey(e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
+        }
+      });
+
+      keyEl.addEventListener('pointerup', () => {
+        this._isPointerGlissandoActive = false;
         handleKeyRelease();
       });
 
-      keyEl.addEventListener('pointercancel', (e) => {
-        try {
-          if (keyEl.releasePointerCapture && e.pointerId != null) {
-            keyEl.releasePointerCapture(e.pointerId);
-          }
-        } catch (err) {}
+      keyEl.addEventListener('pointercancel', () => {
+        this._isPointerGlissandoActive = false;
         handleKeyRelease();
       });
 
@@ -145,23 +168,36 @@ export class BraunPlaySurface {
         if (handledByPointer) {
           return;
         }
-        triggerStrike(e.clientY, keyEl.getBoundingClientRect(), false);
-      });
-
-      // Allow glissando swiping across keys while mouse button is held down
-      let lastEnterTime = -Infinity;
-      keyEl.addEventListener('pointerenter', (e) => {
-        if (e.buttons === 1) {
-          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-          if (now - lastEnterTime < 140) return;
-          lastEnterTime = now;
-          triggerStrike(e.clientY, keyEl.getBoundingClientRect());
-        }
+        triggerStrike(e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null, false);
       });
 
       this.stripContainer.appendChild(keyEl);
       this.keyElements.set(note.midi, keyEl);
     });
+
+    // Support container-level drag tracking for smooth glissando on touch & mouse swipe
+    if (this.stripContainer && typeof this.stripContainer.addEventListener === 'function') {
+      this.stripContainer.addEventListener('pointermove', (e) => {
+        if (e.buttons === 1 || this._isPointerGlissandoActive) {
+          if (typeof document !== 'undefined' && typeof document.elementFromPoint === 'function') {
+            const el = document.elementFromPoint(e.clientX, e.clientY);
+            const targetKey = el ? (el.classList && el.classList.contains && el.classList.contains('braun-chime-key') ? el : (el.closest ? el.closest('.braun-chime-key') : null)) : null;
+            if (targetKey && targetKey !== this._currentGlissandoKey && typeof targetKey._activateGlissando === 'function') {
+              targetKey._activateGlissando(e.clientY);
+            }
+          }
+        }
+      });
+
+      this.stripContainer.addEventListener('pointerleave', (e) => {
+        if (this._isPointerGlissandoActive && e.buttons === 0) {
+          this._isPointerGlissandoActive = false;
+          if (typeof this._releaseCurrentGlissando === 'function') {
+            this._releaseCurrentGlissando();
+          }
+        }
+      });
+    }
   }
 
   _getShortcutKey(index) {
@@ -669,6 +705,11 @@ export class BraunPlaySurface {
         if (session) this.stopChordSession(session);
       });
       this.activePointerChordSessions.clear();
+
+      this._isPointerGlissandoActive = false;
+      this._currentGlissandoKey = null;
+      this._currentGlissandoVoice = null;
+      this._releaseCurrentGlissando = null;
     });
 
     window.addEventListener('pointerup', () => {
@@ -698,6 +739,11 @@ export class BraunPlaySurface {
         if (session) this.stopChordSession(session);
       });
       this.activePointerChordSessions.clear();
+
+      this._isPointerGlissandoActive = false;
+      this._currentGlissandoKey = null;
+      this._currentGlissandoVoice = null;
+      this._releaseCurrentGlissando = null;
     });
   }
 }

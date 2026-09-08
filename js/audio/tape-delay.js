@@ -221,10 +221,23 @@ export class TapeDelay {
     this.wowAmount = 0.005 * d;
     this.flutterAmount = 0.0015 * d;
     const now = this.ctx.currentTime;
-    this.wowGainL.gain.setTargetAtTime(this.wowAmount, now, 0.05);
-    this.wowGainR.gain.setTargetAtTime(-this.wowAmount, now, 0.05);
-    this.flutterGainL.gain.setTargetAtTime(this.flutterAmount, now, 0.05);
-    this.flutterGainR.gain.setTargetAtTime(this.flutterAmount * 0.8, now, 0.05);
+    if (this.wowGainL && this.wowGainL.gain) {
+      if (typeof this.wowGainL.gain.cancelAndHoldAtTime === 'function') {
+        this.wowGainL.gain.cancelAndHoldAtTime(now);
+        this.wowGainR.gain.cancelAndHoldAtTime(now);
+        this.flutterGainL.gain.cancelAndHoldAtTime(now);
+        this.flutterGainR.gain.cancelAndHoldAtTime(now);
+      } else if (typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
+        this.wowGainL.gain.cancelScheduledValues(now);
+        this.wowGainR.gain.cancelScheduledValues(now);
+        this.flutterGainL.gain.cancelScheduledValues(now);
+        this.flutterGainR.gain.cancelScheduledValues(now);
+      }
+      this.wowGainL.gain.setTargetAtTime(this.wowAmount, now, 0.05);
+      this.wowGainR.gain.setTargetAtTime(-this.wowAmount, now, 0.05);
+      this.flutterGainL.gain.setTargetAtTime(this.flutterAmount, now, 0.05);
+      this.flutterGainR.gain.setTargetAtTime(this.flutterAmount * 0.8, now, 0.05);
+    }
   }
 
   setTone(cutoffHz) {
