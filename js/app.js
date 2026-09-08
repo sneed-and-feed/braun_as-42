@@ -875,10 +875,13 @@ export class AmbientApp {
       : null;
     const pianoWave = activePianoWaveBtn ? activePianoWaveBtn.getAttribute('data-wave') : (this.engine?.feltParams?.waveform || 'felt');
 
+    const timestampId = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const patchId = this.engine?.currentScaleKey ? `${this.engine.currentScaleKey}-${timestampId}` : timestampId;
+
     const patch = {
       format: 'BRAUN_AS42_PATCH',
       version: 1,
-      name: 'Braun Patch ' + new Date().toISOString().slice(0, 10),
+      name: `AS-42 Preset ${patchId}`,
       timestamp: new Date().toISOString(),
       theme: (typeof document !== 'undefined' && document.body) ? (document.body.getAttribute('data-theme') || 'light') : 'light',
       rootPitchClass: this.engine ? this.engine.rootPitchClass : 0,
@@ -911,7 +914,7 @@ export class AmbientApp {
       const a = document.createElement('a');
       if (a.style) a.style.display = 'none';
       a.href = url;
-      a.download = `braun-patch-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      a.download = `AS-42 Preset ${patchId}.json`;
       if (document.body && typeof document.body.appendChild === 'function') {
         document.body.appendChild(a);
       }
@@ -990,6 +993,44 @@ export class AmbientApp {
         } else if (typeof this.knobs.masterVol.setValue === 'function') {
           this.knobs.masterVol.setValue(patch.knobs.masterVolume, true);
         }
+      }
+
+      // Also update engine immediately to guarantee parameters are synchronized
+      if (this.engine) {
+        const k = patch.knobs;
+        if (k.masterVol !== undefined) this.engine.setMasterVolume(k.masterVol / 100);
+        else if (k.masterVolume !== undefined) this.engine.setMasterVolume(k.masterVolume / 100);
+        if (k.masterDrive !== undefined) this.engine.setTapeDrive(k.masterDrive / 100);
+        if (k.feltTone !== undefined) this.engine.setFeltTone(k.feltTone / 100);
+        if (k.feltHammer !== undefined) this.engine.setFeltHammer(k.feltHammer / 100);
+        if (k.feltSymp !== undefined) this.engine.setFeltSympathetic(k.feltSymp / 100);
+        if (k.feltDecay !== undefined) this.engine.setFeltDecay(k.feltDecay);
+        if (k.feltLevel !== undefined) this.engine.setFeltVolume(k.feltLevel / 100);
+        if (k.drone1Beat !== undefined) this.engine.setDroneBeating(1, k.drone1Beat);
+        if (k.drone1Detune !== undefined) this.engine.setDroneDetune(1, k.drone1Detune);
+        if (k.drone1Fold !== undefined) this.engine.setDroneWavefold(1, k.drone1Fold);
+        if (k.drone1Cutoff !== undefined) this.engine.setDroneCutoff(1, k.drone1Cutoff);
+        if (k.drone1Res !== undefined) this.engine.setDroneResonance(1, k.drone1Res);
+        if (k.drone1Lfo !== undefined) this.engine.setDroneLfo(1, k.drone1Lfo);
+        if (k.drone1Vol !== undefined) this.engine.setDroneVolume(1, k.drone1Vol / 100);
+        if (k.drone2Beat !== undefined) this.engine.setDroneBeating(2, k.drone2Beat);
+        if (k.drone2Detune !== undefined) this.engine.setDroneDetune(2, k.drone2Detune);
+        if (k.drone2Fold !== undefined) this.engine.setDroneWavefold(2, k.drone2Fold);
+        if (k.drone2Cutoff !== undefined) this.engine.setDroneCutoff(2, k.drone2Cutoff);
+        if (k.drone2Res !== undefined) this.engine.setDroneResonance(2, k.drone2Res);
+        if (k.drone2Lfo !== undefined) this.engine.setDroneLfo(2, k.drone2Lfo);
+        if (k.drone2Vol !== undefined) this.engine.setDroneVolume(2, k.drone2Vol / 100);
+        if (k.delayTime !== undefined) this.engine.setDelayTime(k.delayTime / 1000);
+        if (k.delayFeedback !== undefined) this.engine.setDelayFeedback(k.delayFeedback / 100);
+        if (k.delayWow !== undefined) this.engine.setDelayWow(k.delayWow / 100);
+        if (k.delayTone !== undefined) this.engine.setDelayTone(k.delayTone);
+        if (k.delayWet !== undefined) this.engine.setDelayWet(k.delayWet / 100);
+        if (k.reverbDecay !== undefined) this.engine.setReverbDecay(k.reverbDecay);
+        if (k.reverbDamping !== undefined) this.engine.setReverbDamping(k.reverbDamping / 100);
+        if (k.reverbShimmer !== undefined) this.engine.setReverbShimmer(k.reverbShimmer / 100);
+        if (k.reverbWet !== undefined) this.engine.setReverbWet(k.reverbWet / 100);
+        if (k.poissonDensity !== undefined && this.engine.poisson) this.engine.poisson.setParameters({ eventsPerMinute: k.poissonDensity });
+        if (k.poissonHumanize !== undefined) this.engine.setPoissonHumanize(k.poissonHumanize / 100);
       }
     }
 

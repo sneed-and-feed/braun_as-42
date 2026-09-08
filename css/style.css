@@ -182,16 +182,16 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
   background-color: var(--bg-panel-inset);
   border: 1px solid var(--border-line);
   border-radius: 3px;
-  height: 28px;
+  height: 30px;
   line-height: 1;
-  padding: 0 10px;
+  padding: 0 12px;
   box-sizing: border-box;
   font-family: var(--font-sans);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -211,7 +211,15 @@ body {
   background-color: var(--braun-orange);
   color: #FFF;
   border-color: var(--braun-orange);
-  box-shadow: 0 0 8px var(--braun-orange-glow);
+  box-shadow: 0 0 10px var(--braun-orange-glow);
+}
+
+.braun-patch-icon {
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* --- Master Power & Status Buttons --- */

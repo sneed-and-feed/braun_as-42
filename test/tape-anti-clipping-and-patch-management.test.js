@@ -1,9 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { TapeDelay } from '../js/audio/tape-delay.js';
 import { AudioEngine } from '../js/audio/engine.js';
 import { AmbientApp } from '../js/app.js';
 import { makeTapeSaturationCurve, makeLimiterCurve } from '../js/audio/wavefolder.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class MockAudioParam {
   constructor(v = 1.0) {
@@ -308,22 +314,37 @@ describe('Synthesizer Patch Export & Load Management', () => {
       return el;
     };
 
+    let lastCreatedAnchor = null;
     return {
       getElementById: (id) => elements.get(id) || createEl(id),
-      createElement: (tag) => createEl('created-' + Math.random(), tag),
+      createElement: (tag) => {
+        const el = createEl('created-' + Math.random(), tag);
+        if (tag.toLowerCase() === 'a') lastCreatedAnchor = el;
+        return el;
+      },
       querySelectorAll: () => [],
       querySelector: () => null,
-      body: createEl('body', 'body')
+      body: createEl('body', 'body'),
+      getLastCreatedAnchor: () => lastCreatedAnchor
     };
   }
 
-  it('exportPatch serializes complete synthesizer state into valid JSON patch structure', () => {
+  it('exportPatch serializes complete synthesizer state into valid JSON patch structure and names AS-42 Preset [ID]', () => {
     const ctx = createFullMockCtx();
     const origCtx = globalThis.AudioContext;
     const origDoc = globalThis.document;
+    const origUrl = globalThis.URL;
+    const origBlob = globalThis.Blob;
+
+    if (!globalThis.URL) globalThis.URL = {};
+    const origCreateObjectURL = globalThis.URL.createObjectURL;
+    const origRevokeObjectURL = globalThis.URL.revokeObjectURL;
+    globalThis.URL.createObjectURL = () => 'blob:mock-patch-url';
+    globalThis.URL.revokeObjectURL = () => {};
 
     globalThis.AudioContext = class { constructor() { return ctx; } };
-    globalThis.document = createMockAppDOM();
+    const mockDoc = createMockAppDOM();
+    globalThis.document = mockDoc;
 
     try {
       const app = new AmbientApp();
@@ -331,6 +352,7 @@ describe('Synthesizer Patch Export & Load Management', () => {
 
       assert.strictEqual(patch.format, 'BRAUN_AS42_PATCH');
       assert.strictEqual(patch.version, 1);
+      assert.ok(patch.name.startsWith('AS-42 Preset'), `Patch name must start with 'AS-42 Preset', got ${patch.name}`);
       assert.ok(patch.timestamp, 'Patch must have timestamp');
       assert.ok(patch.knobs, 'Patch must contain knobs dictionary');
       assert.ok(patch.drone1, 'Patch must contain drone1 state');
@@ -339,9 +361,16 @@ describe('Synthesizer Patch Export & Load Management', () => {
       assert.strictEqual(typeof patch.knobs.delayTime, 'number');
       assert.strictEqual(typeof patch.knobs.delayFeedback, 'number');
       assert.strictEqual(typeof (patch.knobs.masterVol ?? patch.knobs.masterVolume), 'number');
+
+      const anchor = mockDoc.getLastCreatedAnchor();
+      assert.ok(anchor, 'exportPatch must create download anchor');
+      assert.ok(anchor.download.startsWith('AS-42 Preset'), `Download filename must start with 'AS-42 Preset', got ${anchor.download}`);
+      assert.ok(anchor.download.endsWith('.json'), `Download filename must end with .json, got ${anchor.download}`);
     } finally {
       globalThis.AudioContext = origCtx;
       globalThis.document = origDoc;
+      if (origCreateObjectURL) globalThis.URL.createObjectURL = origCreateObjectURL;
+      if (origRevokeObjectURL) globalThis.URL.revokeObjectURL = origRevokeObjectURL;
     }
   });
 
@@ -404,5 +433,70 @@ describe('Synthesizer Patch Export & Load Management', () => {
       globalThis.AudioContext = origCtx;
       globalThis.document = origDoc;
     }
+  });
+
+  it('verifies continuous knob dragging does not cancel or restart wow/flutter LFOs when scale is unchanged', () => {
+    let cancelLfoCount = 0;
+    const createMockParam = (v = 0) => ({
+      value: v,
+      cancelAndHoldAtTime: () => { cancelLfoCount++; },
+      cancelScheduledValues: () => { cancelLfoCount++; },
+      setTargetAtTime: function(val) { this.value = val; },
+      setValueAtTime: function(val) { this.value = val; }
+    });
+
+    const ctx = createFullMockCtx();
+    const delay = new TapeDelay(ctx, { delayTimeL: 0.40, delayTimeR: 0.60 });
+
+    // Instrument the wow and flutter gain params
+    delay.wowGainL.gain = createMockParam(0.0025);
+    delay.wowGainR.gain = createMockParam(-0.0025);
+    delay.flutterGainL.gain = createMockParam(0.0008);
+    delay.flutterGainR.gain = createMockParam(0.00064);
+
+    cancelLfoCount = 0;
+
+    // Simulate rapid dragging across 50 intermediate time steps (400ms -> 900ms)
+    for (let i = 40; i <= 90; i++) {
+      delay.setTime(i / 100);
+    }
+
+    assert.strictEqual(cancelLfoCount, 0, 'Rapid knob dragging above headroom threshold must never cancel or glitch wow/flutter LFOs');
+    assert.strictEqual(delay.delayTimeL, 0.90);
+  });
+
+  it('verifies top bar contains export and load patch buttons in braun-utility-group next to reset and record', () => {
+    const htmlPath = path.resolve(__dirname, '../index.html');
+    const html = fs.readFileSync(htmlPath, 'utf8');
+
+    assert.ok(html.includes('id="btn-export-patch"'), 'index.html must contain btn-export-patch');
+    assert.ok(html.includes('id="btn-load-patch"'), 'index.html must contain btn-load-patch');
+    assert.ok(html.includes('id="input-load-patch"'), 'index.html must contain input-load-patch');
+
+    // Verify button placement inside .braun-utility-group
+    const utilityGroupMatch = html.match(/<div class="braun-utility-group">([\s\S]*?)<\/div>\s*<\/div>/);
+    assert.ok(utilityGroupMatch, 'index.html must contain braun-utility-group');
+    const utilityContent = utilityGroupMatch[1];
+    assert.ok(utilityContent.includes('id="btn-reset-all"'), 'Utility group must contain btn-reset-all');
+    assert.ok(utilityContent.includes('id="btn-record"'), 'Utility group must contain btn-record');
+    assert.ok(utilityContent.includes('id="btn-export-patch"'), 'Utility group must contain btn-export-patch next to reset/record');
+    assert.ok(utilityContent.includes('id="btn-load-patch"'), 'Utility group must contain btn-load-patch next to reset/record');
+    assert.ok(utilityContent.includes('id="btn-power"'), 'Utility group must contain btn-power');
+  });
+
+  it('verifies CSS styles for braun-patch-btn match Dieter Rams aesthetic with 30px height, 11px font size and dark theme support', () => {
+    const cssPath = path.resolve(__dirname, '../css/style.css');
+    const css = fs.readFileSync(cssPath, 'utf8');
+
+    assert.ok(css.includes('.braun-patch-btn'), 'style.css must contain .braun-patch-btn');
+    assert.ok(css.includes('.braun-patch-group'), 'style.css must contain .braun-patch-group');
+    assert.ok(css.includes('.braun-patch-icon'), 'style.css must contain .braun-patch-icon');
+
+    // Verify matching 30px height and 11px font size
+    assert.ok(css.match(/\.braun-patch-btn\s*\{[^}]*height:\s*30px;/), '.braun-patch-btn must have height: 30px to match reset/record buttons');
+    assert.ok(css.match(/\.braun-patch-btn\s*\{[^}]*font-size:\s*11px;/), '.braun-patch-btn must have font-size: 11px');
+
+    // Verify dark theme support
+    assert.ok(css.includes('[data-theme="dark"] .braun-patch-btn'), 'style.css must support dark theme for .braun-patch-btn');
   });
 });

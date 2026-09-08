@@ -96,9 +96,9 @@ Designed for musicians who create intuitively by ear without formal music theory
   * Direct 16-bit 48kHz PCM WAV audio capture from the master bus with isolated zero-gain sink (no buffer delay feedback).
   * One-click download of studio-quality uncompressed WAV recordings of ambient sessions.
 * **1-Click JSON Patch Management (Export & Load):**
-  * Dedicated Dieter Rams style **EXPORT** and **LOAD** button pair in the preset header cluster.
-  * Exports comprehensive `BRAUN_AS42_PATCH` JSON files capturing all 32 rotary knobs, root pitch, scale, concert pitch reference (432 Hz / 440 Hz), felt piano timbre (including CS-80), dual drone oscillator waveforms, quick-snap tuning modes, and vector pad coordinates.
-  * Immediate client-side file reading instantly restores all synthesizer sound engines and UI controls without parameter corruption or vector pad clobbering.
+  * Dedicated Dieter Rams style **EXPORT** and **LOAD** button pair located on the top bar in the utility group alongside **RESET ALL** and **RECORD WAV**.
+  * Exports complete `BRAUN_AS42_PATCH` JSON files named `AS-42 Preset [ID].json` (e.g. `AS-42 Preset BUDD_PENTATONIC-2026-09-08-16-50-00.json`) capturing all 32 rotary knobs, root pitch, modal scale, concert pitch reference (432 Hz / 440 Hz), felt piano timbre (including CS-80), dual drone oscillator waveforms, quick-snap tuning modes, and vector pad coordinates.
+  * Instant client-side file reading (`.json`) restores all synthesizer sound engines and UI controls smoothly without audio dropouts or vector pad clobbering, making backing up, restoring, and sharing custom patches effortless.
 
 ---
 

@@ -182,10 +182,10 @@ export class TapeDelay {
 
     this.wowOsc.start();
     this.flutterOsc.start();
-    this._updateWowFlutterHeadroom();
+    this._updateWowFlutterHeadroom(true);
   }
 
-  _updateWowFlutterHeadroom() {
+  _updateWowFlutterHeadroom(force = false) {
     // Safety clamp wow and flutter modulation depth so delayTime never dips below 0.015s (15ms).
     // Delay lines in Web Audio API crackle or produce buffer wrapping discontinuities when delayTime < 0.005s.
     const minDelay = Math.min(this.delayTimeL, this.delayTimeR);
@@ -193,12 +193,25 @@ export class TapeDelay {
     const nominalTotal = 0.0065; // max wow (0.005) + max flutter (0.0015)
     const scale = maxMod < nominalTotal ? (nominalTotal > 0 ? maxMod / nominalTotal : 0) : 1.0;
 
+    // Only update wow/flutter headroom when the scale actually changes significantly or if forced.
+    // Continuously cancelling scheduled values on the active wow/flutter LFOs during knob rotation (60+ times/sec)
+    // cuts the LFO waveform abruptly and causes audible scratchiness.
+    if (!force && this._lastWowFlutterScale !== undefined && Math.abs(scale - this._lastWowFlutterScale) < 0.005) {
+      return;
+    }
+    this._lastWowFlutterScale = scale;
+
     const effWow = this.wowAmount * scale;
     const effFlutter = this.flutterAmount * scale;
     const now = this.ctx.currentTime;
 
     if (this.wowGainL && this.wowGainL.gain) {
-      if (typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
+      if (typeof this.wowGainL.gain.cancelAndHoldAtTime === 'function') {
+        this.wowGainL.gain.cancelAndHoldAtTime(now);
+        this.wowGainR.gain.cancelAndHoldAtTime(now);
+        this.flutterGainL.gain.cancelAndHoldAtTime(now);
+        this.flutterGainR.gain.cancelAndHoldAtTime(now);
+      } else if (typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
         this.wowGainL.gain.cancelScheduledValues(now);
         this.wowGainR.gain.cancelScheduledValues(now);
         this.flutterGainL.gain.cancelScheduledValues(now);
@@ -225,8 +238,8 @@ export class TapeDelay {
     this.delayTimeR = Math.max(0.015, t * 1.5); // Harmonic 3:2 stereo offset
     const now = this.ctx.currentTime;
 
-    // Safety clamp wow and flutter modulation depth against the new delay time
-    this._updateWowFlutterHeadroom();
+    // Safety clamp wow and flutter modulation depth against the new delay time (debounced / threshold-checked)
+    this._updateWowFlutterHeadroom(false);
 
     // Clear prior pending target curves to prevent Doppler fluttering / zipper rasp pileup
     if (typeof this.delayNodeL.delayTime.cancelAndHoldAtTime === 'function') {
@@ -291,7 +304,7 @@ export class TapeDelay {
     const d = Math.max(0, Math.min(1.0, depth));
     this.wowAmount = 0.005 * d;
     this.flutterAmount = 0.0015 * d;
-    this._updateWowFlutterHeadroom();
+    this._updateWowFlutterHeadroom(true);
   }
 
   setTone(cutoffHz) {
