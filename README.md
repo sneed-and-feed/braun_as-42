@@ -1,7 +1,17 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-EE592B?style=for-the-badge&logo=github)](https://sneed-and-feed.github.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![Web Audio API](https://img.shields.io/badge/Web%20Audio-100%25%20Client--Side-4A4A4A?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
+
 > **A Dieter Rams functionalist digital-analog ambient instrument and microtonal drone synthesizer.**
 > Inspired by **Harold Budd**, **Brian Eno**, and the **Elta Solar 42n**.
+
+---
+
+### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
+
+*No installation, plugins, or accounts required. Powered entirely by the browser's native Web Audio API.*
 
 ---
 
@@ -84,7 +94,14 @@ Designed for musicians who create intuitively by ear without formal music theory
 
 ## 4. Getting Started & Running Locally
 
-### Quick Start
+### Option A: 1-Click Windows Launcher (`.bat`)
+Simply double-click:
+```bat
+start.bat
+```
+*(or `run.bat`)* — it automatically checks for Node.js (or Python), launches the local static server on `http://localhost:3000`, and opens your default browser!
+
+### Option B: Node.js Terminal
 1. **Start the local server:**
    ```bash
    npm start
@@ -96,6 +113,15 @@ Designed for musicians who create intuitively by ear without formal music theory
    http://localhost:3000
    ```
 3. **Turn on the instrument:** Click the orange **POWER ON** button at the top right to start the Web Audio API context.
+
+### Deploying to GitHub Pages
+To update the live version hosted at [`https://sneed-and-feed.github.io/`](https://sneed-and-feed.github.io/):
+```bat
+deploy-pages.bat
+# or: npm run deploy
+```
+This automatically syncs the latest files to `sneed-and-feed.github.io`, commits, and pushes to GitHub Pages.
+Additionally, this repository includes `.github/workflows/deploy.yml` which deploys automatically on every push to `main`.
 
 ### Keyboard Shortcuts & Gestures
 * **A, S, D, F, G, H, J, K, L, ;, ', Z, X, C, V:** Play scale degrees on the harmonic touch strip (click-free with key repeat protection).

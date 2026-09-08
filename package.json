@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "deploy": "cmd /c deploy-pages.bat"
   },
   "keywords": [
     "web-audio",
