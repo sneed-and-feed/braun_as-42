@@ -428,13 +428,15 @@ export class FeltPianoVoice {
 
       const targetHammerGain = Math.max(0.0001, velocity * hammerThump * hammerThumpGainMult);
       // Smooth micro-attack to peak, then exponential decay down to silence with future-guaranteed targets
-      const hammerAttackTarget = Math.max(noteStartTime + 0.0025, ctx.currentTime + 0.001);
-      const hammerDecayTarget = Math.max(noteStartTime + thumpDuration, hammerAttackTarget + 0.003);
+      const hammerAttackTime = 0.0045; // 4.5ms smooth micro-fade eliminates high-velocity transient impulse pop
+      const hammerAttackTarget = Math.max(noteStartTime + hammerAttackTime, ctx.currentTime + 0.003);
+      const hammerDecayTarget = Math.max(noteStartTime + thumpDuration, hammerAttackTarget + 0.006);
       this.hammerGain.gain.linearRampToValueAtTime(targetHammerGain, hammerAttackTarget);
       this.hammerGain.gain.exponentialRampToValueAtTime(0.0001, hammerDecayTarget);
+      this.hammerGain.gain.linearRampToValueAtTime(0.0, hammerDecayTarget + 0.003);
 
       noiseSource.start(noteStartTime);
-      noiseSource.stop(noteStartTime + thumpDuration);
+      noiseSource.stop(hammerDecayTarget + 0.006);
       this.currentHammerSource = noiseSource;
     }
 
@@ -491,14 +493,22 @@ export class FeltPianoVoice {
         this.filter2.frequency.setValueAtTime(restCutoff, cancelTime);
       }
 
-      // Filter attack ramp
-      const filterAttackTarget = Math.max(noteStartTime + filterAttackTime, ctx.currentTime + 0.002);
-      this.filter1.frequency.linearRampToValueAtTime(maxCutoff, filterAttackTarget);
-      this.filter2.frequency.linearRampToValueAtTime(maxCutoff, filterAttackTarget);
+      // Filter attack ramp: guaranteed smooth rise avoids resonant biquad click
+      const effectiveFilterAttack = Math.max(0.008, filterAttackTime);
+      const filterAttackTarget = Math.max(noteStartTime + effectiveFilterAttack, ctx.currentTime + 0.004);
+
+      let effectiveMaxCutoff = maxCutoff;
+      if (this.currentWaveform === 'sine') {
+        // Pure sine wave has no upper harmonics: capping filter cutoff prevents resonant noise burst
+        effectiveMaxCutoff = Math.min(maxCutoff, Math.max(freq * 2.2, 1400 + feltDamp * 2000 * velocity));
+      }
+
+      this.filter1.frequency.linearRampToValueAtTime(effectiveMaxCutoff, filterAttackTarget);
+      this.filter2.frequency.linearRampToValueAtTime(effectiveMaxCutoff, filterAttackTarget);
 
       // Rapid exponential decay down to fundamental
       const filterDecayTime = filterDecayBase + (1.0 - feltDamp) * 0.25;
-      const filterDecayTarget = Math.max(noteStartTime + filterAttackTime + filterDecayTime, filterAttackTarget + 0.01);
+      const filterDecayTarget = Math.max(noteStartTime + effectiveFilterAttack + filterDecayTime, filterAttackTarget + 0.01);
       this.filter1.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
       this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
     }
@@ -506,7 +516,7 @@ export class FeltPianoVoice {
     // --- Master Amplitude Envelope ---
     // Smooth micro-attack ramp from 0.0 to peakGain eliminates step discontinuity clicks.
     // In CS-80 mode, peakGain is calibrated to match the Solar 42n drone's authoritative sonic presence.
-    const attackTime = isCS80 ? 0.024 : 0.007;
+    const attackTime = isCS80 ? 0.024 : 0.0075;
     const peakGain = isCS80
       ? Math.max(0.01, velocity * (isBass ? 0.38 : isTreble ? 0.35 : 0.32))
       : Math.max(0.005, velocity * (isBass ? 0.28 : isTreble ? 0.26 : 0.24));
@@ -517,7 +527,7 @@ export class FeltPianoVoice {
     }
     // When stealing, the voice gain has already smoothly ramped down to 0.0001 at noteStartTime.
     // Ramping directly to peakGain from noteStartTime prevents redundant setValueAtTime collisions.
-    const attackTarget = Math.max(noteStartTime + attackTime, ctx.currentTime + 0.002);
+    const attackTarget = Math.max(noteStartTime + attackTime, ctx.currentTime + 0.0045);
     this.voiceGain.gain.linearRampToValueAtTime(peakGain, attackTarget);
 
     if (isCS80) {
@@ -667,33 +677,51 @@ export class FeltPianoSynthesizer {
     };
 
     // Pre-allocate single hammer noise burst buffer once for all voices
-    // Ensure zero DC offset and smooth windowed attack to prevent click/pop
-    const thumpDuration = 0.025; // 25ms
+    // Ensure zero DC offset and smooth windowed attack & decay to prevent click/pop
+    const thumpDuration = 0.040; // 40ms to safely encompass bass register (32ms), mid (25ms), and treble (16ms)
     const thumpSamples = Math.floor(ctx.sampleRate * thumpDuration);
     this.hammerBuffer = ctx.createBuffer(1, thumpSamples, ctx.sampleRate);
     const d = this.hammerBuffer.getChannelData(0);
 
-    // 1. Generate windowed noise with 2ms attack and exponential decay
-    const attackSamples = Math.max(1, Math.floor(ctx.sampleRate * 0.002));
+    // 1. Generate zero-mean raw noise
+    let rawSum = 0;
     for (let i = 0; i < thumpSamples; i++) {
-      let s = Math.random() * 2 - 1;
+      const s = Math.random() * 2 - 1;
+      d[i] = s;
+      rawSum += s;
+    }
+    const mean = rawSum / thumpSamples;
+    for (let i = 0; i < thumpSamples; i++) {
+      d[i] -= mean;
+    }
+
+    // 2. Windowed exponential decay with smooth Hann attack & release windows
+    const attackSamples = Math.max(2, Math.floor(ctx.sampleRate * 0.0035)); // 3.5ms smooth attack
+    const releaseSamples = Math.max(2, Math.floor(ctx.sampleRate * 0.006)); // 6ms smooth decay
+    const releaseStart = thumpSamples - releaseSamples;
+
+    for (let i = 0; i < thumpSamples; i++) {
+      let s = d[i] * Math.exp(-i / (ctx.sampleRate * 0.007));
       if (i < attackSamples) {
-        // Hann / raised-cosine window starting at 0.0
+        // Hann / raised-cosine window starting smoothly at 0.0 with 0 derivative
         s *= 0.5 * (1 - Math.cos((Math.PI * i) / attackSamples));
+      } else if (i >= releaseStart) {
+        // Hann / raised-cosine window ending smoothly at 0.0 with 0 derivative
+        const relIdx = i - releaseStart;
+        s *= 0.5 * (1 + Math.cos((Math.PI * relIdx) / releaseSamples));
       }
-      s *= Math.exp(-i / (ctx.sampleRate * 0.007));
       d[i] = s;
     }
-    d[0] = 0.0;
-    d[thumpSamples - 1] = 0.0;
 
-    // 2. High-precision DC removal: subtract weighted DC baseline that tapers to 0 at boundaries
+    // 3. High-precision zero-boundary DC removal: subtract weighted DC baseline that tapers to 0 at boundaries
+    // Using sin^2(pi*i/(N-1)) ensures BOTH the value AND its first derivative are exactly 0 at boundaries (i=0 and i=N-1)
     let sumD = 0;
     let sumW = 0;
     const weights = new Float32Array(thumpSamples);
     for (let i = 0; i < thumpSamples; i++) {
       sumD += d[i];
-      const w = Math.sin((Math.PI * i) / (thumpSamples - 1));
+      const sinVal = Math.sin((Math.PI * i) / (thumpSamples - 1));
+      const w = sinVal * sinVal;
       weights[i] = w;
       sumW += w;
     }
@@ -727,7 +755,11 @@ export class FeltPianoSynthesizer {
     if (typeof this.output.gain.cancelAndHoldAtTime === 'function') {
       this.output.gain.cancelAndHoldAtTime(now);
     } else if (typeof this.output.gain.cancelScheduledValues === 'function') {
+      const curGain = (this.output.gain.value !== undefined && this.output.gain.value !== null) ? this.output.gain.value : targetGain;
       this.output.gain.cancelScheduledValues(now);
+      if (typeof this.output.gain.setValueAtTime === 'function') {
+        this.output.gain.setValueAtTime(curGain, now);
+      }
     }
     if (typeof this.output.gain.setTargetAtTime === 'function') {
       this.output.gain.setTargetAtTime(targetGain, Math.max(now, this.ctx.currentTime), 0.025);

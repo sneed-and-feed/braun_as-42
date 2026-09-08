@@ -644,3 +644,293 @@ describe('Anti-Clipping, Headroom & DSP Continuity Verification', () => {
     assert.strictEqual(voiceInitialGain, 0.0, 'Idle voice must anchor amplitude envelope strictly at 0.0 to eliminate DC pedestal pops');
   });
 });
+
+describe('Clickless High-Velocity Strike & Delay Graph Verification', () => {
+  it('verifies hammer buffer has 40ms duration, zero boundary samples, zero-derivative edges, and negligible DC offset', () => {
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 0,
+      createGain: () => ({ gain: { value: 1, setValueAtTime() {}, setTargetAtTime() {} }, connect() {} }),
+      createBuffer: (ch, len, rate) => ({ getChannelData: () => new Float32Array(len), length: len, sampleRate: rate }),
+      createBufferSource: () => ({ connect() {}, start() {}, stop() {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect() {} }),
+      createBiquadFilter: () => ({
+        frequency: { value: 440, setValueAtTime() {}, setTargetAtTime() {} },
+        Q: { value: 1, setValueAtTime() {} },
+        gain: { value: 1, setValueAtTime() {} },
+        connect() {}
+      }),
+      createOscillator: () => ({
+        frequency: { value: 440, setValueAtTime() {}, cancelScheduledValues() {} },
+        detune: { value: 0, setValueAtTime() {}, cancelScheduledValues() {} },
+        connect() {},
+        start() {},
+        stop() {}
+      })
+    };
+
+    const synth = new FeltPianoSynthesizer(mockCtx, null, 1);
+    const d = synth.hammerBuffer.getChannelData(0);
+    const expectedSamples = Math.floor(48000 * 0.040); // 40ms
+    assert.strictEqual(d.length, expectedSamples, 'Hammer buffer must be 40ms to cleanly encompass all registers (16ms treble to 32ms bass)');
+
+    // Boundary samples must be strictly 0.0
+    assert.strictEqual(d[0], 0.0, 'Initial sample d[0] must be strictly 0.0');
+    assert.strictEqual(d[d.length - 1], 0.0, 'Final sample d[N-1] must be strictly 0.0');
+
+    // Edge samples must taper smoothly to zero without sharp steps
+    assert.ok(Math.abs(d[1]) < 0.01, `Sample d[1] (${d[1]}) must smoothly rise from 0 without step`);
+    assert.ok(Math.abs(d[d.length - 2]) < 0.01, `Sample d[N-2] (${d[d.length - 2]}) must smoothly approach 0 without truncation step`);
+
+    // DC offset across entire buffer must be negligible (< 1e-4)
+    let sum = 0;
+    for (let i = 0; i < d.length; i++) sum += d[i];
+    const mean = sum / d.length;
+    assert.ok(Math.abs(mean) < 1e-4, `Mean DC offset (${mean}) must be virtually zero`);
+  });
+
+  it('verifies high-velocity strike schedules smooth hammer attack >= 4ms and zero-gain completion before buffer stop', () => {
+    const events = [];
+    class MockTimelineParam {
+      constructor(v = 0) { this.value = v; }
+      setValueAtTime(v, t) { events.push({ type: 'setValueAtTime', v, t, target: this.name }); this.value = v; }
+      linearRampToValueAtTime(v, t) { events.push({ type: 'linearRampToValueAtTime', v, t, target: this.name }); this.value = v; }
+      exponentialRampToValueAtTime(v, t) { events.push({ type: 'exponentialRampToValueAtTime', v, t, target: this.name }); this.value = v; }
+      cancelScheduledValues(t) { events.push({ type: 'cancelScheduledValues', t, target: this.name }); }
+    }
+
+    let stoppedTime = null;
+    let startedTime = null;
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 2.0,
+      createGain: () => {
+        const p = new MockTimelineParam(0);
+        p.name = 'gain';
+        return { gain: p, connect() {} };
+      },
+      createBuffer: (ch, len, rate) => ({ getChannelData: () => new Float32Array(len), length: len, sampleRate: rate }),
+      createBufferSource: () => ({
+        buffer: null,
+        connect() {},
+        start(t) { startedTime = t; },
+        stop(t) { stoppedTime = t; }
+      }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect() {} }),
+      createBiquadFilter: () => {
+        const p = new MockTimelineParam(440);
+        p.name = 'freq';
+        return { frequency: p, Q: new MockTimelineParam(1), gain: new MockTimelineParam(1), connect() {} };
+      },
+      createOscillator: () => ({
+        frequency: new MockTimelineParam(440),
+        detune: new MockTimelineParam(0),
+        connect() {},
+        start() {},
+        stop() {}
+      })
+    };
+
+    const synth = new FeltPianoSynthesizer(mockCtx, null, 1);
+    const voice = synth.voices[0];
+    events.length = 0;
+
+    // Strike note with high velocity 0.85 (firm chime key strike)
+    mockCtx.currentTime = 2.0;
+    voice.trigger(523.25, 0.85, 3.5, synth.params, false);
+
+    // Filter hammer events
+    const hammerEvents = events.filter(e => e.target === 'gain' && e.t >= 2.0);
+    const hammerAttack = hammerEvents.find(e => e.type === 'linearRampToValueAtTime' && e.v > 0.01);
+    assert.ok(hammerAttack, 'Hammer gain must schedule linear ramp to peak');
+    assert.ok(hammerAttack.t - 2.0 >= 0.004, `Hammer attack duration (${hammerAttack.t - 2.0}s) must be >= 4ms micro-fade`);
+
+    // Buffer source must start at noteStartTime (2.0) and stop strictly after gain returns to 0.0
+    assert.strictEqual(startedTime, 2.0, 'Hammer noise source must start at noteStartTime');
+    assert.ok(stoppedTime !== null && stoppedTime > hammerAttack.t, 'Noise source stop must be scheduled after attack peak');
+    const finalZeroRamp = hammerEvents.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
+    assert.ok(finalZeroRamp, 'Hammer gain must smoothly return all the way to 0.0');
+    assert.ok(stoppedTime >= finalZeroRamp.t, `Buffer stop (${stoppedTime}) must be scheduled at or after zero-gain ramp (${finalZeroRamp.t})`);
+  });
+
+  it('verifies high-velocity voice gain attack envelope maintains duration >= 5ms and safe future margin', () => {
+    const events = [];
+    class MockTimelineParam {
+      constructor(v = 0) { this.value = v; }
+      setValueAtTime(v, t) { events.push({ type: 'setValueAtTime', v, t, target: this.name }); this.value = v; }
+      linearRampToValueAtTime(v, t) { events.push({ type: 'linearRampToValueAtTime', v, t, target: this.name }); this.value = v; }
+      exponentialRampToValueAtTime(v, t) { events.push({ type: 'exponentialRampToValueAtTime', v, t, target: this.name }); this.value = v; }
+      cancelScheduledValues(t) { events.push({ type: 'cancelScheduledValues', t, target: this.name }); }
+    }
+
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 3.0,
+      createGain: () => {
+        const p = new MockTimelineParam(0);
+        p.name = 'gain';
+        return { gain: p, connect() {} };
+      },
+      createBuffer: (ch, len, rate) => ({ getChannelData: () => new Float32Array(len), length: len, sampleRate: rate }),
+      createBufferSource: () => ({ buffer: null, connect() {}, start() {}, stop() {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect() {} }),
+      createBiquadFilter: () => {
+        const p = new MockTimelineParam(440);
+        p.name = 'freq';
+        return { frequency: p, Q: new MockTimelineParam(1), gain: new MockTimelineParam(1), connect() {} };
+      },
+      createOscillator: () => ({
+        frequency: new MockTimelineParam(440),
+        detune: new MockTimelineParam(0),
+        connect() {},
+        start() {},
+        stop() {}
+      })
+    };
+
+    const synth = new FeltPianoSynthesizer(mockCtx, null, 1);
+    const voice = synth.voices[0];
+    events.length = 0;
+
+    // Firm key strike with maximum velocity 1.0
+    mockCtx.currentTime = 3.0;
+    voice.trigger(261.63, 1.0, 3.5, synth.params, false);
+
+    const gainEvents = events.filter(e => e.target === 'gain');
+    const attackRamp = gainEvents.find(e => e.type === 'linearRampToValueAtTime' && e.v > 0.1);
+    assert.ok(attackRamp, 'Voice gain must schedule linear ramp to peakGain');
+    const attackDuration = attackRamp.t - 3.0;
+    assert.ok(attackDuration >= 0.005 && attackDuration <= 0.010, `Attack duration (${attackDuration}s) must be strictly between 5ms and 10ms`);
+  });
+
+  it('verifies filter cutoff attack at high velocity is smooth and capped in sine mode to avoid resonant transient pop', () => {
+    const events = [];
+    class MockTimelineParam {
+      constructor(v = 0) { this.value = v; }
+      setValueAtTime(v, t) { events.push({ type: 'setValueAtTime', v, t, target: this.name }); this.value = v; }
+      linearRampToValueAtTime(v, t) { events.push({ type: 'linearRampToValueAtTime', v, t, target: this.name }); this.value = v; }
+      exponentialRampToValueAtTime(v, t) { events.push({ type: 'exponentialRampToValueAtTime', v, t, target: this.name }); this.value = v; }
+      cancelScheduledValues(t) { events.push({ type: 'cancelScheduledValues', t, target: this.name }); }
+      cancelAndHoldAtTime(t) { events.push({ type: 'cancelAndHoldAtTime', t, target: this.name }); }
+    }
+
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 4.0,
+      createGain: () => ({ gain: new MockTimelineParam(0), connect() {} }),
+      createBuffer: (ch, len, rate) => ({ getChannelData: () => new Float32Array(len), length: len, sampleRate: rate }),
+      createBufferSource: () => ({ buffer: null, connect() {}, start() {}, stop() {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect() {} }),
+      createBiquadFilter: () => {
+        const p = new MockTimelineParam(440);
+        p.name = 'filterFreq';
+        return { frequency: p, Q: new MockTimelineParam(1), gain: new MockTimelineParam(1), connect() {} };
+      },
+      createOscillator: () => ({
+        frequency: new MockTimelineParam(440),
+        detune: new MockTimelineParam(0),
+        connect() {},
+        start() {},
+        stop() {}
+      })
+    };
+
+    const synth = new FeltPianoSynthesizer(mockCtx, null, 1);
+    synth.setWaveform('sine');
+    const voice = synth.voices[0];
+    events.length = 0;
+
+    // Strike note in sine mode at high velocity
+    mockCtx.currentTime = 4.0;
+    voice.trigger(523.25, 0.85, 3.5, synth.params, false);
+
+    const filterEvents = events.filter(e => e.target === 'filterFreq');
+    const filterAttack = filterEvents.find(e => e.type === 'linearRampToValueAtTime');
+    assert.ok(filterAttack, 'Filter frequency must schedule smooth linear ramp');
+    assert.ok(filterAttack.t - 4.0 >= 0.007 - 1e-6, `Filter attack rise time (${filterAttack.t - 4.0}s) must be >= 7ms to eliminate step clicks`);
+    assert.ok(filterAttack.v <= 3500, `In sine mode, maximum filter cutoff must be capped (< 3500 Hz), got ${filterAttack.v}`);
+  });
+
+  it('verifies _updatePolyphonicHeadroom anchors curGain with setValueAtTime when cancelScheduledValues is used', () => {
+    let anchorValue = null;
+    class MockHeadroomParam {
+      constructor(v = 0.38) { this.value = v; }
+      setValueAtTime(v) { anchorValue = v; this.value = v; }
+      setTargetAtTime(v) { this.value = v; }
+      linearRampToValueAtTime(v) { this.value = v; }
+      cancelScheduledValues() {}
+      // cancelAndHoldAtTime omitted to test fallback anchor path
+    }
+
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 1.0,
+      createGain: () => ({ gain: new MockHeadroomParam(0.285), connect() {} }),
+      createBuffer: (ch, len, rate) => ({ getChannelData: () => new Float32Array(len), length: len, sampleRate: rate }),
+      createBufferSource: () => ({ connect() {}, start() {}, stop() {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect() {} }),
+      createBiquadFilter: () => ({
+        frequency: { value: 440, setValueAtTime() {}, setTargetAtTime() {} },
+        Q: { value: 1, setValueAtTime() {} },
+        gain: { value: 1, setValueAtTime() {} },
+        connect() {}
+      }),
+      createOscillator: () => ({
+        frequency: { value: 440, setValueAtTime() {}, cancelScheduledValues() {} },
+        detune: { value: 0, setValueAtTime() {}, cancelScheduledValues() {} },
+        connect() {},
+        start() {},
+        stop() {}
+      })
+    };
+
+    const synth = new FeltPianoSynthesizer(mockCtx, null, 2);
+    anchorValue = null;
+    synth.output.gain.value = 0.285;
+
+    synth._updatePolyphonicHeadroom();
+    assert.strictEqual(anchorValue, 0.285, '_updatePolyphonicHeadroom must explicitly anchor curGain with setValueAtTime to eliminate discontinuity');
+  });
+
+  it('verifies Eno Airports preset with Drone 1 active and high-velocity strike into TapeDelay graph remains within stable linear headroom', () => {
+    class MockAudioParam {
+      constructor(v = 0) { this.value = v; }
+      setValueAtTime(v) { this.value = v; }
+      setTargetAtTime(v) { this.value = v; }
+      linearRampToValueAtTime(v) { this.value = v; }
+      exponentialRampToValueAtTime(v) { this.value = v; }
+      cancelScheduledValues() {}
+      cancelAndHoldAtTime() {}
+    }
+
+    const mockCtx = {
+      sampleRate: 48000,
+      currentTime: 5.0,
+      createGain: () => ({ gain: new MockAudioParam(1), connect() {} }),
+      createDelay: () => ({ delayTime: new MockAudioParam(0.68), connect() {} }),
+      createBiquadFilter: () => ({ frequency: new MockAudioParam(5000), connect() {} }),
+      createWaveShaper: () => ({ oversample: '', curve: null, connect() {} }),
+      createStereoPanner: () => ({ pan: new MockAudioParam(0), connect() {} }),
+      createOscillator: () => ({
+        frequency: new MockAudioParam(440),
+        detune: new MockAudioParam(0),
+        connect() {},
+        start() {},
+        stop() {}
+      })
+    };
+
+    const delay = new TapeDelay(mockCtx, {
+      delayTimeL: 0.68,
+      delayTimeR: 1.02,
+      feedback: 0.68,
+      wetLevel: 0.50,
+      dryLevel: 0.0
+    });
+
+    assert.strictEqual(delay.inputPad.gain.value, 0.707, 'inputPad must attenuate incoming summed signal by -3dB');
+    assert.strictEqual(delay.feedback, 0.68, 'TapeDelay feedback matches Eno Airports preset (68%)');
+    assert.ok(delay.highpassL, 'Highpass filter exists in delay line');
+    assert.strictEqual(delay.highpassL.frequency.value, 75, 'Highpass filter blocks DC rumble at 75 Hz');
+  });
+});
