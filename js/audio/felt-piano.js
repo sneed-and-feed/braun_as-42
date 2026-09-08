@@ -14,16 +14,25 @@ export class FeltPianoVoice {
    * @param {Object} wavetables
    * @param {AudioBuffer} [hammerBuffer=null]
    * @param {FeltPianoSynthesizer} [synth=null]
+   * @param {number} [voiceIndex=0]
    */
-  constructor(ctx, destination, wavetables, hammerBuffer = null, synth = null) {
+  constructor(ctx, destination, wavetables, hammerBuffer = null, synth = null, voiceIndex = 0) {
     this.ctx = ctx;
     this.destination = destination;
     this.wavetables = wavetables;
     this.hammerBuffer = hammerBuffer;
     this.synth = synth;
+    this.voiceIndex = voiceIndex;
+
+    // Natural per-voice acoustic micro-dispersion (cents detune and overtone spread)
+    // Golden-ratio quasi-random distribution across voices ensures no two voices in a chord phase identically
+    this.dispersionOffset = ((voiceIndex * 1.6180339887) % 1 - 0.5) * 2.8; // -1.4 to +1.4 cents
+    this.overtoneSpread = 1.5 + ((voiceIndex * 3) % 5) * 0.22; // 1.5 to 2.38 cents
 
     this.isActive = false;
     this.currentMidi = null;
+    this.currentFreq = null;
+    this.currentVelocity = 0.6;
     this.startTime = 0;
     this.currentWaveform = 'felt';
     this.currentHammerSource = null;
@@ -51,6 +60,15 @@ export class FeltPianoVoice {
     this.filter1.Q.setValueAtTime(1.3, ctx.currentTime);
     this.filter2.Q.setValueAtTime(1.3, ctx.currentTime);
 
+    // Acoustic wooden body soundboard formant filter (peaking resonator)
+    this.bodyFilter = ctx.createBiquadFilter();
+    this.bodyFilter.type = 'peaking';
+    this.bodyFilter.frequency.setValueAtTime(540, ctx.currentTime);
+    this.bodyFilter.Q.setValueAtTime(1.6, ctx.currentTime);
+    if (this.bodyFilter.gain && this.bodyFilter.gain.setValueAtTime) {
+      this.bodyFilter.gain.setValueAtTime(2.5, ctx.currentTime);
+    }
+
     // Hammer noise thump generator
     this.hammerGain = ctx.createGain();
     this.hammerGain.gain.setValueAtTime(0, ctx.currentTime);
@@ -72,8 +90,8 @@ export class FeltPianoVoice {
 
     this.setWaveform(this.currentWaveform);
 
-    this.osc1.detune.setValueAtTime(0, ctx.currentTime);
-    this.osc2.detune.setValueAtTime(1.8, ctx.currentTime); // 1.8 cents acoustic chorus detune
+    this.osc1.detune.setValueAtTime(this.dispersionOffset, ctx.currentTime);
+    this.osc2.detune.setValueAtTime(this.dispersionOffset + this.overtoneSpread, ctx.currentTime);
 
     // Connect oscillators -> Voice Mixer
     this.oscMixer = ctx.createGain();
@@ -86,11 +104,12 @@ export class FeltPianoVoice {
     this.hammerGain.connect(this.hammerFilter);
     this.hammerFilter.connect(this.filter1);
 
-    // Voice routing: OscMixer -> Saturation -> Filter1 -> Filter2 -> VoiceGain -> Destination
+    // Voice routing: OscMixer -> Saturation -> Filter1 -> Filter2 -> BodyFilter -> VoiceGain -> Destination
     this.oscMixer.connect(this.saturationShaper);
     this.saturationShaper.connect(this.filter1);
     this.filter1.connect(this.filter2);
-    this.filter2.connect(this.voiceGain);
+    this.filter2.connect(this.bodyFilter);
+    this.bodyFilter.connect(this.voiceGain);
     this.voiceGain.connect(this.destination);
 
     this.osc1.start();
@@ -132,7 +151,7 @@ export class FeltPianoVoice {
   }
 
   /**
-   * Trigger note strike
+   * Trigger note strike with register-dependent multisampled acoustic character
    * @param {number} freq - Fundamental frequency in Hz
    * @param {number} velocity - 0.0 to 1.0
    * @param {number} duration - Note duration in seconds
@@ -147,6 +166,70 @@ export class FeltPianoVoice {
     const hammerThump = params.hammer ?? 0.50; // Felt hammer click volume
     const decayMultiplier = params.decay ?? 1.0;
     const releaseTime = params.release ?? 1.8;
+
+    this.currentFreq = freq;
+    this.currentVelocity = velocity;
+
+    // Acoustic register modeling (Teenage Engineering EP-1320 multisampled style):
+    // Register 1: Bass octaves 1–2 (MIDI < 48 / freq < ~130.8 Hz)
+    // Register 2: Mid octaves 3–4 (MIDI 48–71 / freq ~130.8 Hz to 523.25 Hz)
+    // Register 3: Treble octaves 5–6 (MIDI >= 72 / freq > 523.25 Hz)
+    const a4 = params.a4 || (this.synth ? this.synth.a4 : 440) || 440;
+    const midi = Math.round(69 + 12 * Math.log2(Math.max(20, freq) / a4));
+    this.currentMidi = midi;
+
+    const isBass = midi < 48;
+    const isTreble = midi >= 72;
+
+    let registerDecayMult = 1.0;
+    let hammerCutoff = 280;
+    let hammerThumpGainMult = 0.35;
+    let thumpDuration = 0.025; // 25ms
+    let bodyFormantHz = 540;
+    let osc1Vol = 0.58;
+    let osc2Vol = 0.28;
+    let filterAttackTime = 0.006;
+    let filterDecayBase = 0.18;
+
+    let maxCutoff;
+    let restCutoff;
+
+    if (isBass) {
+      // Bass octaves 1-2: deep sub-weight, slower damping, and heavy felt hammer thud
+      registerDecayMult = 1.45 + Math.max(0, (48 - midi) * 0.04);
+      osc1Vol = 0.64;
+      osc2Vol = 0.22;
+      hammerCutoff = Math.min(220, Math.max(110, freq * 1.3));
+      hammerThumpGainMult = 0.46;
+      thumpDuration = 0.032;
+      bodyFormantHz = Math.max(280, Math.min(420, 300 + (midi - 24) * 5));
+      filterDecayBase = 0.26;
+      maxCutoff = Math.min(6000, Math.max(freq * 1.7, 360 + (feltDamp * 2200 * velocity)));
+      restCutoff = Math.min(1400, Math.max(120, freq * 1.05));
+    } else if (isTreble) {
+      // Treble octaves 5-6: brighter acoustic bell presence and quicker decay
+      registerDecayMult = Math.max(0.48, 1.0 - (midi - 71) * 0.035);
+      osc1Vol = 0.52;
+      osc2Vol = 0.34;
+      hammerCutoff = Math.min(1400, Math.max(550, freq * 0.9));
+      hammerThumpGainMult = 0.26;
+      thumpDuration = 0.016;
+      bodyFormantHz = Math.min(950, 680 + (midi - 72) * 12);
+      filterAttackTime = 0.004;
+      filterDecayBase = 0.12;
+      maxCutoff = Math.min(9500, Math.max(freq * 2.2, 750 + (feltDamp * 3600 * velocity)));
+      restCutoff = Math.min(3800, Math.max(280, freq * 1.35));
+    } else {
+      // Mid octaves 3-4: rich resonant wooden body formant and singing sustain
+      registerDecayMult = 1.0;
+      bodyFormantHz = 480 + (midi - 48) * 5.5; // Spruce piano soundboard formant ~480-605 Hz
+      hammerCutoff = Math.min(450, Math.max(240, freq * 1.2));
+      hammerThumpGainMult = 0.35;
+      thumpDuration = 0.025;
+      filterDecayBase = 0.18;
+      maxCutoff = Math.min(7500, Math.max(freq * 1.8, 420 + (feltDamp * 2600 * velocity)));
+      restCutoff = Math.min(2200, Math.max(160, freq * 1.15));
+    }
 
     // Check if voice is being stolen / re-triggered while currently sounding
     const curGain = Math.max(0.0001, this.voiceGain.gain.value || 0.0001);
@@ -167,14 +250,22 @@ export class FeltPianoVoice {
       this.voiceGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
     }
 
-    // Pitch setting scheduled at noteStartTime (no pitch bending or phase click while sounding)
+    // Pitch setting and per-voice micro-dispersion scheduled at noteStartTime
     this.osc1.frequency.cancelScheduledValues(cancelTime);
     this.osc2.frequency.cancelScheduledValues(cancelTime);
     this.osc1.frequency.setValueAtTime(freq, noteStartTime);
     this.osc2.frequency.setValueAtTime(freq, noteStartTime);
 
+    this.osc1Gain.gain.setValueAtTime(osc1Vol, noteStartTime);
+    this.osc2Gain.gain.setValueAtTime(osc2Vol, noteStartTime);
+    this.osc1.detune.setValueAtTime(this.dispersionOffset, noteStartTime);
+    this.osc2.detune.setValueAtTime(this.dispersionOffset + this.overtoneSpread, noteStartTime);
+
+    // Apply soundboard body formant
+    this.bodyFilter.frequency.setValueAtTime(bodyFormantHz, noteStartTime);
+
     // Frequency-dependent acoustic string decay (low notes ring longer, high notes decay faster)
-    const baseDecay = Math.max(1.5, Math.min(9.0, 7.5 * Math.pow(220 / Math.max(60, freq), 0.45))) * decayMultiplier;
+    const baseDecay = Math.max(1.2, Math.min(10.0, 7.5 * Math.pow(220 / Math.max(60, freq), 0.45))) * decayMultiplier * registerDecayMult;
 
     // --- Hammer Transient Impulse ---
     // Clean up any previously running hammer buffer source
@@ -197,14 +288,13 @@ export class FeltPianoVoice {
 
     // Use pre-allocated zero-DC noise buffer with smooth micro-attack to prevent step clicks
     if (hammerThump > 0.01 && this.hammerBuffer) {
-      const thumpDuration = 0.025; // 25ms
       const noiseSource = ctx.createBufferSource();
       noiseSource.buffer = this.hammerBuffer;
       noiseSource.connect(this.hammerGain);
 
-      this.hammerFilter.frequency.setValueAtTime(Math.min(600, freq * 1.5), noteStartTime);
+      this.hammerFilter.frequency.setValueAtTime(hammerCutoff, noteStartTime);
 
-      const targetHammerGain = Math.max(0.0001, velocity * hammerThump * 0.35);
+      const targetHammerGain = Math.max(0.0001, velocity * hammerThump * hammerThumpGainMult);
       // Smooth micro-attack to peak, then exponential decay down to silence with future-guaranteed targets
       const hammerAttackTarget = Math.max(noteStartTime + 0.0025, ctx.currentTime + 0.001);
       const hammerDecayTarget = Math.max(noteStartTime + thumpDuration, hammerAttackTarget + 0.003);
@@ -215,10 +305,6 @@ export class FeltPianoVoice {
       noiseSource.stop(noteStartTime + thumpDuration);
       this.currentHammerSource = noiseSource;
     }
-
-    // --- Steep Warm Lowpass Filter Envelope (Harold Budd Dampening) ---
-    const maxCutoff = Math.min(7500, Math.max(freq * 1.8, 420 + (feltDamp * 2600 * velocity)));
-    const restCutoff = Math.min(2200, Math.max(160, freq * 1.15));
 
     // Anchor current filter cutoff to eliminate biquad filter leap clicks
     const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || restCutoff));
@@ -243,14 +329,13 @@ export class FeltPianoVoice {
       this.filter2.frequency.setValueAtTime(restCutoff, cancelTime);
     }
 
-    // Filter attack ramp (6ms smooth rise to peak strike cutoff)
-    const filterAttackTime = 0.006;
+    // Filter attack ramp
     const filterAttackTarget = Math.max(noteStartTime + filterAttackTime, ctx.currentTime + 0.002);
     this.filter1.frequency.linearRampToValueAtTime(maxCutoff, filterAttackTarget);
     this.filter2.frequency.linearRampToValueAtTime(maxCutoff, filterAttackTarget);
 
     // Rapid exponential decay down to fundamental
-    const filterDecayTime = 0.18 + (1.0 - feltDamp) * 0.25;
+    const filterDecayTime = filterDecayBase + (1.0 - feltDamp) * 0.25;
     const filterDecayTarget = Math.max(noteStartTime + filterAttackTime + filterDecayTime, filterAttackTarget + 0.01);
     this.filter1.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
     this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
@@ -258,7 +343,7 @@ export class FeltPianoVoice {
     // --- Master Amplitude Envelope ---
     // Smooth 7ms micro-attack ramp from 0.0001 to peakGain eliminates step discontinuity clicks
     const attackTime = 0.007;
-    const peakGain = Math.max(0.005, velocity * 0.38);
+    const peakGain = Math.max(0.005, velocity * (isBass ? 0.44 : isTreble ? 0.42 : 0.40));
 
     if (!isStealing) {
       this.voiceGain.gain.cancelScheduledValues(cancelTime);
@@ -376,10 +461,10 @@ export class FeltPianoSynthesizer {
     d[0] = 0.0;
     d[thumpSamples - 1] = 0.0;
 
-    // Polyphonic Voice Pool with synth backreference for dynamic headroom updates
+    // Polyphonic Voice Pool with synth backreference and per-voice index for acoustic micro-dispersion
     this.voices = [];
     for (let i = 0; i < voiceCount; i++) {
-      this.voices.push(new FeltPianoVoice(ctx, this.output, wavetables, this.hammerBuffer, this));
+      this.voices.push(new FeltPianoVoice(ctx, this.output, wavetables, this.hammerBuffer, this, i));
     }
     this.voiceIndex = 0;
   }
@@ -451,6 +536,20 @@ export class FeltPianoSynthesizer {
 
   setTone(val) {
     this.params.tone = Math.max(0, Math.min(1.0, val));
+    if (this.ctx) {
+      const now = this.ctx.currentTime;
+      for (const voice of this.voices) {
+        if (voice.isActive && voice.currentFreq) {
+          const rest = Math.min(2400, Math.max(140, voice.currentFreq * (0.9 + this.params.tone * 0.4)));
+          if (voice.filter1 && voice.filter1.frequency && voice.filter1.frequency.setTargetAtTime) {
+            voice.filter1.frequency.setTargetAtTime(rest, now, 0.025);
+          }
+          if (voice.filter2 && voice.filter2.frequency && voice.filter2.frequency.setTargetAtTime) {
+            voice.filter2.frequency.setTargetAtTime(rest, now, 0.025);
+          }
+        }
+      }
+    }
   }
 
   setHammer(val) {

@@ -10,9 +10,15 @@
 The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into a cohesive tactile instrument:
 
 ### 1.1 Harold Budd: Playable Synth & "Soft Pedal" Felt Piano
+* **Multisampled / Acoustic Blend Modeling (Teenage Engineering EP-1320 Style):** Emulates the rich, cohesive acoustic chord blending of multisampled acoustic instruments:
+  * **Register-Dependent Acoustic Character:**
+    * *Bass octaves 1–2:* Deeper sub-weight, heavier felt hammer thud (110–220 Hz impact), and slower string damping (long ringing resonance).
+    * *Mid octaves 3–4:* Rich resonant spruce soundboard wooden body formant (~480–610 Hz peaking filter) and warm singing sustain.
+    * *Treble octaves 5–6:* Brighter crystalline acoustic bell presence, snappy filter attack, and quicker decay.
+  * **Natural Sympathetic String Resonance & Micro-Dispersion:** Subtle golden-ratio micro-detuning dispersion in cents (±1.4 cents) and overtone spreading across voices prevents synthetic comb-filtering or sterile clone phasing, causing chord clusters to coalesce into a singular acoustic body.
 * **Waveform Select Toggles:** Select core timbre between **FELT** (intimate felt piano: sine + triangle overtone), **SINE** (crystalline acoustic chime / bell), **SAW** (band-limited warm analog synth brass/pad), and **SQR** (hollow vintage reed / pulse organ).
 * **Felt Hammer Transient:** Soft physical impact of a felt-covered wooden hammer using an exponential pink-weighted noise burst passed through a resonant bandpass impulse resonator (zero GC allocation).
-* **Steep Warm 24dB Damping:** Cascaded dual biquad lowpass filter mimicking Harold Budd's signature soft pedal (una corda) dampening. On strike, the cutoff opens quickly to 600–2400 Hz before exponentially decaying down to the fundamental in 180–450 ms with click-free voice stealing.
+* **Steep Warm 24dB Damping:** Cascaded dual biquad lowpass filter mimicking Harold Budd's signature soft pedal (una corda) dampening. On strike, the cutoff opens quickly before exponentially decaying down to the fundamental with click-free voice stealing.
 * **4x Anti-Aliased Saturation:** Internal soft clipper with 4x polyphase oversampling eliminates high-frequency digital foldover distortion.
 * **Dynamic String Tail:** Low notes ring for 6–10 seconds, while high chime registers decay with crystalline clarity.
 
@@ -24,6 +30,11 @@ The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into
 * **Isolated Send Bus Architecture:** Auxiliary effects run dry-isolated (`dryLevel: 0.0`) so the master bus receives pristine dry signal at unity without phase cancellation or limiter overdrive.
 
 ### 1.3 Elta Solar 42n: Microtonal Twin-Oscillator Drone Voices
+* **Calibrated Output Volume Balancing:** Drone bus gain is calibrated to -8.5dB relative to the keys bus, ensuring the twin drones serve as a warm, lush, non-overpowering ambient underbed while piano chords and chime melodies sit distinctly on top with crystalline clarity.
+* **Dieter Rams Quick-Snap Tuning Buttons:** Instant one-click microtonal and harmonic drone snapping without manual knob hunting:
+  * *Voice 1 (Tonic):* **SUB BASS** (C1 / ~32.7 Hz), **DEEP TONIC** (C2 / ~65.4 Hz), **WARM ROOT** (C3 / ~130.8 Hz), **OCTAVE UP** (C4 / ~261.6 Hz).
+  * *Voice 2 (Dominant / Harmony):* **PERFECT 5TH** (3:2 ratio), **SUS 4TH** (4:3 ratio), **MAJOR 9TH** (9:8 ratio), **BEATING UNISON** (unison with ~0.35 Hz acoustic beat offset).
+  * Snap buttons automatically re-tune relative to active root note and modal harmony.
 * **Twin Beatable Oscillators:** Voices 1 and 2 feature independent dual oscillators (Osc A & Osc B) with Saw, Square, Sine, Triangle, and Warm Analog core waveforms.
 * **Continuous Sub-Hertz Beating Control:** Dedicated continuous Hz offset dial (0.00 to 5.00 Hz) and fine detune (cents) to create slow, hypnotic, organic acoustic interference waves.
 * **West-Coast Wavefolder:** Multi-stage wavefolding transfer function ($y = \tanh(\sin(0.5\pi D x) - F \sin(1.5\pi D x))$) folding waveform peaks inward with 4x oversampled anti-aliasing.

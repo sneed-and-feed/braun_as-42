@@ -33,7 +33,7 @@ export class SolarDroneVoice {
     this.resonance = 3.5;
     this.lfoRate = 0.12;
     this.lfoDepth = 180;
-    this.volume = 0.75;
+    this.volume = 0.55;
     this.pan = voiceId === 1 ? -0.45 : 0.45;
     this.isActive = false;
 
@@ -191,8 +191,8 @@ export class SolarDroneVoice {
   setCutoff(hz) {
     this.cutoff = Math.max(40, Math.min(14000, hz));
     const now = this.ctx.currentTime;
-    this.filter1.frequency.setTargetAtTime(this.cutoff, now, 0.03);
-    this.filter2.frequency.setTargetAtTime(this.cutoff, now, 0.03);
+    this.filter1.frequency.setTargetAtTime(this.cutoff, now, 0.025);
+    this.filter2.frequency.setTargetAtTime(this.cutoff, now, 0.025);
   }
 
   /**

@@ -169,11 +169,17 @@ export class TapeDelay {
 
   setTime(timeSeconds) {
     const t = Math.max(0.05, Math.min(2.0, timeSeconds));
+    if (Math.abs(this.delayTimeL - t) < 0.001) return;
     this.delayTimeL = t;
     this.delayTimeR = t * 1.5; // Harmonic 3:2 stereo offset
     const now = this.ctx.currentTime;
-    this.delayNodeL.delayTime.setTargetAtTime(this.delayTimeL, now, 0.08);
-    this.delayNodeR.delayTime.setTargetAtTime(this.delayTimeR, now, 0.08);
+    if (this.delayNodeL.delayTime.setTargetAtTime) {
+      this.delayNodeL.delayTime.setTargetAtTime(this.delayTimeL, now, 0.08);
+      this.delayNodeR.delayTime.setTargetAtTime(this.delayTimeR, now, 0.08);
+    } else {
+      this.delayNodeL.delayTime.value = this.delayTimeL;
+      this.delayNodeR.delayTime.value = this.delayTimeR;
+    }
   }
 
   setFeedback(fb) {

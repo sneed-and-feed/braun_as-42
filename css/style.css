@@ -399,6 +399,56 @@ body {
   color: var(--bg-panel);
 }
 
+/* --- Solar 42n Quick-Snap Tuning Buttons --- */
+.braun-drone-snap-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  padding: 4px 0 2px;
+  border-top: 1px solid var(--border-line);
+}
+
+.braun-snap-toggles {
+  display: flex;
+  gap: 4px;
+}
+
+.braun-snap-btn {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-line);
+  color: var(--text-secondary);
+  font-size: 8.5px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2.5px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.12s ease;
+}
+
+.braun-snap-btn:hover {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+.braun-snap-btn.is-active {
+  background-color: var(--bg-panel);
+  color: var(--text-primary);
+  border-color: var(--braun-orange);
+}
+
+.braun-snap-btn.is-active .braun-led {
+  background-color: var(--braun-orange);
+  box-shadow: 0 0 5px var(--braun-orange);
+}
+
 .braun-drone-status-btn {
   display: inline-flex;
   align-items: center;

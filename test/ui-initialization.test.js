@@ -340,6 +340,23 @@ function setupMockBrowser() {
     waveNodes.push(b);
   });
 
+  // Drone Snap buttons
+  const snap1 = ['sub-bass', 'deep-tonic', 'warm-root', 'octave-up'];
+  snap1.forEach(snap => {
+    const b = new MockElement('button');
+    b.classList.add('drone1-snap-btn');
+    b.setAttribute('data-snap', snap);
+    body.appendChild(b);
+  });
+
+  const snap2 = ['perfect-5th', 'sus-4th', 'major-9th', 'beating-unison'];
+  snap2.forEach(snap => {
+    const b = new MockElement('button');
+    b.classList.add('drone2-snap-btn');
+    b.setAttribute('data-snap', snap);
+    body.appendChild(b);
+  });
+
   const mockDocument = {
     body,
     readyState: 'complete',
@@ -704,5 +721,87 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     const firstChordId = chordBtns[0].getAttribute('data-chord');
     app.playSurface.flashChord(firstChordId);
     assert.ok(chordBtns[0].classList.contains('is-active'), 'Playing chord must activate is-active class');
+  });
+
+  it('verifies drone quick-snap tuning buttons are wired, set presets, and auto-power on', async () => {
+    const { elementsById, mockDocument } = setupMockBrowser();
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    assert.strictEqual(app.engine.droneSnap[1], 'deep-tonic');
+    assert.strictEqual(app.engine.droneSnap[2], 'perfect-5th');
+
+    const snap1Btns = mockDocument.querySelectorAll('.drone1-snap-btn');
+    assert.strictEqual(snap1Btns.length, 4);
+
+    const snap2Btns = mockDocument.querySelectorAll('.drone2-snap-btn');
+    assert.strictEqual(snap2Btns.length, 4);
+
+    // Clicking Sub Bass when power is off triggers auto-power on and sets drone 1 snap
+    assert.strictEqual(app.isPowerOn, false);
+    const subBassBtn = snap1Btns.find(b => b.getAttribute('data-snap') === 'sub-bass');
+    assert.ok(subBassBtn);
+    subBassBtn.click();
+
+    // Allow microtasks for async audio start
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    assert.strictEqual(app.isPowerOn, true, 'Clicking snap button must auto-power on synth');
+    assert.strictEqual(app.engine.droneSnap[1], 'sub-bass');
+    assert.ok(subBassBtn.classList.contains('is-active'));
+    assert.ok(Math.abs(app.engine.drone1Freq - 32.7) < 1.0, 'Sub bass should be ~32.7 Hz');
+
+    // Clicking Sus 4th on Drone 2
+    const sus4Btn = snap2Btns.find(b => b.getAttribute('data-snap') === 'sus-4th');
+    assert.ok(sus4Btn);
+    sus4Btn.click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    assert.strictEqual(app.engine.droneSnap[2], 'sus-4th');
+    assert.ok(sus4Btn.classList.contains('is-active'));
+    assert.ok(Math.abs(app.engine.drone2Freq - (app.engine.drone1Freq * 4 / 3)) < 0.1, 'Sus 4th must be 4:3 ratio');
+
+    // Test changing scale root re-snaps frequencies smoothly
+    app.engine.setScale('BUDD_PENTATONIC', 7); // Root = G
+    // Drone 1 (Sub Bass of G1 = MIDI 31) ~ 49.0 Hz
+    assert.ok(Math.abs(app.engine.drone1Freq - 49.0) < 1.0, 'Sub bass of G should be ~49 Hz');
+    // Drone 2 maintains 4:3 ratio above Drone 1
+    assert.ok(Math.abs(app.engine.drone2Freq - (app.engine.drone1Freq * 4 / 3)) < 0.1);
+  });
+
+  it('verifies Braun AS 42 Vector Touchpad supports high-DPI scaling and setTransform', async () => {
+    const { elementsById } = setupMockBrowser();
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    assert.ok(app.vectorPad);
+    // Verify dpr property exists on vectorPad
+    assert.ok(typeof app.vectorPad.dpr === 'number');
+
+    let transformCalledWith = null;
+    let fillRectCalled = false;
+    // Provide a mock context with setTransform
+    app.vectorPad.ctx = {
+      setTransform: (a, b, c, d, e, f) => {
+        transformCalledWith = [a, b, c, d, e, f];
+      },
+      clearRect: () => {},
+      fillRect: () => { fillRectCalled = true; },
+      beginPath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      stroke: () => {},
+      arc: () => {},
+      fill: () => {},
+      fillText: () => {}
+    };
+
+    app.vectorPad.draw();
+    assert.ok(transformCalledWith !== null, 'draw() must call setTransform on high-DPI displays');
+    assert.strictEqual(transformCalledWith[0], app.vectorPad.dpr);
+    assert.strictEqual(transformCalledWith[3], app.vectorPad.dpr);
+    assert.ok(fillRectCalled);
   });
 });

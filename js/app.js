@@ -722,12 +722,26 @@ export class AmbientApp {
       onChange: (v) => this.engine.setDroneLfo(id, v)
     });
 
-    // Volume
+    // Quick-Snap Tuning Presets
+    const snapBtns = document.querySelectorAll(`.${prefix}-snap-btn`);
+    snapBtns.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!this.isPowerOn) {
+          await this.startAudio();
+        }
+        snapBtns.forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+        const snapKey = btn.getAttribute('data-snap');
+        this.engine.setDroneSnap(id, snapKey);
+      });
+    });
+
+    // Volume (Calibrated default 55% for lush, non-overpowering ambient underbed)
     new BraunKnob(document.getElementById(`knob-${prefix}-vol`), {
       label: 'LEVEL',
       min: 0,
       max: 100,
-      value: 75,
+      value: 55,
       unit: '%',
       size: 'medium',
       onChange: (v) => this.engine.setDroneVolume(id, v / 100)

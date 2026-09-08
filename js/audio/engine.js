@@ -52,6 +52,16 @@ export class AudioEngine {
       waveform: 'felt'
     };
 
+    this.droneBusGain = 0.22; // Calibrated ambient underbed (-8.0dB relative to felt piano bus)
+
+    this.droneSnap = {
+      1: 'deep-tonic',
+      2: 'perfect-5th'
+    };
+    this.drone1Midi = 36 + this.rootPitchClass;
+    this.drone1Freq = midiToFrequency(this.drone1Midi, this.a4);
+    this.drone2Freq = this.drone1Freq * 1.5;
+
     this.droneParams = {
       1: {
         active: false,
@@ -63,7 +73,7 @@ export class AudioEngine {
         cutoff: 650,
         res: 3.5,
         lfo: 0.12,
-        vol: 0.75
+        vol: 0.55
       },
       2: {
         active: false,
@@ -75,7 +85,7 @@ export class AudioEngine {
         cutoff: 850,
         res: 3.5,
         lfo: 0.12,
-        vol: 0.75
+        vol: 0.55
       }
     };
 
@@ -205,7 +215,7 @@ export class AudioEngine {
 
     // Elta Solar 42n Microtonal Drone Voices (Voice 1 & Voice 2)
     this.droneBus = this.ctx.createGain();
-    this.droneBus.gain.setValueAtTime(0.85, this.ctx.currentTime);
+    this.droneBus.gain.setValueAtTime(this.droneBusGain, this.ctx.currentTime);
 
     this.drone1 = new SolarDroneVoice(this.ctx, this.droneBus, this.wavetables, 1);
     this.drone2 = new SolarDroneVoice(this.ctx, this.droneBus, this.wavetables, 2);
@@ -225,10 +235,8 @@ export class AudioEngine {
       if (p.active) drone.setActive(true);
     });
 
-    const drone1Midi = 36 + this.rootPitchClass;
-    const drone2Midi = 43 + this.rootPitchClass;
-    this.drone1.setFrequency(midiToFrequency(drone1Midi, this.a4));
-    this.drone2.setFrequency(midiToFrequency(drone2Midi, this.a4));
+    this.applyDrone1Snap();
+    this.applyDrone2Snap();
 
     this.droneBus.connect(this.masterGain);
     this.droneBus.connect(this.tapeDelay.input);
@@ -264,13 +272,66 @@ export class AudioEngine {
       this.phaseLoops.updateScale(this.rootPitchClass, scale.intervals, this.a4);
     }
 
-    // Update Drone 1 & 2 root notes smoothly
-    if (this.drone1 && this.drone2) {
-      const drone1Midi = 36 + this.rootPitchClass; // Base octave 2
-      const drone2Midi = 43 + this.rootPitchClass; // 5th above
-      this.drone1.setFrequency(midiToFrequency(drone1Midi, this.a4));
-      this.drone2.setFrequency(midiToFrequency(drone2Midi, this.a4));
+    // Update Drone 1 & 2 root notes smoothly according to active snap presets
+    this.applyDrone1Snap();
+    this.applyDrone2Snap();
+  }
+
+  /**
+   * Set quick-snap tuning preset for Drone Voice 1 or Voice 2
+   * @param {number} voiceId - 1 or 2
+   * @param {string} snapKey - Preset key
+   * @returns {number} Selected frequency in Hz
+   */
+  setDroneSnap(voiceId, snapKey) {
+    this.droneSnap[voiceId] = snapKey;
+    if (voiceId === 1) {
+      this.applyDrone1Snap();
+      this.applyDrone2Snap();
+      return this.drone1Freq;
+    } else {
+      return this.applyDrone2Snap();
     }
+  }
+
+  applyDrone1Snap() {
+    const root = this.rootPitchClass;
+    const snapKey = this.droneSnap[1] || 'deep-tonic';
+    let midi = 36 + root; // default C2 (Deep Tonic)
+    if (snapKey === 'sub-bass') midi = 24 + root; // C1 (Sub Bass)
+    else if (snapKey === 'deep-tonic') midi = 36 + root; // C2 (Deep Tonic)
+    else if (snapKey === 'warm-root') midi = 48 + root; // C3 (Warm Root)
+    else if (snapKey === 'octave-up') midi = 60 + root; // C4 (Octave Up)
+
+    this.drone1Midi = midi;
+    this.drone1Freq = midiToFrequency(midi, this.a4);
+    if (this.drone1) {
+      this.drone1.setFrequency(this.drone1Freq);
+    }
+    return this.drone1Freq;
+  }
+
+  applyDrone2Snap() {
+    const f1 = this.drone1Freq || (this.drone1 ? this.drone1.baseFreq : midiToFrequency(36 + this.rootPitchClass, this.a4));
+    const snapKey = this.droneSnap[2] || 'perfect-5th';
+    let freq = f1 * 1.5; // default 3:2 ratio
+
+    if (snapKey === 'perfect-5th') {
+      freq = f1 * 1.5; // 3:2 ratio
+    } else if (snapKey === 'sus-4th') {
+      freq = f1 * (4 / 3); // 4:3 ratio
+    } else if (snapKey === 'major-9th') {
+      freq = f1 * (9 / 8); // 9:8 ratio
+    } else if (snapKey === 'beating-unison') {
+      freq = f1;
+      this.setDroneBeating(2, 0.35); // ~0.35 Hz acoustic beat offset
+    }
+
+    this.drone2Freq = freq;
+    if (this.drone2) {
+      this.drone2.setFrequency(freq);
+    }
+    return this.drone2Freq;
   }
 
   setTuningReference(a4) {

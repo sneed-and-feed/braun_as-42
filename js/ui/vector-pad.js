@@ -28,6 +28,10 @@ export class BraunVectorPad {
     this.isEngaged = false;
     this._animId = null;
 
+    this.dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+    this.width = 340;
+    this.height = 130;
+
     this._render();
     this._attachEvents();
     this._applyModulation(false);
@@ -102,16 +106,19 @@ export class BraunVectorPad {
     if (!this.canvas || !this.surfaceBox) return;
     const rect = this.surfaceBox.getBoundingClientRect ? this.surfaceBox.getBoundingClientRect() : { width: 340, height: 130 };
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
-    const w = rect.width || this.surfaceBox.clientWidth || 340;
-    const h = rect.height || this.surfaceBox.clientHeight || 130;
+    const w = Math.round(rect.width || this.surfaceBox.clientWidth || 340);
+    const h = Math.round(rect.height || this.surfaceBox.clientHeight || 130);
+
+    this.dpr = dpr;
+    this.width = w;
+    this.height = h;
 
     this.canvas.width = Math.floor(w * dpr);
     this.canvas.height = Math.floor(h * dpr);
-    if (this.ctx && this.ctx.scale) {
-      this.ctx.scale(dpr, dpr);
+    if (this.canvas.style) {
+      this.canvas.style.width = `${w}px`;
+      this.canvas.style.height = `${h}px`;
     }
-    this.width = w;
-    this.height = h;
   }
 
   _attachEvents() {
@@ -138,6 +145,10 @@ export class BraunVectorPad {
 
     if (!this.surfaceBox) return;
 
+    let pendingNormX = null;
+    let pendingNormY = null;
+    let moveRafId = null;
+
     const handlePointerMove = (e) => {
       if (!this.isEngaged) return;
       e.preventDefault();
@@ -147,17 +158,34 @@ export class BraunVectorPad {
       const clX = e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0;
       const clY = e.clientY ?? (e.touches && e.touches[0].clientY) ?? 0;
 
-      const normX = Math.max(0, Math.min(1, (clX - rect.left) / rect.width));
-      // Invert Y so up = higher modulation
-      const normY = Math.max(0, Math.min(1, 1.0 - (clY - rect.top) / rect.height));
+      pendingNormX = Math.max(0, Math.min(1, (clX - rect.left) / rect.width));
+      pendingNormY = Math.max(0, Math.min(1, 1.0 - (clY - rect.top) / rect.height));
 
-      this.setCoordinates(normX, normY, true);
+      // Throttle pointer movement to animation frames to avoid audio AudioParam thrashing/zipper noise
+      if (!moveRafId) {
+        moveRafId = requestAnimationFrame(() => {
+          moveRafId = null;
+          if (pendingNormX !== null && pendingNormY !== null) {
+            this.setCoordinates(pendingNormX, pendingNormY, true);
+          }
+        });
+      }
     };
 
     const handlePointerUp = (e) => {
       if (!this.isEngaged) return;
       this.isEngaged = false;
       this._updateStatusUi();
+
+      if (moveRafId) {
+        cancelAnimationFrame(moveRafId);
+        moveRafId = null;
+      }
+      if (pendingNormX !== null && pendingNormY !== null) {
+        this.setCoordinates(pendingNormX, pendingNormY, true);
+        pendingNormX = null;
+        pendingNormY = null;
+      }
 
       if (this.surfaceBox.releasePointerCapture && e.pointerId !== undefined) {
         try {
@@ -321,6 +349,10 @@ export class BraunVectorPad {
     const reverbWet = 0.20 + this.y * 0.45;
     this.engine.setReverbWet(reverbWet);
 
+    // Smoothly slew delay wet mix along with Y axis for lush ambient wash
+    const delayWet = 0.20 + this.y * 0.40;
+    this.engine.setDelayWet(delayWet);
+
     if (notifyChange && this.onChange) {
       this.onChange({
         x: this.x,
@@ -329,7 +361,8 @@ export class BraunVectorPad {
         cutoffHz: Math.round(250 * Math.pow(5500 / 250, this.x)),
         delayTimeSec,
         shimmerAmount,
-        reverbWet
+        reverbWet,
+        delayWet
       });
     }
   }
@@ -372,30 +405,38 @@ export class BraunVectorPad {
   draw() {
     if (!this.ctx || !this.width || !this.height) return;
     const ctx = this.ctx;
+    const dpr = this.dpr || ((typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1);
     const w = this.width;
     const h = this.height;
+
+    // High-DPI / Retina canvas pixel ratio scaling on every frame:
+    // ctx.setTransform(dpr, 0, 0, dpr, 0, 0) resets and enforces crisp coordinate mapping
+    if (ctx.setTransform) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    } else if (ctx.scale && !this._mockScaled) {
+      this._mockScaled = true;
+      ctx.scale(dpr, dpr);
+    }
 
     // Clear background
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = '#121415';
     ctx.fillRect(0, 0, w, h);
 
-    // Draw Graticule Grid (Dieter Rams technical lines)
+    // Draw Graticule Grid with integer pixel snapping (Dieter Rams technical lines)
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
     if (ctx.setLineDash) ctx.setLineDash([2, 3]);
 
-    // 25%, 50%, 75% horizontal & vertical grid lines
+    // 25%, 50%, 75% horizontal & vertical grid lines snapped to integer pixel + 0.5
     const gridSteps = [0.25, 0.50, 0.75];
     gridSteps.forEach(ratio => {
-      // Horizontal
       const yPos = Math.round(h * (1.0 - ratio)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(0, yPos);
       ctx.lineTo(w, yPos);
       ctx.stroke();
 
-      // Vertical
       const xPos = Math.round(w * ratio) + 0.5;
       ctx.beginPath();
       ctx.moveTo(xPos, 0);
@@ -405,10 +446,11 @@ export class BraunVectorPad {
 
     if (ctx.setLineDash) ctx.setLineDash([]); // Reset dashed
 
-    // Center Origin Crosshairs
+    // Center Origin Crosshairs (integer snapped)
     const midX = Math.round(w * 0.5) + 0.5;
     const midY = Math.round(h * 0.5) + 0.5;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(midX - 6, midY);
     ctx.lineTo(midX + 6, midY);
@@ -416,9 +458,15 @@ export class BraunVectorPad {
     ctx.lineTo(midX, midY + 6);
     ctx.stroke();
 
-    // Calculate current crosshair pixel coordinates
-    const px = Math.max(0, Math.min(w, this.x * w));
-    const py = Math.max(0, Math.min(h, (1.0 - this.y) * h));
+    // Raw crosshair coordinates in logical coordinates
+    const rawPx = Math.max(0, Math.min(w, this.x * w));
+    const rawPy = Math.max(0, Math.min(h, (1.0 - this.y) * h));
+
+    // Integer pixel snapped coordinates (+0.5 for razor-sharp hairline crosshairs)
+    const snapPx = Math.round(rawPx) + 0.5;
+    const snapPy = Math.round(rawPy) + 0.5;
+    const centerPx = Math.round(rawPx);
+    const centerPy = Math.round(rawPy);
 
     // Active Reticle Crosshairs
     const orange = this.isEngaged ? '#EE592B' : 'rgba(238, 89, 43, 0.75)';
@@ -427,38 +475,49 @@ export class BraunVectorPad {
 
     // Full-span vertical hairline
     ctx.beginPath();
-    ctx.moveTo(px, 0);
-    ctx.lineTo(px, h);
+    ctx.moveTo(snapPx, 0);
+    ctx.lineTo(snapPx, h);
     ctx.stroke();
 
     // Full-span horizontal hairline
     ctx.beginPath();
-    ctx.moveTo(0, py);
-    ctx.lineTo(w, py);
+    ctx.moveTo(0, snapPy);
+    ctx.lineTo(w, snapPy);
     ctx.stroke();
 
     // Outer Target Ring
-    ctx.strokeStyle = orange;
-    ctx.lineWidth = this.isEngaged ? 2 : 1.5;
-    ctx.beginPath();
-    ctx.arc(px, py, this.isEngaged ? 14 : 10, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Subtle Glow when engaged
-    if (this.isEngaged && ctx.createRadialGradient) {
-      const grad = ctx.createRadialGradient(px, py, 2, px, py, 24);
-      grad.addColorStop(0, 'rgba(238, 89, 43, 0.45)');
-      grad.addColorStop(1, 'rgba(238, 89, 43, 0)');
-      ctx.fillStyle = grad;
+    if (ctx.arc) {
+      ctx.strokeStyle = orange;
+      ctx.lineWidth = this.isEngaged ? 2 : 1.5;
       ctx.beginPath();
-      ctx.arc(px, py, 24, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(centerPx, centerPy, this.isEngaged ? 14 : 10, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Subtle Glow when engaged
+      if (this.isEngaged && ctx.createRadialGradient) {
+        const grad = ctx.createRadialGradient(centerPx, centerPy, 2, centerPx, centerPy, 24);
+        grad.addColorStop(0, 'rgba(238, 89, 43, 0.45)');
+        grad.addColorStop(1, 'rgba(238, 89, 43, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(centerPx, centerPy, 24, 0, Math.PI * 2);
+        if (ctx.fill) ctx.fill();
+      }
+
+      // Inner Solid Precision Pip
+      ctx.fillStyle = this.isEngaged ? '#FFF' : orange;
+      ctx.beginPath();
+      ctx.arc(centerPx, centerPy, this.isEngaged ? 3.5 : 2.5, 0, Math.PI * 2);
+      if (ctx.fill) ctx.fill();
     }
 
-    // Inner Solid Precision Pip
-    ctx.fillStyle = this.isEngaged ? '#FFF' : orange;
-    ctx.beginPath();
-    ctx.arc(px, py, this.isEngaged ? 3.5 : 2.5, 0, Math.PI * 2);
-    ctx.fill();
+    // Reticle Telemetry Coordinate Text with integer pixel snapping
+    if (ctx.fillText) {
+      ctx.font = '9px "SF Mono", Monaco, "Courier New", monospace';
+      ctx.fillStyle = this.isEngaged ? 'rgba(238, 89, 43, 0.85)' : 'rgba(255, 255, 255, 0.35)';
+      const textX = Math.round(Math.max(6, Math.min(w - 75, centerPx + 16)));
+      const textY = Math.round(Math.max(14, Math.min(h - 6, centerPy - 8)));
+      ctx.fillText(`[${Math.round(this.x * 100)}%, ${Math.round(this.y * 100)}%]`, textX, textY);
+    }
   }
 }
