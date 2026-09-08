@@ -105,6 +105,7 @@ export class BraunPlaySurface {
   _renderChords() {
     if (!this.chordsContainer) return;
     this.chordsContainer.innerHTML = '';
+    this.chordsContainer.classList.add('braun-chord-macros-grid');
 
     const chordList = Object.values(CHORD_VOICINGS);
     chordList.forEach((voicing, idx) => {
@@ -155,9 +156,27 @@ export class BraunPlaySurface {
   }
 
   /**
+   * Flash active state on chord macro button
+   */
+  flashChord(voicingId) {
+    if (!this.chordsContainer) return;
+    const btns = this.chordsContainer.children && this.chordsContainer.children.length > 0
+      ? this.chordsContainer.children
+      : (this.chordsContainer.querySelectorAll ? this.chordsContainer.querySelectorAll('.braun-chord-macro-btn') : []);
+    const btn = Array.from(btns).find(b => b.getAttribute && b.getAttribute('data-chord') === voicingId);
+    if (btn) {
+      btn.classList.add('is-active');
+      setTimeout(() => {
+        btn.classList.remove('is-active');
+      }, 250);
+    }
+  }
+
+  /**
    * Play Harold Budd style chord cluster with subtle strum rubato
    */
   async playChord(voicingId) {
+    this.flashChord(voicingId);
     if (this.onPlay) {
       await this.onPlay();
     }

@@ -413,4 +413,167 @@ describe('Audio Enhancements and DSP Verification', () => {
     assert.strictEqual(v3, synth.voices[2]);
     assert.strictEqual(v4, synth.voices[3]);
   });
+
+  it('verifies polyphonic summing headroom attenuation scales piano bus gain with 1/sqrt(N_active)', () => {
+    class MockGainNode {
+      constructor(val = 1) {
+        this.value = val;
+        this.lastTarget = val;
+      }
+      setValueAtTime(v) { this.value = v; }
+      setTargetAtTime(target) { this.value = target; this.lastTarget = target; }
+      linearRampToValueAtTime(v) { this.value = v; }
+      exponentialRampToValueAtTime(v) { this.value = v; }
+      cancelScheduledValues() {}
+      cancelAndHoldAtTime() {}
+    }
+
+    class MockContext {
+      constructor() {
+        this.sampleRate = 48000;
+        this.currentTime = 0;
+      }
+      createGain() {
+        return {
+          gain: new MockGainNode(1),
+          connect: () => {}
+        };
+      }
+      createBuffer(ch, len, rate) {
+        const arr = new Float32Array(len);
+        return { getChannelData: () => arr, length: len, sampleRate: rate };
+      }
+      createWaveShaper() { return { oversample: '', curve: null, connect: () => {} }; }
+      createBiquadFilter() {
+        return {
+          frequency: new MockGainNode(350),
+          Q: new MockGainNode(1),
+          connect: () => {}
+        };
+      }
+      createOscillator() {
+        return {
+          frequency: { value: 440, setValueAtTime: () => {}, cancelScheduledValues: () => {} },
+          detune: { value: 0, setValueAtTime: () => {} },
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+      }
+      createBufferSource() {
+        return { buffer: null, connect: () => {}, start: () => {}, stop: () => {} };
+      }
+    }
+
+    const ctx = new MockContext();
+    const synth = new FeltPianoSynthesizer(ctx, null, 8);
+    assert.strictEqual(synth.baseOutputGain, 0.38, 'Base output gain should be calibrated in 0.35-0.45 range');
+
+    // 1 voice active
+    const v1 = synth.playNote(261.63, 0.7);
+    assert.ok(v1.isActive);
+    const gain1 = synth.output.gain.value;
+    const expected1 = 0.38 * (1 / Math.sqrt(1)) * 0.80;
+    assert.ok(Math.abs(gain1 - expected1) < 1e-4, `1-voice gain should be ~${expected1}, got ${gain1}`);
+
+    // 2 voices active (second note press scenario)
+    const v2 = synth.playNote(329.63, 0.7);
+    assert.ok(v2.isActive);
+    const gain2 = synth.output.gain.value;
+    const expected2 = 0.38 * (1 / Math.sqrt(2)) * 0.80;
+    assert.ok(Math.abs(gain2 - expected2) < 1e-4, `2-voice gain should be ~${expected2}, got ${gain2}`);
+    assert.ok(gain2 < gain1, '2-voice gain must attenuate to provide polyphonic summing headroom');
+
+    // 5 voices active (chord cluster scenario)
+    const v3 = synth.playNote(392.00, 0.7);
+    const v4 = synth.playNote(493.88, 0.7);
+    const v5 = synth.playNote(587.33, 0.7);
+    const gain5 = synth.output.gain.value;
+    const expected5 = 0.38 * (1 / Math.sqrt(5)) * 0.80;
+    assert.ok(Math.abs(gain5 - expected5) < 1e-4, `5-voice chord gain should be ~${expected5}, got ${gain5}`);
+    assert.ok(gain5 < gain2, '5-voice chord cluster must attenuate further to prevent limiter distortion');
+
+    // Voices finish and release
+    v1.isActive = false;
+    v2.isActive = false;
+    v3.isActive = false;
+    v4.isActive = false;
+    synth._updatePolyphonicHeadroom();
+    const gainAfterRelease = synth.output.gain.value;
+    assert.ok(Math.abs(gainAfterRelease - expected1) < 1e-4, 'Gain should recover when voices become inactive');
+  });
+
+  it('verifies automation scheduling times strictly respect currentTime without step discontinuities', () => {
+    class TimelineParam {
+      constructor(val = 0) {
+        this.value = val;
+        this.events = [];
+      }
+      setValueAtTime(v, t) { this.events.push({ type: 'setValueAtTime', v, t }); }
+      linearRampToValueAtTime(v, t) { this.events.push({ type: 'linearRampToValueAtTime', v, t }); }
+      exponentialRampToValueAtTime(v, t) { this.events.push({ type: 'exponentialRampToValueAtTime', v, t }); }
+      cancelScheduledValues(t) { this.events.push({ type: 'cancelScheduledValues', t }); }
+      cancelAndHoldAtTime(t) { this.events.push({ type: 'cancelAndHoldAtTime', t }); }
+    }
+
+    class TestAudioCtx {
+      constructor() {
+        this.sampleRate = 48000;
+        this.currentTime = 2.456; // Arbitrary ongoing time
+      }
+      createGain() { return { gain: new TimelineParam(0), connect: () => {} }; }
+      createBuffer(ch, len, rate) {
+        const arr = new Float32Array(len);
+        return { getChannelData: () => arr, length: len, sampleRate: rate };
+      }
+      createWaveShaper() { return { oversample: '', curve: null, connect: () => {} }; }
+      createBiquadFilter() {
+        return {
+          frequency: new TimelineParam(440),
+          Q: new TimelineParam(1.3),
+          connect: () => {}
+        };
+      }
+      createOscillator() {
+        return {
+          frequency: new TimelineParam(440),
+          detune: new TimelineParam(0),
+          connect: () => {},
+          start: () => {},
+          stop: () => {}
+        };
+      }
+      createBufferSource() {
+        return { buffer: null, connect: () => {}, start: () => {}, stop: () => {} };
+      }
+    }
+
+    const testCtx = new TestAudioCtx();
+    const synth = new FeltPianoSynthesizer(testCtx, null, 2);
+
+    // Play note 1 at currentTime = 2.456
+    synth.playNote(440, 0.75, 2.0);
+
+    const checkNoPastEvents = (param, ctxTime, label) => {
+      param.events.forEach(e => {
+        assert.ok(e.t >= ctxTime, `${label} event ${e.type} scheduled at ${e.t} must not be before currentTime ${ctxTime}`);
+      });
+    };
+
+    const v1 = synth.voices[0];
+    checkNoPastEvents(v1.voiceGain.gain, 2.456, 'Voice 1 Gain');
+    checkNoPastEvents(v1.filter1.frequency, 2.456, 'Voice 1 Filter 1');
+    checkNoPastEvents(v1.filter2.frequency, 2.456, 'Voice 1 Filter 2');
+    checkNoPastEvents(v1.hammerGain.gain, 2.456, 'Voice 1 Hammer Gain');
+
+    // Simulate clock advancing and note 2 retriggering with voice stealing
+    testCtx.currentTime = 2.470; // 14ms later
+    v1.voiceGain.gain.value = 0.28;
+    synth.playNote(880, 0.85, 2.0);
+
+    const stealEvents = v1.voiceGain.gain.events.filter(e => e.t >= 2.470);
+    stealEvents.forEach(e => {
+      assert.ok(e.t >= 2.470, `Steal event ${e.type} at ${e.t} must be >= currentTime 2.470`);
+    });
+  });
 });

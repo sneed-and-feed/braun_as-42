@@ -481,7 +481,7 @@ body {
   text-align: right;
 }
 
-/* --- Playable Chime Strip & Chord Macros --- */
+/* --- Performance Deck: 2x5 Chords Matrix & Braun AS 42 Vector Touchpad --- */
 .braun-play-section {
   padding: 16px 24px;
   background-color: var(--bg-panel);
@@ -490,39 +490,110 @@ body {
   gap: 14px;
 }
 
+.braun-performance-split {
+  display: grid;
+  grid-template-columns: 1.45fr 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (max-width: 1040px) {
+  .braun-performance-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.braun-chord-deck,
+.braun-vector-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background-color: var(--bg-panel-inset);
+  border: 1px solid var(--border-line);
+  border-radius: var(--panel-radius);
+  padding: 12px;
+}
+
+.braun-deck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-line);
+}
+
+.braun-badge {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-line);
+  border-radius: 2px;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+
+.braun-chord-macros-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 8px;
+  flex: 1;
+}
+
 .braun-chord-macros-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
 }
 
+@media (max-width: 680px) {
+  .braun-chord-macros-grid,
+  .braun-chord-macros-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 .braun-chord-macro-btn {
-  background-color: var(--bg-panel-inset);
+  background-color: var(--bg-panel);
   border: 1px solid var(--border-line);
   border-radius: 3px;
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   align-items: flex-start;
-  gap: 2px;
+  min-height: 58px;
+  gap: 4px;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+  position: relative;
 }
 
 .braun-chord-macro-btn:hover {
-  background-color: var(--bg-panel);
+  background-color: var(--bg-app);
   border-color: var(--text-primary);
 }
 
+.braun-chord-macro-btn.is-active,
 .braun-chord-macro-btn:active {
   background-color: var(--text-primary);
   color: var(--bg-panel);
+  border-color: var(--text-primary);
+  transform: translateY(1px);
+}
+
+.braun-chord-macro-btn.is-active .braun-chord-desc,
+.braun-chord-macro-btn:active .braun-chord-desc {
+  color: var(--bg-app);
 }
 
 .braun-chord-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   width: 100%;
 }
 
@@ -534,30 +605,188 @@ body {
 }
 
 .braun-chord-shortcut {
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   font-family: var(--font-mono);
-  color: var(--text-muted);
-  background-color: var(--bg-panel);
+  color: var(--text-primary);
+  background-color: var(--bg-panel-inset);
   border: 1px solid var(--border-line);
   border-radius: 2px;
-  padding: 1px 4px;
-  line-height: 1;
+  padding: 1px 5px;
+  line-height: 1.2;
+  min-width: 16px;
+  text-align: center;
 }
 
 .braun-chord-macro-btn:hover .braun-chord-shortcut {
-  color: var(--text-primary);
+  background-color: var(--bg-panel);
   border-color: var(--text-secondary);
 }
 
+.braun-chord-macro-btn.is-active .braun-chord-shortcut,
 .braun-chord-macro-btn:active .braun-chord-shortcut {
-  background-color: var(--text-primary);
-  color: var(--bg-panel);
+  background-color: var(--braun-orange);
+  color: #FFF;
+  border-color: var(--braun-orange);
 }
 
 .braun-chord-desc {
   font-size: 9px;
   color: var(--text-secondary);
+  line-height: 1.25;
+}
+
+/* --- Braun AS 42 Precision Vector Touchpad Surface --- */
+.braun-vector-pad-assembly {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.braun-vector-pad-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  outline: none;
+}
+
+.braun-vector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 4px;
+}
+
+.braun-vector-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.braun-vector-axis-meta {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.braun-vector-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.braun-vector-mini-btn {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-line);
+  border-radius: 2px;
+  padding: 3px 8px;
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.braun-vector-mini-btn:hover {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+.braun-vector-mini-btn.is-active {
+  background-color: var(--braun-orange);
+  color: #FFF;
+  border-color: var(--braun-orange);
+}
+
+.braun-vector-mini-btn.is-active .braun-led {
+  background-color: #FFF;
+}
+
+.braun-vector-surface-box {
+  position: relative;
+  flex: 1;
+  min-height: 116px;
+  background-color: var(--bg-bezel);
+  border: 1px solid var(--border-line);
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: none;
+  transition: border-color 0.15s ease;
+}
+
+.braun-vector-surface-box.is-active {
+  border-color: var(--braun-orange);
+  box-shadow: inset 0 0 12px rgba(238, 89, 43, 0.25);
+}
+
+.braun-vector-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.braun-vector-axis-label {
+  position: absolute;
+  font-size: 8px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+  text-transform: uppercase;
+  z-index: 2;
+}
+
+.braun-vector-axis-label.label-x-min { bottom: 4px; left: 8px; }
+.braun-vector-axis-label.label-x-max { bottom: 4px; right: 8px; }
+.braun-vector-axis-label.label-y-max { top: 4px; left: 8px; }
+.braun-vector-axis-label.label-y-min { bottom: 4px; left: 50%; transform: translateX(-50%); }
+
+.braun-vector-readout {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-line);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+
+.braun-vector-coords {
+  display: flex;
+  align-items: center;
+}
+
+.braun-vector-readout-val {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.braun-vector-readout-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* --- Chime Strip Deck --- */
+.braun-chime-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .braun-chime-strip {

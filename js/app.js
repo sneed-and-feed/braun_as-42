@@ -8,6 +8,7 @@ import { AudioEngine } from './audio/engine.js';
 import { BraunKnob } from './ui/knob.js';
 import { BraunOscilloscope } from './ui/oscilloscope.js';
 import { BraunPlaySurface } from './ui/keyboard.js';
+import { BraunVectorPad } from './ui/vector-pad.js';
 import { SCALES, NOTE_NAMES } from './generative/scales.js';
 
 export class AmbientApp {
@@ -15,6 +16,8 @@ export class AmbientApp {
     this.engine = new AudioEngine();
     this.scope = null;
     this.playSurface = null;
+    this.vectorPad = null;
+    this.knobs = {};
     this.isPowerOn = false;
     this._initialized = false;
     this._knobsBuilt = false;
@@ -254,8 +257,40 @@ export class AmbientApp {
       };
     }
 
+    // Render Braun AS 42 Precision Vector Touchpad
+    const vectorContainer = document.getElementById('vector-pad');
+    if (vectorContainer && !this.vectorPad) {
+      this.vectorPad = new BraunVectorPad(vectorContainer, {
+        engine: this.engine,
+        onEngage: async () => {
+          if (!this.isPowerOn) {
+            await this.startAudio();
+          }
+        },
+        onChange: (data) => {
+          this._syncKnobsFromVectorPad(data);
+        }
+      });
+    }
+
     // Render All Rotary Knobs immediately
     this._buildKnobs();
+  }
+
+  _syncKnobsFromVectorPad(data) {
+    if (!this.knobs) return;
+    if (this.knobs.feltTone) {
+      this.knobs.feltTone.setValue(Math.round(data.feltTone * 100), false);
+    }
+    if (this.knobs.delayTime) {
+      this.knobs.delayTime.setValue(Math.round(data.delayTimeSec * 1000), false);
+    }
+    if (this.knobs.reverbShimmer) {
+      this.knobs.reverbShimmer.setValue(Math.round(data.shimmerAmount * 100), false);
+    }
+    if (this.knobs.reverbWet) {
+      this.knobs.reverbWet.setValue(Math.round(data.reverbWet * 100), false);
+    }
   }
 
   _renderLoopRows() {
@@ -400,14 +435,20 @@ export class AmbientApp {
     });
 
     // --- Harold Budd Felt Piano Knobs ---
-    new BraunKnob(document.getElementById('knob-felt-tone'), {
+    this.knobs.feltTone = new BraunKnob(document.getElementById('knob-felt-tone'), {
       label: 'FELT DAMP',
       min: 0,
       max: 100,
       value: 62,
       unit: '%',
       size: 'medium',
-      onChange: (v) => this.engine.setFeltTone(v / 100)
+      onChange: (v) => {
+        this.engine.setFeltTone(v / 100);
+        if (this.vectorPad && !this.vectorPad.isEngaged) {
+          const normX = Math.max(0, Math.min(1, (v / 100 - 0.15) / 0.80));
+          this.vectorPad.setCoordinates(normX, this.vectorPad.y, false);
+        }
+      }
     });
 
     new BraunKnob(document.getElementById('knob-felt-hammer'), {
@@ -448,7 +489,7 @@ export class AmbientApp {
     this._setupDroneVoiceControls(2);
 
     // --- Brian Eno Tape Delay Knobs ---
-    new BraunKnob(document.getElementById('knob-delay-time'), {
+    this.knobs.delayTime = new BraunKnob(document.getElementById('knob-delay-time'), {
       label: 'TAPE TIME',
       min: 100,
       max: 1500,
@@ -456,7 +497,13 @@ export class AmbientApp {
       step: 10,
       unit: 'ms',
       size: 'medium',
-      onChange: (v) => this.engine.setDelayTime(v / 1000)
+      onChange: (v) => {
+        this.engine.setDelayTime(v / 1000);
+        if (this.vectorPad && !this.vectorPad.isEngaged) {
+          const normY = Math.max(0, Math.min(1, (v / 1000 - 0.10) / 0.85));
+          this.vectorPad.setCoordinates(this.vectorPad.x, normY, false);
+        }
+      }
     });
 
     new BraunKnob(document.getElementById('knob-delay-fb'), {
@@ -522,17 +569,23 @@ export class AmbientApp {
       onChange: (v) => this.engine.setReverbDamping(v / 100)
     });
 
-    new BraunKnob(document.getElementById('knob-reverb-shimmer'), {
+    this.knobs.reverbShimmer = new BraunKnob(document.getElementById('knob-reverb-shimmer'), {
       label: 'SHIMMER +12',
       min: 0,
       max: 100,
       value: 45,
       unit: '%',
       size: 'medium',
-      onChange: (v) => this.engine.setReverbShimmer(v / 100)
+      onChange: (v) => {
+        this.engine.setReverbShimmer(v / 100);
+        if (this.vectorPad && !this.vectorPad.isEngaged) {
+          const normY = Math.max(0, Math.min(1, (v / 100 - 0.15) / 0.70));
+          this.vectorPad.setCoordinates(this.vectorPad.x, normY, false);
+        }
+      }
     });
 
-    new BraunKnob(document.getElementById('knob-reverb-wet'), {
+    this.knobs.reverbWet = new BraunKnob(document.getElementById('knob-reverb-wet'), {
       label: 'REVERB MIX',
       min: 0,
       max: 100,

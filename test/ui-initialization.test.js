@@ -15,6 +15,7 @@ class MockElement {
     this.attributes = new Map();
     this.style = {};
     const set = new Set();
+    this._classSet = set;
     this.classList = {
       add: (c) => set.add(c),
       remove: (c) => set.delete(c),
@@ -30,8 +31,31 @@ class MockElement {
     };
     this.listeners = new Map();
     this.value = '';
-    this.textContent = '';
+    this._textContent = '';
     this._innerHTML = '';
+  }
+
+  get className() {
+    return Array.from(this._classSet).join(' ');
+  }
+
+  set className(v) {
+    this._classSet.clear();
+    if (v) {
+      String(v).split(/\s+/).filter(Boolean).forEach(c => this._classSet.add(c));
+    }
+  }
+
+  get textContent() {
+    if (this._textContent) return this._textContent;
+    if (this.children && this.children.length > 0) {
+      return this.children.map(c => c.textContent).join(' ');
+    }
+    return '';
+  }
+
+  set textContent(v) {
+    this._textContent = v;
   }
 
   get innerHTML() {
@@ -71,6 +95,7 @@ class MockElement {
     this.attributes.set(name, String(val));
     if (name === 'id') this.id = String(val);
     if (name === 'value') this.value = String(val);
+    if (name === 'class') this.className = String(val);
   }
 
   getAttribute(name) {
@@ -289,9 +314,10 @@ function setupMockBrowser() {
   register('knob-reverb-shimmer');
   register('knob-reverb-wet');
 
-  // Chime and Chord macros
+  // Chime, Chord macros, and Vector Pad
   register('chord-macros');
   register('chime-strip');
+  register('vector-pad');
 
   const body = new MockElement('body');
   for (const el of elementsById.values()) {
@@ -610,5 +636,73 @@ describe('UI Initialization and DOM Wiring Verification', () => {
 
     assert.strictEqual(app.isPowerOn, true, 'Activating drone voice should auto-power synth');
     assert.strictEqual(app.engine.droneParams[1].active, true);
+  });
+
+  it('verifies Braun AS 42 Vector Touchpad renders immediately, controls engine parameters, and auto-powers on system', async () => {
+    const { elementsById } = setupMockBrowser();
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    assert.ok(app.vectorPad, 'AmbientApp must instantiate vectorPad');
+    assert.strictEqual(app.vectorPad.x, 0.50);
+    assert.strictEqual(app.vectorPad.y, 0.50);
+    assert.strictEqual(app.vectorPad.mode, 'momentary');
+
+    // Modulate coordinates
+    app.vectorPad.setCoordinates(0.85, 0.75, true);
+    assert.strictEqual(app.vectorPad.x, 0.85);
+    assert.strictEqual(app.vectorPad.y, 0.75);
+
+    // Engine parameters should be updated
+    // X maps to feltTone: 0.15 + 0.85 * 0.80 = 0.83
+    assert.ok(Math.abs(app.engine.feltParams.tone - 0.83) < 1e-3);
+    // Y maps to delayTime: 0.10 + 0.75 * 0.85 = 0.7375
+    assert.ok(Math.abs(app.engine.delayParams.time - 0.7375) < 1e-3);
+    // Y maps to shimmer: 0.15 + 0.75 * 0.70 = 0.675
+    assert.ok(Math.abs(app.engine.reverbParams.shimmer - 0.675) < 1e-3);
+
+    // Toggle mode to latch
+    app.vectorPad.toggleMode();
+    assert.strictEqual(app.vectorPad.mode, 'latch');
+
+    // Reset to center
+    app.vectorPad.resetToCenter();
+    assert.strictEqual(app.vectorPad.x, 0.50);
+    assert.strictEqual(app.vectorPad.y, 0.50);
+
+    // Touching vector pad when power is off triggers auto-power on
+    assert.strictEqual(app.isPowerOn, false);
+    if (app.vectorPad.onEngage) {
+      await app.vectorPad.onEngage();
+    }
+    assert.strictEqual(app.isPowerOn, true, 'Engaging vector pad when power is off should auto-power synth');
+  });
+
+  it('verifies chord macro buttons render as 2x5 matrix with key badges and trigger flashChord state', async () => {
+    const { elementsById } = setupMockBrowser();
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const chordsEl = elementsById.get('chord-macros');
+    assert.ok(chordsEl);
+    assert.ok(chordsEl.classList.contains('braun-chord-macros-grid'), 'Chord container must have braun-chord-macros-grid class');
+
+    const chordBtns = chordsEl.children;
+    assert.strictEqual(chordBtns.length, 10, 'There must be exactly 10 chord macro buttons (2x5 grid)');
+
+    // Verify key shortcut badges: 1-5 on top row, 6-0 on bottom row
+    const expectedKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+    expectedKeys.forEach((k, idx) => {
+      const btn = chordBtns[idx];
+      assert.ok(btn.getAttribute('data-chord'), `Button ${idx} must have data-chord`);
+      assert.ok(btn.textContent.includes(k), `Button ${idx} must include shortcut key ${k}`);
+    });
+
+    // Test playing chord activates button flash
+    const firstChordId = chordBtns[0].getAttribute('data-chord');
+    app.playSurface.flashChord(firstChordId);
+    assert.ok(chordBtns[0].classList.contains('is-active'), 'Playing chord must activate is-active class');
   });
 });
