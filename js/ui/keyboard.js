@@ -115,12 +115,38 @@ export class BraunPlaySurface {
         <span class="braun-chord-desc">${voicing.description}</span>
       `;
 
+      btn.addEventListener('mouseenter', () => {
+        this._updateChordReadout(voicing, false);
+      });
+
       btn.addEventListener('click', () => {
         this.playChord(voicing.id);
       });
 
       this.chordsContainer.appendChild(btn);
     });
+  }
+
+  _updateChordReadout(voicing, isTriggered = false) {
+    if (typeof document === 'undefined') return;
+    const nameEl = document.getElementById('chord-readout-name');
+    const descEl = document.getElementById('chord-readout-desc');
+    const ledEl = document.getElementById('chord-status-led');
+    if (voicing && nameEl) {
+      nameEl.textContent = voicing.name;
+    }
+    if (voicing && descEl) {
+      descEl.textContent = voicing.description;
+    }
+    if (isTriggered && ledEl) {
+      ledEl.style.backgroundColor = 'var(--braun-orange)';
+      ledEl.style.boxShadow = '0 0 6px var(--braun-orange)';
+      if (ledEl._timer) clearTimeout(ledEl._timer);
+      ledEl._timer = setTimeout(() => {
+        ledEl.style.backgroundColor = '';
+        ledEl.style.boxShadow = '';
+      }, 700);
+    }
   }
 
   /**
@@ -171,6 +197,10 @@ export class BraunPlaySurface {
         btn.classList.remove('is-active');
         btn._flashTimer = null;
       }, 250);
+    }
+    const voicing = CHORD_VOICINGS[voicingId] || Object.values(CHORD_VOICINGS).find(v => v.id === voicingId);
+    if (voicing) {
+      this._updateChordReadout(voicing, true);
     }
   }
 

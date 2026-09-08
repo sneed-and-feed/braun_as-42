@@ -41,7 +41,7 @@ describe('Wavefolder and Saturation Transfer Curves', () => {
     assert.ok(extremaCount >= 2, `Wavefolding curve should have folding peaks, found ${extremaCount}`);
   });
 
-  it('tape saturation curve is bounded and smooth', () => {
+  it('tape saturation curve is bounded, smooth, and unity-normalized', () => {
     const curve = makeTapeSaturationCurve(2048, 0.4);
     assert.strictEqual(curve.length, 2048);
 
@@ -49,5 +49,17 @@ describe('Wavefolder and Saturation Transfer Curves', () => {
       assert.ok(curve[i] >= -1.0 && curve[i] <= 1.0);
       assert.ok(!Number.isNaN(curve[i]));
     }
+
+    // Endpoint unity bounds check
+    assert.ok(Math.abs(curve[curve.length - 1] - 1.0) < 1e-4, 'Peak positive saturation should reach unity 1.0');
+    assert.ok(curve[0] <= -0.95, 'Peak negative saturation should reach negative unity headroom');
+
+    // Zero-warmth should be perfectly transparent linear response
+    const linearCurve = makeTapeSaturationCurve(2048, 0);
+    assert.strictEqual(linearCurve.length, 2048);
+    assert.ok(Math.abs(linearCurve[0] - (-1.0)) < 1e-5);
+    assert.ok(Math.abs(linearCurve[linearCurve.length - 1] - 1.0) < 1e-5);
+    const mid = Math.floor(linearCurve.length / 2);
+    assert.ok(Math.abs(linearCurve[mid]) < 1e-3);
   });
 });

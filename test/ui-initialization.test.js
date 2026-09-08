@@ -319,6 +319,9 @@ function setupMockBrowser() {
 
   // Chime, Chord macros, and Vector Pad
   register('chord-macros');
+  register('chord-readout-name');
+  register('chord-readout-desc');
+  register('chord-status-led');
   register('chime-strip');
   register('vector-pad');
 
@@ -720,10 +723,12 @@ describe('UI Initialization and DOM Wiring Verification', () => {
       assert.ok(btn.textContent.includes(k), `Button ${idx} must include shortcut key ${k}`);
     });
 
-    // Test playing chord activates button flash
+    // Test playing chord activates button flash and updates chord readout
     const firstChordId = chordBtns[0].getAttribute('data-chord');
     app.playSurface.flashChord(firstChordId);
     assert.ok(chordBtns[0].classList.contains('is-active'), 'Playing chord must activate is-active class');
+    const chordNameEl = elementsById.get('chord-readout-name');
+    assert.ok(chordNameEl && chordNameEl.textContent === 'Pavilion Suspended', 'Playing chord must update chord readout name');
   });
 
   it('verifies drone quick-snap tuning buttons are wired, set presets, and auto-power on', async () => {

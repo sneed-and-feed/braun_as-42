@@ -63,14 +63,27 @@ export function makeTapeSaturationCurve(samples = 2048, warmth = 0.35) {
   const curve = new Float32Array(samples);
   const half = (samples - 1) / 2;
 
+  // Transparent linear response at zero warmth
+  if (warmth <= 0.001) {
+    for (let i = 0; i < samples; i++) {
+      curve[i] = (i - half) / half;
+    }
+    return curve;
+  }
+
+  // Pre-calculate endpoint normalization factor so peak headroom is preserved at +/-1.0
+  const posDrive = 1.0 + warmth * 1.5;
+  const asymPos = 1.0 + warmth * 0.25;
+  const maxOut = (2 / Math.PI) * Math.atan(posDrive * asymPos);
+
   for (let i = 0; i < samples; i++) {
     const x = (i - half) / half; // -1 to +1
-    // Tape magnetic hysteresis simulation
-    // Asymmetrical 2nd harmonic warmth
-    const asym = x + warmth * 0.2 * x * x * Math.sign(x);
-    // Soft arctan knee
-    const saturated = (2 / Math.PI) * Math.atan(1.7 * asym);
-    curve[i] = Math.max(-1, Math.min(1, saturated));
+    // Tape magnetic hysteresis simulation with asymmetrical 2nd harmonic warmth
+    const asym = x + warmth * 0.25 * x * x * Math.sign(x);
+    // Soft saturation knee with drive scaling
+    const saturated = (2 / Math.PI) * Math.atan(posDrive * asym);
+    // Normalized to unity peak bounds
+    curve[i] = Math.max(-1, Math.min(1, saturated / maxOut));
   }
 
   return curve;

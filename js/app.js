@@ -645,9 +645,7 @@ export class AmbientApp {
       unit: '%',
       size: 'small',
       onChange: (v) => {
-        if (this.engine.poisson) {
-          this.engine.poisson.setParameters({ humanize: v / 100 });
-        }
+        this.engine.setPoissonHumanize(v / 100);
       }
     });
   }
