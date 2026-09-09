@@ -83,10 +83,22 @@ class MockConvolverNode extends MockAudioNode {
   }
 }
 
+class MockDynamicsCompressorNode extends MockAudioNode {
+  constructor() {
+    super('dynamicsCompressor');
+    this.threshold = new MockAudioParam(-3.0);
+    this.knee = new MockAudioParam(12.0);
+    this.ratio = new MockAudioParam(8.0);
+    this.attack = new MockAudioParam(0.003);
+    this.release = new MockAudioParam(0.060);
+  }
+}
+
 class MockAudioContext {
   constructor() {
     this.sampleRate = 48000;
     this.currentTime = 0;
+    this.destination = new MockAudioNode('destination');
   }
   createGain() {
     return new MockGainNode(1);
@@ -100,6 +112,15 @@ class MockAudioContext {
   createDelay(max = 1.0) {
     const node = new MockAudioNode('delay');
     node.delayTime = new MockAudioParam(0);
+    return node;
+  }
+  createDynamicsCompressor() {
+    return new MockDynamicsCompressorNode();
+  }
+  createAnalyser() {
+    const node = new MockAudioNode('analyser');
+    node.fftSize = 2048;
+    node.smoothingTimeConstant = 0.82;
     return node;
   }
   createBuffer(channels, length, rate) {
@@ -226,6 +247,27 @@ describe('Bug 1 Regression: Reverb Diffusion & Air Damp Smoothness', () => {
     engine.setReverbDamp(0.40);
     assert.strictEqual(engine.reverbParams.damping, 0.40);
   });
+
+  it('guarantees setDamping does NOT schedule or trigger impulse regeneration even after debounce delay', async () => {
+    const ctx = new MockAudioContext();
+    const reverb = new ShimmerReverb(ctx, { damping: 0.60 });
+
+    const initialConvolver = reverb.convolver;
+    assert.strictEqual(reverb.activeConvolver, 'A');
+
+    // Rapidly turn damping knob multiple times
+    reverb.setDamping(0.20);
+    reverb.setDamping(0.85);
+    reverb.setDamp(0.40);
+
+    // Wait 120ms (well past any 60ms debounce window)
+    await new Promise(r => setTimeout(r, 120));
+
+    // Convolver must remain completely untouched (no impulse regeneration, no convolver swap)
+    assert.strictEqual(reverb.convolver, initialConvolver, 'Convolver node must remain untouched on damping changes');
+    assert.strictEqual(reverb.activeConvolver, 'A', 'Active convolver must stay on A without crossfading');
+    assert.strictEqual(reverb._regenTimer, null, 'No regeneration timer should be active');
+  });
 });
 
 describe('Bug 2 Regression: Held Chords & Clickless Note Triggers', () => {
@@ -314,5 +356,85 @@ describe('Bug 2 Regression: Held Chords & Clickless Note Triggers', () => {
     const attackRamp = gainEvents.find(e => e.type === 'linearRampToValueAtTime' && e.val > 0.1);
     assert.ok(attackRamp, 'Must schedule attack ramp after de-click ramp');
     assert.ok(attackRamp.time > 10.055, 'Attack ramp must start after de-click ramp completes');
+  });
+
+  it('strictly protects held chord voices from voice stealing even when all pool voices are held', () => {
+    const ctx = new MockAudioContext();
+    const synth = new FeltPianoSynthesizer(ctx, null, 6); // Small pool of 6 voices
+
+    // Trigger and hold 3-voice chord cluster (marked isChord = true)
+    const chordVoices = [];
+    for (let i = 0; i < 3; i++) {
+      const v = synth.playNote(261.63 + i * 40, 0.7, 20.0, true, true);
+      chordVoices.push(v);
+    }
+
+    // Trigger and hold 3 melody notes (isChord = false, isHold = true)
+    const melodyVoices = [];
+    for (let i = 0; i < 3; i++) {
+      const v = synth.playNote(523.25 + i * 50, 0.6, 20.0, true, false);
+      melodyVoices.push(v);
+    }
+
+    assert.strictEqual(synth.voices.filter(v => v.isActive).length, 6);
+    // All 6 voices are held
+    synth.voices.forEach(v => assert.strictEqual(v.isHold, true));
+
+    // Now user strikes an additional chime note: voice stealing MUST steal from melodyVoices, NEVER chordVoices!
+    const stolenVoice = synth.playNote(880.0, 0.8, 3.5, false, false);
+    assert.ok(stolenVoice, 'A voice must be allocated');
+    assert.strictEqual(chordVoices.includes(stolenVoice), false, 'Held chord voice must not be stolen');
+    assert.ok(melodyVoices.includes(stolenVoice), 'Melody note must be stolen instead of chord');
+  });
+
+  it('calculates continuous getEstimatedGain during sustain preventing upward amplitude jumps on release', () => {
+    const ctx = new MockAudioContext();
+    ctx.currentTime = 5.0;
+    const synth = new FeltPianoSynthesizer(ctx, null, 2);
+
+    const voice = synth.playNote(440.0, 0.8, 20.0, true);
+    // Advance to 6.0s (in steady hold sustain)
+    ctx.currentTime = 6.0;
+
+    const estimated = voice.getEstimatedGain(6.0);
+    assert.ok(estimated > 0.05 && estimated <= 0.16, `Estimated gain in sustain expected ~0.12, got ${estimated}`);
+
+    // Call release at 6.0
+    voice.release();
+
+    const gainEvents = voice.voiceGain.gain.events.filter(e => e.time >= 6.0);
+    // When cancelScheduledValues runs, value set at cancelTime must be <= 0.16 (never peakGain ~0.24)
+    const setEvent = gainEvents.find(e => e.type === 'setValueAtTime');
+    if (setEvent) {
+      assert.ok(setEvent.val <= 0.16, `Release cancelTime gain must reflect sustain level <= 0.16, got ${setEvent.val}`);
+    }
+  });
+
+  it('smoothly anchors and ramps filter cutoffs in CS-80 mode during voice stealing', () => {
+    const ctx = new MockAudioContext();
+    ctx.currentTime = 20.0;
+    const synth = new FeltPianoSynthesizer(ctx, null, 1);
+    synth.setWaveform('cs80');
+
+    synth.playNote(220.0, 0.7, 5.0);
+
+    // Steal voice at 20.05s
+    ctx.currentTime = 20.05;
+    synth.playNote(440.0, 0.8, 5.0);
+
+    const filterEvents = synth.voices[0].filter1.frequency.events.filter(e => e.time >= 20.05);
+    // Filter must ramp down smoothly to brassStartCutoff at noteStartTime (20.055)
+    const rampEvent = filterEvents.find(e => e.type === 'linearRampToValueAtTime' && Math.abs(e.time - 20.055) < 1e-4);
+    assert.ok(rampEvent, 'CS-80 filter must ramp smoothly to brassStartCutoff over de-click window');
+  });
+
+  it('verifies FeltPianoSynthesizer exposes pianoBus alias and masterCompressor has 12dB soft knee', async () => {
+    const ctx = new MockAudioContext();
+    const synth = new FeltPianoSynthesizer(ctx, null, 4);
+    assert.strictEqual(synth.pianoBus, synth.output, 'synth.pianoBus must alias synth.output');
+
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+    assert.strictEqual(engine.masterCompressor.knee.value, 12.0, 'masterCompressor must have 12 dB soft knee');
   });
 });

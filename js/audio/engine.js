@@ -15,8 +15,8 @@ import { SCALES, NOTE_NAMES, midiToFrequency } from '../generative/scales.js';
 import { makeSoftClipCurve, makeTapeSaturationCurve, makeLimiterCurve } from './wavefolder.js';
 
 export class AudioEngine {
-  constructor() {
-    this.ctx = null;
+  constructor(ctx = null) {
+    this.ctx = ctx;
     this.isInitialized = false;
     this.isRecording = false;
 
@@ -170,7 +170,7 @@ export class AudioEngine {
     if (this.ctx.createDynamicsCompressor) {
       this.masterCompressor = this.ctx.createDynamicsCompressor();
       this.masterCompressor.threshold.setValueAtTime(-3.0, this.ctx.currentTime); // -3 dBFS
-      this.masterCompressor.knee.setValueAtTime(6.0, this.ctx.currentTime);
+      this.masterCompressor.knee.setValueAtTime(12.0, this.ctx.currentTime); // 12 dB smooth soft knee prevents hard threshold ducking clicks
       this.masterCompressor.ratio.setValueAtTime(8.0, this.ctx.currentTime); // 8:1 ratio
       this.masterCompressor.attack.setValueAtTime(0.003, this.ctx.currentTime); // 3ms attack
       this.masterCompressor.release.setValueAtTime(0.060, this.ctx.currentTime);

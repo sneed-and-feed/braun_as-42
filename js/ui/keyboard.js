@@ -558,7 +558,7 @@ export class BraunPlaySurface {
     const triggerChordVoice = (freq, vel, midi) => {
       this.flashKey(midi);
       const playVoice = (piano) => {
-        const voice = piano.playNote(freq, vel, duration, isHold);
+        const voice = piano.playNote(freq, vel, duration, isHold, true);
         if (voice) {
           session.voices.push(voice);
           if (session.isReleased) {

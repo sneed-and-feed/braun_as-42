@@ -38,11 +38,13 @@ export class ShimmerReverb {
     // Wet convolver path with dual crossfaded convolvers and real-time air damping filter
     this.convolverA = ctx.createConvolver();
     this.convolverA.normalize = true;
-    this.convolverB = ctx.createConvolver();
-    this.convolverB.normalize = true;
+    this.convolverB = null;
     this.convolver = this.convolverA;
     this.activeConvolver = 'A';
     this._hasInitialBuffer = false;
+    this._crossfadeCleanupTimer = null;
+    this._fadingConvolver = null;
+    this._regenTimer = null;
 
     this.convolverGainA = ctx.createGain();
     this.convolverGainB = ctx.createGain();
@@ -67,9 +69,7 @@ export class ShimmerReverb {
 
     this.input.connect(this.reverbPreGain);
     this.reverbPreGain.connect(this.convolverA);
-    this.reverbPreGain.connect(this.convolverB);
     this.convolverA.connect(this.convolverGainA);
-    this.convolverB.connect(this.convolverGainB);
     this.convolverGainA.connect(this.convolverBus);
     this.convolverGainB.connect(this.convolverBus);
     this.convolverBus.connect(this.dampingFilter);
@@ -303,44 +303,86 @@ export class ShimmerReverb {
     newConvolver.normalize = true;
     newConvolver.buffer = impulseBuffer;
 
+    if (this._crossfadeCleanupTimer) {
+      clearTimeout(this._crossfadeCleanupTimer);
+      this._crossfadeCleanupTimer = null;
+      if (this._fadingConvolver) {
+        try {
+          this.reverbPreGain.disconnect(this._fadingConvolver);
+          this._fadingConvolver.disconnect();
+        } catch (e) {}
+        this._fadingConvolver = null;
+      }
+    }
+
     if (this.activeConvolver === 'A') {
       const oldConvolver = this.convolverA;
+      this._fadingConvolver = oldConvolver;
       this.convolverB = newConvolver;
       this.convolver = newConvolver;
       this.reverbPreGain.connect(newConvolver);
       newConvolver.connect(this.convolverGainB);
 
+      if (typeof this.convolverGainB.gain.cancelAndHoldAtTime === 'function') {
+        this.convolverGainB.gain.cancelAndHoldAtTime(now);
+        this.convolverGainA.gain.cancelAndHoldAtTime(now);
+      } else if (typeof this.convolverGainB.gain.cancelScheduledValues === 'function') {
+        this.convolverGainB.gain.cancelScheduledValues(now);
+        this.convolverGainA.gain.cancelScheduledValues(now);
+        if (typeof this.convolverGainB.gain.setValueAtTime === 'function') {
+          this.convolverGainB.gain.setValueAtTime(this.convolverGainB.gain.value ?? 0.0, now);
+          this.convolverGainA.gain.setValueAtTime(this.convolverGainA.gain.value ?? 1.0, now);
+        }
+      }
+
       this.convolverGainB.gain.setTargetAtTime(1.0, now, crossfadeTime);
       this.convolverGainA.gain.setTargetAtTime(0.0, now, crossfadeTime);
       this.activeConvolver = 'B';
 
-      setTimeout(() => {
+      this._crossfadeCleanupTimer = setTimeout(() => {
         try {
-          if (oldConvolver) {
-            this.reverbPreGain.disconnect(oldConvolver);
-            oldConvolver.disconnect();
+          if (this._fadingConvolver) {
+            this.reverbPreGain.disconnect(this._fadingConvolver);
+            this._fadingConvolver.disconnect();
           }
         } catch (e) {}
-      }, 150);
+        this._fadingConvolver = null;
+        this._crossfadeCleanupTimer = null;
+      }, 250);
     } else {
       const oldConvolver = this.convolverB;
+      this._fadingConvolver = oldConvolver;
       this.convolverA = newConvolver;
       this.convolver = newConvolver;
       this.reverbPreGain.connect(newConvolver);
       newConvolver.connect(this.convolverGainA);
 
+      if (typeof this.convolverGainA.gain.cancelAndHoldAtTime === 'function') {
+        this.convolverGainA.gain.cancelAndHoldAtTime(now);
+        this.convolverGainB.gain.cancelAndHoldAtTime(now);
+      } else if (typeof this.convolverGainA.gain.cancelScheduledValues === 'function') {
+        this.convolverGainA.gain.cancelScheduledValues(now);
+        this.convolverGainB.gain.cancelScheduledValues(now);
+        if (typeof this.convolverGainA.gain.setValueAtTime === 'function') {
+          this.convolverGainA.gain.setValueAtTime(this.convolverGainA.gain.value ?? 0.0, now);
+          this.convolverGainB.gain.setValueAtTime(this.convolverGainB.gain.value ?? 1.0, now);
+        }
+      }
+
       this.convolverGainA.gain.setTargetAtTime(1.0, now, crossfadeTime);
       this.convolverGainB.gain.setTargetAtTime(0.0, now, crossfadeTime);
       this.activeConvolver = 'A';
 
-      setTimeout(() => {
+      this._crossfadeCleanupTimer = setTimeout(() => {
         try {
-          if (oldConvolver) {
-            this.reverbPreGain.disconnect(oldConvolver);
-            oldConvolver.disconnect();
+          if (this._fadingConvolver) {
+            this.reverbPreGain.disconnect(this._fadingConvolver);
+            this._fadingConvolver.disconnect();
           }
         } catch (e) {}
-      }, 150);
+        this._fadingConvolver = null;
+        this._crossfadeCleanupTimer = null;
+      }, 250);
     }
   }
 
@@ -364,6 +406,7 @@ export class ShimmerReverb {
   setDamping(damping) {
     this.damping = Math.max(0.05, Math.min(0.98, damping));
     // Real-time damping filter responds immediately and continuously without delay
+    // Eliminates convolver buffer hot-swapping and audio thread underruns during air damp knob turns
     if (this.dampingFilter && this.dampingFilter.frequency) {
       const cutoff = this._calculateDampingCutoff(this.damping);
       const now = this.ctx.currentTime;
@@ -373,7 +416,6 @@ export class ShimmerReverb {
         this.dampingFilter.frequency.setValueAtTime(cutoff, now);
       }
     }
-    this._scheduleImpulseRegeneration();
   }
 
   setDamp(damping) {
