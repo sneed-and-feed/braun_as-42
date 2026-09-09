@@ -119,10 +119,30 @@ export class AudioEngine {
   async init() {
     if (this.isInitialized && this.ctx) {
       if (this.ctx.state === 'suspended') {
+        if (this.masterGain && this.masterGain.gain) {
+          if (typeof this.masterGain.gain.cancelScheduledValues === 'function') {
+            this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+          }
+          this.masterGain.gain.setValueAtTime(0.0, this.ctx.currentTime);
+        }
         try {
           await this.ctx.resume();
         } catch (e) {
           console.warn('AudioContext resume deferred:', e);
+        }
+        if (this.masterGain && this.masterGain.gain) {
+          const now = this.ctx.currentTime;
+          if (typeof this.masterGain.gain.cancelScheduledValues === 'function') {
+            this.masterGain.gain.cancelScheduledValues(now);
+          }
+          if (typeof this.masterGain.gain.setValueAtTime === 'function') {
+            this.masterGain.gain.setValueAtTime(0.0, now);
+          }
+          if (typeof this.masterGain.gain.setTargetAtTime === 'function') {
+            this.masterGain.gain.setTargetAtTime(this.masterVolume, now + 0.005, 0.025);
+          } else {
+            this.masterGain.gain.value = this.masterVolume;
+          }
         }
       }
       return;
@@ -149,7 +169,12 @@ export class AudioEngine {
 
     // --- Master Bus & Limiter ---
     this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
+    this.masterGain.gain.setValueAtTime(0.0, this.ctx.currentTime);
+    if (typeof this.masterGain.gain.setTargetAtTime === 'function') {
+      this.masterGain.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime + 0.005, 0.025);
+    } else {
+      this.masterGain.gain.value = this.masterVolume;
+    }
 
     // Analog Soft Limiter (prevents digital clipping, transparent unity gain below knee)
     this.masterLimiter = this.ctx.createWaveShaper();
@@ -165,6 +190,18 @@ export class AudioEngine {
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this.analyser.smoothingTimeConstant = 0.82;
+
+    // Master DC Blocker (15 Hz highpass, Q=0.707) removes subsonic DC offsets that cause clicks on note triggers and power transitions
+    this.masterDcBlocker = this.ctx.createBiquadFilter ? this.ctx.createBiquadFilter() : null;
+    if (this.masterDcBlocker) {
+      this.masterDcBlocker.type = 'highpass';
+      if (this.masterDcBlocker.frequency && typeof this.masterDcBlocker.frequency.setValueAtTime === 'function') {
+        this.masterDcBlocker.frequency.setValueAtTime(15, this.ctx.currentTime);
+      }
+      if (this.masterDcBlocker.Q && typeof this.masterDcBlocker.Q.setValueAtTime === 'function') {
+        this.masterDcBlocker.Q.setValueAtTime(0.707, this.ctx.currentTime);
+      }
+    }
 
     // Master Bus Peak Compressor / Brickwall Limiter (transparent protection against polyphonic summing overloads)
     if (this.ctx.createDynamicsCompressor) {
@@ -182,7 +219,12 @@ export class AudioEngine {
       this.masterGain.connect(this.masterTapeSaturator);
       this.masterTapeSaturator.connect(this.masterLimiter);
     }
-    this.masterLimiter.connect(this.analyser);
+    if (this.masterDcBlocker) {
+      this.masterLimiter.connect(this.masterDcBlocker);
+      this.masterDcBlocker.connect(this.analyser);
+    } else {
+      this.masterLimiter.connect(this.analyser);
+    }
     this.analyser.connect(this.ctx.destination);
 
     // --- FX Processors ---
@@ -447,8 +489,9 @@ export class AudioEngine {
   }
 
   setDroneActive(id, active) {
-    this.droneParams[id].active = active;
-    const drone = id === 1 ? this.drone1 : this.drone2;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].active = active;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) {
       return drone.setActive(active);
     }
@@ -456,56 +499,85 @@ export class AudioEngine {
   }
 
   setDroneWaveA(id, wave) {
-    this.droneParams[id].waveA = wave;
-    const drone = id === 1 ? this.drone1 : this.drone2;
-    if (drone) drone.setWaveA(wave);
+    const raw = (typeof wave === 'string') ? wave.trim().toLowerCase() : wave;
+    const norm = (raw === 'sqr' || raw === 'square') ? 'square'
+      : (raw === 'saw' || raw === 'sawtooth') ? 'saw'
+      : (raw === 'tri' || raw === 'triangle') ? 'triangle'
+      : (raw === 'sin' || raw === 'sine') ? 'sine'
+      : raw;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].waveA = norm;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
+    if (drone) drone.setWaveA(norm);
   }
 
   setDroneWaveB(id, wave) {
-    this.droneParams[id].waveB = wave;
-    const drone = id === 1 ? this.drone1 : this.drone2;
-    if (drone) drone.setWaveB(wave);
+    const raw = (typeof wave === 'string') ? wave.trim().toLowerCase() : wave;
+    const norm = (raw === 'sqr' || raw === 'square') ? 'square'
+      : (raw === 'saw' || raw === 'sawtooth') ? 'saw'
+      : (raw === 'tri' || raw === 'triangle') ? 'triangle'
+      : (raw === 'sin' || raw === 'sine') ? 'sine'
+      : raw;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].waveB = norm;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
+    if (drone) drone.setWaveB(norm);
+  }
+
+  setDroneWaveformA(id, wave) {
+    return this.setDroneWaveA(id, wave);
+  }
+
+  setDroneWaveformB(id, wave) {
+    return this.setDroneWaveB(id, wave);
   }
 
   setDroneBeating(id, hz) {
-    this.droneParams[id].beat = hz;
-    const drone = id === 1 ? this.drone1 : this.drone2;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].beat = hz;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) drone.setBeatingHz(hz);
   }
 
   setDroneDetune(id, cents) {
-    this.droneParams[id].detune = cents;
-    const drone = id === 1 ? this.drone1 : this.drone2;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].detune = cents;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) drone.setDetuneCents(cents);
   }
 
   setDroneWavefold(id, percent) {
-    this.droneParams[id].fold = percent;
-    const drone = id === 1 ? this.drone1 : this.drone2;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].fold = percent;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) drone.setWavefold(1.0 + (percent / 50), percent / 100);
   }
 
   setDroneCutoff(id, hz) {
-    this.droneParams[id].cutoff = hz;
-    const drone = id === 1 ? this.drone1 : this.drone2;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].cutoff = hz;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) drone.setCutoff(hz);
   }
 
   setDroneResonance(id, q) {
-    this.droneParams[id].res = q;
-    const drone = id === 1 ? this.drone1 : this.drone2;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].res = q;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) drone.setResonance(q);
   }
 
   setDroneLfo(id, hz) {
-    this.droneParams[id].lfo = hz;
-    const drone = id === 1 ? this.drone1 : this.drone2;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].lfo = hz;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) drone.setLfo(hz, 180);
   }
 
   setDroneVolume(id, vol) {
-    this.droneParams[id].vol = vol;
-    const drone = id === 1 ? this.drone1 : this.drone2;
+    const voiceId = Number(id) === 2 ? 2 : 1;
+    this.droneParams[voiceId].vol = vol;
+    const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) drone.setVolume(vol);
   }
 

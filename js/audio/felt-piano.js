@@ -160,7 +160,11 @@ export class FeltPianoVoice {
    */
   setWaveform(type) {
     this.currentWaveform = type;
-    const isCS80 = (type === 'cs80' || type === 'vangelis');
+    const raw = (typeof type === 'string') ? type.trim().toLowerCase() : type;
+    const isCS80 = (raw === 'cs80' || raw === 'vangelis');
+    const isSquare = (raw === 'square' || raw === 'sqr');
+    const isSaw = (raw === 'saw' || raw === 'sawtooth');
+    const isSine = (raw === 'sine' || raw === 'sin');
 
     if (isCS80) {
       if (this.wavetables && this.wavetables.saw) {
@@ -181,7 +185,7 @@ export class FeltPianoVoice {
       if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
         this.chorusGain.gain.setValueAtTime(4.5, this.ctx.currentTime);
       }
-    } else if (type === 'saw') {
+    } else if (isSaw) {
       if (this.wavetables && this.wavetables.saw) {
         this.osc1.setPeriodicWave(this.wavetables.saw);
         this.osc2.setPeriodicWave(this.wavetables.warm || this.wavetables.saw);
@@ -198,7 +202,7 @@ export class FeltPianoVoice {
       if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
         this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
       }
-    } else if (type === 'square') {
+    } else if (isSquare) {
       if (this.wavetables && this.wavetables.square) {
         this.osc1.setPeriodicWave(this.wavetables.square);
         this.osc2.setPeriodicWave(this.wavetables.square);
@@ -610,8 +614,13 @@ export class FeltPianoVoice {
         this.filter1.frequency.linearRampToValueAtTime(brassStartCutoff, noteStartTime);
         this.filter2.frequency.linearRampToValueAtTime(brassStartCutoff, noteStartTime);
       } else {
-        this.filter1.frequency.setValueAtTime(brassStartCutoff, cancelTime);
-        this.filter2.frequency.setValueAtTime(brassStartCutoff, cancelTime);
+        if (noteStartTime > cancelTime) {
+          this.filter1.frequency.linearRampToValueAtTime(brassStartCutoff, noteStartTime);
+          this.filter2.frequency.linearRampToValueAtTime(brassStartCutoff, noteStartTime);
+        } else {
+          this.filter1.frequency.setValueAtTime(brassStartCutoff, cancelTime);
+          this.filter2.frequency.setValueAtTime(brassStartCutoff, cancelTime);
+        }
       }
 
       const brassAttackTarget = Math.max(noteStartTime + brassAttackTime, ctx.currentTime + 0.005);

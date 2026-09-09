@@ -93,10 +93,18 @@ export function createWavetableCache(ctx) {
   const triCoeffs = generateTriangleCoefficients(64);
   const warmCoeffs = generateWarmAnalogCoefficients(64);
 
+  const saw = ctx.createPeriodicWave(sawCoeffs.real, sawCoeffs.imag, { disableNormalization: false });
+  const square = ctx.createPeriodicWave(squareCoeffs.real, squareCoeffs.imag, { disableNormalization: false });
+  const triangle = ctx.createPeriodicWave(triCoeffs.real, triCoeffs.imag, { disableNormalization: false });
+  const warm = ctx.createPeriodicWave(warmCoeffs.real, warmCoeffs.imag, { disableNormalization: false });
+
   return {
-    saw: ctx.createPeriodicWave(sawCoeffs.real, sawCoeffs.imag, { disableNormalization: false }),
-    square: ctx.createPeriodicWave(squareCoeffs.real, squareCoeffs.imag, { disableNormalization: false }),
-    triangle: ctx.createPeriodicWave(triCoeffs.real, triCoeffs.imag, { disableNormalization: false }),
-    warm: ctx.createPeriodicWave(warmCoeffs.real, warmCoeffs.imag, { disableNormalization: false })
+    saw,
+    sawtooth: saw,
+    square,
+    sqr: square,
+    triangle,
+    tri: triangle,
+    warm
   };
 }

@@ -11,6 +11,18 @@ import { BraunPlaySurface, isPlayableSynthesizerKey } from './ui/keyboard.js';
 import { BraunVectorPad } from './ui/vector-pad.js';
 import { SCALES, NOTE_NAMES } from './generative/scales.js';
 
+export function isWaveformMatch(attr, target) {
+  if (!attr || !target) return false;
+  const a = attr.trim().toLowerCase();
+  const b = target.trim().toLowerCase();
+  if (a === b) return true;
+  if ((a === 'square' || a === 'sqr') && (b === 'square' || b === 'sqr')) return true;
+  if ((a === 'saw' || a === 'sawtooth') && (b === 'saw' || b === 'sawtooth')) return true;
+  if ((a === 'tri' || a === 'triangle') && (b === 'tri' || b === 'triangle')) return true;
+  if ((a === 'sin' || a === 'sine') && (b === 'sin' || b === 'sine')) return true;
+  return false;
+}
+
 export const PRESETS = {
   DEFAULT: {
     id: 'DEFAULT',
@@ -596,7 +608,7 @@ export class AmbientApp {
     if (stripContainer && chordsContainer && !this.playSurface) {
       this.playSurface = new BraunPlaySurface(stripContainer, chordsContainer, this.engine);
       this.playSurface.onPlay = async () => {
-        if (!this.isPowerOn) {
+        if (!this.isPowerOn || (this.engine.ctx && this.engine.ctx.state === 'suspended')) {
           await this.startAudio();
         }
       };
@@ -608,7 +620,7 @@ export class AmbientApp {
       this.vectorPad = new BraunVectorPad(vectorContainer, {
         engine: this.engine,
         onEngage: async () => {
-          if (!this.isPowerOn) {
+          if (!this.isPowerOn || (this.engine.ctx && this.engine.ctx.state === 'suspended')) {
             await this.startAudio();
           }
         },
@@ -765,12 +777,16 @@ export class AmbientApp {
       const waveB = preset[`${pfx}WaveB`];
       if (waveA) {
         const btnsA = document.querySelectorAll(`.${pfx}-wave-a`);
-        btnsA.forEach(btn => btn.classList.toggle('is-active', btn.getAttribute('data-wave') === waveA));
+        btnsA.forEach(btn => {
+          btn.classList.toggle('is-active', isWaveformMatch(btn.getAttribute('data-wave'), waveA));
+        });
         this.engine.setDroneWaveA(id, waveA);
       }
       if (waveB) {
         const btnsB = document.querySelectorAll(`.${pfx}-wave-b`);
-        btnsB.forEach(btn => btn.classList.toggle('is-active', btn.getAttribute('data-wave') === waveB));
+        btnsB.forEach(btn => {
+          btn.classList.toggle('is-active', isWaveformMatch(btn.getAttribute('data-wave'), waveB));
+        });
         this.engine.setDroneWaveB(id, waveB);
       }
 
@@ -1061,14 +1077,18 @@ export class AmbientApp {
             const btnsA = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
               ? document.querySelectorAll(`.drone${id}-wave-a`)
               : [];
-            btnsA.forEach(b => b.classList.toggle('is-active', b.getAttribute('data-wave') === droneData.waveA));
+            btnsA.forEach(b => {
+              b.classList.toggle('is-active', isWaveformMatch(b.getAttribute('data-wave'), droneData.waveA));
+            });
             this.engine.setDroneWaveA(id, droneData.waveA);
           }
           if (droneData.waveB) {
             const btnsB = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
               ? document.querySelectorAll(`.drone${id}-wave-b`)
               : [];
-            btnsB.forEach(b => b.classList.toggle('is-active', b.getAttribute('data-wave') === droneData.waveB));
+            btnsB.forEach(b => {
+              b.classList.toggle('is-active', isWaveformMatch(b.getAttribute('data-wave'), droneData.waveB));
+            });
             this.engine.setDroneWaveB(id, droneData.waveB);
           }
           if (droneData.snap) {
@@ -1080,11 +1100,11 @@ export class AmbientApp {
           }
           if (droneData.active !== undefined) {
             this.engine.setDroneActive(id, !!droneData.active);
-            const toggleBtn = document.getElementById(`toggle-drone-${id}`);
+            const toggleBtn = document.getElementById(`btn-drone${id}-active`) || document.getElementById(`toggle-drone-${id}`);
             if (toggleBtn) {
               toggleBtn.classList.toggle('is-active', !!droneData.active);
               const textEl = toggleBtn.querySelector('.braun-status-text');
-              if (textEl) textEl.textContent = droneData.active ? `VOICE ${id} ON` : `VOICE ${id} OFF`;
+              if (textEl) textEl.textContent = droneData.active ? `DRONE ${id} ON` : `DRONE ${id} OFF`;
             }
           }
         }
@@ -1186,7 +1206,7 @@ export class AmbientApp {
   }
 
   async startAudio() {
-    if (this.isPowerOn && this.engine.isInitialized) return;
+    if (this.isPowerOn && this.engine.isInitialized && this.engine.ctx && this.engine.ctx.state === 'running') return;
     if (this._startingAudio) return;
     this._startingAudio = true;
 
@@ -1224,6 +1244,27 @@ export class AmbientApp {
     } else {
       if (this.engine.ctx) {
         try {
+          if (this.engine.masterGain && this.engine.masterGain.gain) {
+            const now = this.engine.ctx.currentTime;
+            if (typeof this.engine.masterGain.gain.cancelScheduledValues === 'function') {
+              this.engine.masterGain.gain.cancelScheduledValues(now);
+            }
+            if (typeof this.engine.masterGain.gain.linearRampToValueAtTime === 'function') {
+              const cur = (typeof this.engine.masterGain.gain.value === 'number') ? this.engine.masterGain.gain.value : this.engine.masterVolume;
+              if (typeof this.engine.masterGain.gain.setValueAtTime === 'function') {
+                this.engine.masterGain.gain.setValueAtTime(cur, now);
+              }
+              this.engine.masterGain.gain.linearRampToValueAtTime(0.0, now + 0.025);
+            } else if (typeof this.engine.masterGain.gain.setTargetAtTime === 'function') {
+              this.engine.masterGain.gain.setTargetAtTime(0.0, now, 0.006);
+            } else if (typeof this.engine.masterGain.gain.setValueAtTime === 'function') {
+              this.engine.masterGain.gain.setValueAtTime(0.0, now);
+            }
+            await new Promise(r => setTimeout(r, 30));
+            if (typeof this.engine.masterGain.gain.setValueAtTime === 'function') {
+              this.engine.masterGain.gain.setValueAtTime(0.0, this.engine.ctx.currentTime);
+            }
+          }
           await this.engine.ctx.suspend();
         } catch (e) {
           console.warn('AudioContext suspend error:', e);
@@ -1520,19 +1561,27 @@ export class AmbientApp {
     // Waveform buttons for Osc A & B
     const waveBtnsA = document.querySelectorAll(`.${prefix}-wave-a`);
     waveBtnsA.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
+        if (!this.isPowerOn) {
+          await this.startAudio();
+        }
         waveBtnsA.forEach(b => b.classList.remove('is-active'));
         btn.classList.add('is-active');
         this.engine.setDroneWaveA(id, btn.getAttribute('data-wave'));
+        if (typeof btn.blur === 'function') btn.blur();
       });
     });
 
     const waveBtnsB = document.querySelectorAll(`.${prefix}-wave-b`);
     waveBtnsB.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
+        if (!this.isPowerOn) {
+          await this.startAudio();
+        }
         waveBtnsB.forEach(b => b.classList.remove('is-active'));
         btn.classList.add('is-active');
         this.engine.setDroneWaveB(id, btn.getAttribute('data-wave'));
+        if (typeof btn.blur === 'function') btn.blur();
       });
     });
 

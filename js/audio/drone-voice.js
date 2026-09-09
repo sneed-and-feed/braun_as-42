@@ -28,8 +28,8 @@ export class SolarDroneVoice {
     this.detuneCents = voiceId === 1 ? 2.5 : -3.2; // Initial subtle microtonal beating
     this._currentDetune = this.detuneCents;
     this.subHertzBeat = 0.35; // Sub-hertz beating frequency offset in Hz
-    this.waveA = 'saw';
-    this.waveB = 'warm';
+    this.waveA = voiceId === 2 ? 'square' : 'saw';
+    this.waveB = voiceId === 2 ? 'triangle' : 'warm';
     this.drive = 1.6;
     this.fold = 0.45;
     this.cutoff = 680;
@@ -132,28 +132,105 @@ export class SolarDroneVoice {
   }
 
   _applyWaveform(osc, type) {
-    const standardType = type === 'saw' ? 'sawtooth' : type;
-    if (type === 'sine') {
-      osc.type = 'sine';
-    } else if (this.wavetables && this.wavetables[type]) {
-      osc.setPeriodicWave(this.wavetables[type]);
-    } else if (type === 'warm' && this.wavetables && this.wavetables.warm) {
-      osc.setPeriodicWave(this.wavetables.warm);
-    } else if (['sine', 'square', 'sawtooth', 'triangle'].includes(standardType)) {
-      osc.type = standardType;
+    if (!osc || !type) return;
+    const raw = (typeof type === 'string') ? type.trim().toLowerCase() : type;
+    const norm = (raw === 'sqr' || raw === 'square') ? 'square'
+      : (raw === 'saw' || raw === 'sawtooth') ? 'sawtooth'
+      : (raw === 'tri' || raw === 'triangle') ? 'triangle'
+      : (raw === 'sin' || raw === 'sine') ? 'sine'
+      : (raw === 'warm') ? 'warm'
+      : raw;
+
+    // Set standard Web Audio type for type inspection and native fallback
+    if (['sine', 'square', 'sawtooth', 'triangle'].includes(norm)) {
+      try {
+        osc.type = norm;
+      } catch (e) {}
+    }
+
+    if (norm === 'sine') {
+      try {
+        osc.type = 'sine';
+      } catch (e) {}
+    } else if (norm === 'warm') {
+      if (this.wavetables && this.wavetables.warm) {
+        try {
+          osc.setPeriodicWave(this.wavetables.warm);
+        } catch (e) {}
+      } else {
+        try {
+          osc.type = 'sawtooth';
+        } catch (e) {}
+      }
+    } else if (norm === 'square') {
+      if (this.wavetables && (this.wavetables.square || this.wavetables.sqr)) {
+        try {
+          osc.setPeriodicWave(this.wavetables.square || this.wavetables.sqr);
+        } catch (e) {}
+      } else {
+        try {
+          osc.type = 'square';
+        } catch (e) {}
+      }
+    } else if (norm === 'sawtooth') {
+      if (this.wavetables && (this.wavetables.saw || this.wavetables.sawtooth)) {
+        try {
+          osc.setPeriodicWave(this.wavetables.saw || this.wavetables.sawtooth);
+        } catch (e) {}
+      } else {
+        try {
+          osc.type = 'sawtooth';
+        } catch (e) {}
+      }
+    } else if (norm === 'triangle') {
+      if (this.wavetables && (this.wavetables.triangle || this.wavetables.tri)) {
+        try {
+          osc.setPeriodicWave(this.wavetables.triangle || this.wavetables.tri);
+        } catch (e) {}
+      } else {
+        try {
+          osc.type = 'triangle';
+        } catch (e) {}
+      }
+    } else if (this.wavetables && (this.wavetables[raw] || this.wavetables[type])) {
+      try {
+        osc.setPeriodicWave(this.wavetables[raw] || this.wavetables[type]);
+      } catch (e) {}
     } else {
-      osc.type = 'sawtooth';
+      try {
+        osc.type = 'sawtooth';
+      } catch (e) {}
     }
   }
 
   setWaveA(type) {
-    this.waveA = type;
-    this._applyWaveform(this.oscA, type);
+    const raw = (typeof type === 'string') ? type.trim().toLowerCase() : type;
+    const norm = (raw === 'sqr' || raw === 'square') ? 'square'
+      : (raw === 'saw' || raw === 'sawtooth') ? 'saw'
+      : (raw === 'tri' || raw === 'triangle') ? 'triangle'
+      : (raw === 'sin' || raw === 'sine') ? 'sine'
+      : raw;
+    this.waveA = norm;
+    if (this.oscA) this._applyWaveform(this.oscA, norm);
   }
 
   setWaveB(type) {
-    this.waveB = type;
-    this._applyWaveform(this.oscB, type);
+    const raw = (typeof type === 'string') ? type.trim().toLowerCase() : type;
+    const norm = (raw === 'sqr' || raw === 'square') ? 'square'
+      : (raw === 'saw' || raw === 'sawtooth') ? 'saw'
+      : (raw === 'tri' || raw === 'triangle') ? 'triangle'
+      : (raw === 'sin' || raw === 'sine') ? 'sine'
+      : raw;
+    this.waveB = norm;
+    if (this.oscB) this._applyWaveform(this.oscB, norm);
+  }
+
+  setWaveformA(type) {
+    return this.setWaveA(type);
+  }
+
+  setWaveformB(type) {
+    return this.setWaveB(type);
   }
 
   /**
@@ -503,8 +580,8 @@ export class SolarDroneVoice {
   setActive(active) {
     this.isActive = Boolean(active);
     const now = this.ctx.currentTime;
-    const targetGain = this.isActive ? this.volume : 0.0001;
-    const prevGain = (this._currentGain !== undefined) ? this._currentGain : (this.isActive ? 0.0001 : this.volume);
+    const targetGain = this.isActive ? this.volume : 0.0;
+    const prevGain = (this._currentGain !== undefined) ? this._currentGain : (this.isActive ? 0.0 : this.volume);
     this._currentGain = targetGain;
 
     let held = false;
