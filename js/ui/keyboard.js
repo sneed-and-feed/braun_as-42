@@ -339,18 +339,36 @@ export class BraunPlaySurface {
         const target = el ? (el.classList && el.classList.contains && el.classList.contains('braun-chime-key') ? el : (el.closest ? el.closest('.braun-chime-key') : null)) : null;
         if (target) return target;
       }
-      // 2. Horizontal band fallback if cursor drifted slightly vertically during horizontal swipe
+      // 2. Dual-tier fallback: accurately discriminate between Row 1 (semitones) and Row 2 (diatonics)
       if (this.stripContainer && typeof this.stripContainer.getBoundingClientRect === 'function') {
         const stripRect = this.stripContainer.getBoundingClientRect();
         if (stripRect && clientY >= stripRect.top - 40 && clientY <= stripRect.bottom + 40) {
-          for (const keyEl of this.keyElements.values()) {
+          const allKeys = (this.stripContainer.children && this.stripContainer.children.length > 0)
+            ? Array.from(this.stripContainer.children)
+            : [...this.diatonicKeys, ...this.semitoneKeys];
+
+          let bestKey = null;
+          let minDistance = Infinity;
+
+          for (const keyEl of allKeys) {
             if (typeof keyEl.getBoundingClientRect === 'function') {
               const r = keyEl.getBoundingClientRect();
               if (r && clientX >= r.left && clientX <= r.right) {
-                return keyEl;
+                // Exact hit within key bounds
+                if (clientY >= r.top && clientY <= r.bottom) {
+                  return keyEl;
+                }
+                // Vertical distance from center of key
+                const centerY = (r.top + r.bottom) / 2;
+                const dist = Math.abs(clientY - centerY);
+                if (dist < minDistance) {
+                  minDistance = dist;
+                  bestKey = keyEl;
+                }
               }
             }
           }
+          if (bestKey) return bestKey;
         }
       }
       return null;
@@ -776,6 +794,11 @@ export class BraunPlaySurface {
           keyEl.classList.add('is-pressed');
           const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0, true);
           const keyIdentifier = e.code || e.key;
+          const existing = this.activeHeldKeys.get(keyIdentifier);
+          if (existing && existing.voiceOrPromise) {
+            if (typeof existing.voiceOrPromise.release === 'function') existing.voiceOrPromise.release();
+            else if (existing.voiceOrPromise && typeof existing.voiceOrPromise.then === 'function') existing.voiceOrPromise.then(v => v?.release?.());
+          }
           this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise, code: e.code, key: e.key });
         }
         return;
@@ -793,6 +816,11 @@ export class BraunPlaySurface {
           keyEl.classList.add('is-pressed');
           const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0, true);
           const keyIdentifier = e.code || e.key;
+          const existing = this.activeHeldKeys.get(keyIdentifier);
+          if (existing && existing.voiceOrPromise) {
+            if (typeof existing.voiceOrPromise.release === 'function') existing.voiceOrPromise.release();
+            else if (existing.voiceOrPromise && typeof existing.voiceOrPromise.then === 'function') existing.voiceOrPromise.then(v => v?.release?.());
+          }
           this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise, code: e.code, key: e.key });
         }
         return;
@@ -808,6 +836,10 @@ export class BraunPlaySurface {
           btn.classList.add('is-active');
           const session = this.startChord(voicingId, true);
           const chordIdentifier = e.code || e.key;
+          const existingChord = this.activeHeldChords.get(chordIdentifier);
+          if (existingChord && existingChord.session) {
+            this.stopChordSession(existingChord.session);
+          }
           this.activeHeldChords.set(chordIdentifier, { btn, session, code: e.code, key: e.key });
         }
         return;
@@ -969,24 +1001,46 @@ export class BraunPlaySurface {
         this._releaseCurrentGlissando();
       }
 
+      const isKeyHeldByKeyboard = (el) => {
+        if (!this.activeHeldKeys || this.activeHeldKeys.size === 0) return false;
+        for (const entry of this.activeHeldKeys.values()) {
+          if (entry && entry.keyEl === el) return true;
+        }
+        return false;
+      };
+
+      const isChordHeldByKeyboard = (btnEl) => {
+        if (!this.activeHeldChords || this.activeHeldChords.size === 0) return false;
+        for (const entry of this.activeHeldChords.values()) {
+          if (entry && entry.btn === btnEl) return true;
+        }
+        return false;
+      };
+
       this.keyElements.forEach(keyEl => {
-        keyEl._isHeld = false;
-        keyEl.classList.remove('is-pressed');
-        keyEl.classList.remove('is-active');
-      });
-      if (this.semitoneKeys) {
-        this.semitoneKeys.forEach(keyEl => {
+        if (!isKeyHeldByKeyboard(keyEl)) {
           keyEl._isHeld = false;
           keyEl.classList.remove('is-pressed');
           keyEl.classList.remove('is-active');
+        }
+      });
+      if (this.semitoneKeys) {
+        this.semitoneKeys.forEach(keyEl => {
+          if (!isKeyHeldByKeyboard(keyEl)) {
+            keyEl._isHeld = false;
+            keyEl.classList.remove('is-pressed');
+            keyEl.classList.remove('is-active');
+          }
         });
       }
 
       if (this.chordsContainer && typeof this.chordsContainer.querySelectorAll === 'function') {
         const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
         chordBtns.forEach(btn => {
-          btn._isHeld = false;
-          btn.classList.remove('is-active');
+          if (!isChordHeldByKeyboard(btn)) {
+            btn._isHeld = false;
+            btn.classList.remove('is-active');
+          }
         });
       }
 

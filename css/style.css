@@ -1179,6 +1179,7 @@ body {
 .braun-chime-strip {
   display: grid;
   grid-template-rows: 32px 58px;
+  grid-auto-columns: minmax(42px, 1fr);
   gap: 4px;
   width: 100%;
   overflow-x: auto;
@@ -1349,6 +1350,15 @@ body {
   height: 2px;
 }
 
+.braun-chime-key.braun-semitone-key .braun-key-info {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: baseline;
+  gap: 3px;
+  line-height: 1;
+}
+
 .braun-chime-key.braun-semitone-key .braun-key-name {
   font-size: 9.5px;
   font-weight: 700;
@@ -1368,6 +1378,10 @@ body {
   padding: 0 3px;
   background-color: var(--bg-panel);
   border-color: var(--border-line);
+}
+
+.braun-key-shortcut:empty {
+  display: none;
 }
 
 .braun-chime-key.braun-semitone-key:hover {
