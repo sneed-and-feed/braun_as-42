@@ -12,8 +12,8 @@ export const TIMBRE_TRIM = {
   sine: 1.65,     // Pure chime bell presence balanced with drone bed
   saw: 1.10,      // Harmonic saw presence
   square: 1.00,   // Balanced square presence
-  cs80: 0.90,     // Calibrated trim provides soaring brass authority matching drone bed
-  vangelis: 0.90
+  cs80: 0.85,     // Calibrated trim tames soaring brass horns so it balances smoothly
+  vangelis: 0.85
 };
 
 export class FeltPianoVoice {
