@@ -65,7 +65,12 @@
   user-select: none;
 }
 
+html {
+  overscroll-behavior: none;
+}
+
 body {
+  overscroll-behavior: none;
   background-color: var(--bg-app);
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -80,8 +85,13 @@ body {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
+main {
+  overscroll-behavior: none;
+}
+
 /* --- Chassis Frame --- */
 .braun-chassis {
+  overscroll-behavior: none;
   width: 100%;
   max-width: 1240px;
   background-color: var(--bg-panel);
@@ -1420,6 +1430,10 @@ body {
   gap: 6px;
   outline: none;
   cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .braun-knob-wrapper:focus-visible .braun-knob-cap {

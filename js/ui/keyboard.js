@@ -117,7 +117,8 @@ export class BraunPlaySurface {
     this.diatonicKeys = [];
     this.semitoneKeys = []; // kept empty for backward compatibility
     this.chordSpeed = 'med'; // 'slow' | 'med' | 'fast' | 'instant'
-    this.activeTouches = new Map();
+    this.activeTouches = new Map(); // pointerId/touchId -> { pointerId, keyEl, voice, releaseFn, clientY, midi }
+    this.activeChordTouches = new Map(); // pointerId/touchId -> { pointerId, btn, session, voicingId, releaseFn }
     this.activePointerVoices = new Set();
     this.activePointerChordSessions = new Set();
     this._isPointerGlissandoActive = false;
@@ -129,6 +130,177 @@ export class BraunPlaySurface {
     this._attachChordSpeedControls();
     this.rebuildKeys();
     this._attachKeyboardShortcuts();
+  }
+
+  _isKeyHeldByKeyboard(el) {
+    if (!this.activeHeldKeys || this.activeHeldKeys.size === 0) return false;
+    for (const entry of this.activeHeldKeys.values()) {
+      if (entry && entry.keyEl === el) return true;
+    }
+    return false;
+  }
+
+  _isChordHeldByKeyboard(btnEl) {
+    if (!this.activeHeldChords || this.activeHeldChords.size === 0) return false;
+    for (const entry of this.activeHeldChords.values()) {
+      if (entry && entry.btn === btnEl) return true;
+    }
+    return false;
+  }
+
+  _activatePointerKey(pointerId, keyEl, clientY, clientRect) {
+    if (!keyEl) return null;
+    if (typeof keyEl._markPointerHandled === 'function') {
+      keyEl._markPointerHandled();
+    }
+    const current = this.activeTouches.get(pointerId);
+    if (current && current.keyEl === keyEl) {
+      return current.voice;
+    }
+
+    if (current) {
+      this._releasePointerKey(pointerId);
+    }
+
+    if (!keyEl._activePointerIds) {
+      keyEl._activePointerIds = new Set();
+    }
+    keyEl._activePointerIds.add(pointerId);
+    keyEl._isHeld = true;
+    keyEl.classList.add('is-pressed', 'is-active');
+
+    const freq = parseFloat(keyEl.getAttribute('data-freq'));
+    const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
+
+    let velocity = 0.60;
+    const rect = clientRect || (typeof keyEl.getBoundingClientRect === 'function' ? keyEl.getBoundingClientRect() : null);
+    if (clientY !== undefined && clientY > 0 && rect && rect.height > 0) {
+      const relY = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+      velocity = 0.35 + relY * 0.50;
+    }
+
+    const voice = this.playNote(freq, midi, velocity, 20.0, true);
+    if (voice) {
+      this.activePointerVoices.add(voice);
+    }
+
+    const releaseFn = () => {
+      this._releasePointerKey(pointerId);
+    };
+
+    this.activeTouches.set(pointerId, {
+      pointerId,
+      keyEl,
+      voice,
+      releaseFn,
+      clientY,
+      midi
+    });
+
+    this._isPointerGlissandoActive = true;
+    this._currentGlissandoKey = keyEl;
+    this._currentGlissandoVoice = voice;
+    this._releaseCurrentGlissando = releaseFn;
+
+    return voice;
+  }
+
+  _releasePointerKey(pointerId) {
+    const record = this.activeTouches.get(pointerId);
+    if (!record) return;
+    this.activeTouches.delete(pointerId);
+
+    const { keyEl, voice } = record;
+    if (voice) {
+      this.activePointerVoices.delete(voice);
+      if (typeof voice.release === 'function') {
+        voice.release();
+      } else if (voice && typeof voice.then === 'function') {
+        voice.then(v => { if (v && typeof v.release === 'function') v.release(); });
+      }
+    }
+
+    if (keyEl) {
+      if (keyEl._activePointerIds) {
+        keyEl._activePointerIds.delete(pointerId);
+      }
+      if (!keyEl._activePointerIds || keyEl._activePointerIds.size === 0) {
+        if (!this._isKeyHeldByKeyboard(keyEl)) {
+          keyEl._isHeld = false;
+          keyEl.classList.remove('is-pressed', 'is-active');
+        }
+      }
+    }
+
+    if (this.activeTouches.size === 0) {
+      this._isPointerGlissandoActive = false;
+      this._currentGlissandoKey = null;
+      this._currentGlissandoVoice = null;
+      this._releaseCurrentGlissando = null;
+    } else {
+      const last = Array.from(this.activeTouches.values()).pop();
+      this._currentGlissandoKey = last.keyEl;
+      this._currentGlissandoVoice = last.voice;
+      this._releaseCurrentGlissando = last.releaseFn;
+    }
+  }
+
+  _activatePointerChord(pointerId, btn, voicingId) {
+    if (!btn) return null;
+    if (typeof btn._markPointerHandled === 'function') {
+      btn._markPointerHandled();
+    }
+    this._releasePointerChord(pointerId);
+
+    if (!btn._activePointerIds) {
+      btn._activePointerIds = new Set();
+    }
+    btn._activePointerIds.add(pointerId);
+    btn._isHeld = true;
+    btn.classList.add('is-active');
+
+    const session = this.startChord(voicingId, true);
+    if (session) {
+      this.activePointerChordSessions.add(session);
+    }
+
+    const releaseFn = () => {
+      this._releasePointerChord(pointerId);
+    };
+
+    this.activeChordTouches.set(pointerId, {
+      pointerId,
+      btn,
+      session,
+      voicingId,
+      releaseFn
+    });
+
+    return session;
+  }
+
+  _releasePointerChord(pointerId) {
+    const record = this.activeChordTouches.get(pointerId);
+    if (!record) return;
+    this.activeChordTouches.delete(pointerId);
+
+    const { btn, session } = record;
+    if (session) {
+      this.activePointerChordSessions.delete(session);
+      this.stopChordSession(session);
+    }
+
+    if (btn) {
+      if (btn._activePointerIds) {
+        btn._activePointerIds.delete(pointerId);
+      }
+      if (!btn._activePointerIds || btn._activePointerIds.size === 0) {
+        if (!this._isChordHeldByKeyboard(btn)) {
+          btn._isHeld = false;
+          btn.classList.remove('is-active');
+        }
+      }
+    }
   }
 
   _getShortcutKey(index) {
@@ -227,9 +399,18 @@ export class BraunPlaySurface {
         <div class="braun-key-shortcut">${shortcutKey}</div>
       `;
 
-      let activeVoice = null;
       let handledByPointer = false;
       let clearPointerTimer = null;
+
+      const markPointerHandled = () => {
+        handledByPointer = true;
+        if (clearPointerTimer) clearTimeout(clearPointerTimer);
+        clearPointerTimer = setTimeout(() => {
+          handledByPointer = false;
+          clearPointerTimer = null;
+        }, 400);
+      };
+      keyEl._markPointerHandled = markPointerHandled;
 
       keyEl.addEventListener('dragstart', (e) => e.preventDefault());
 
@@ -244,72 +425,9 @@ export class BraunPlaySurface {
         return this.playNote(note.freq, note.midi, velocity, isHold ? 20.0 : 3.5, isHold);
       };
 
-      const handleKeyRelease = () => {
-        keyEl._isHeld = false;
-        if (activeVoice) {
-          this.activePointerVoices.delete(activeVoice);
-          if (typeof activeVoice.release === 'function') {
-            activeVoice.release();
-          } else if (activeVoice && typeof activeVoice.then === 'function') {
-            activeVoice.then(v => { if (v && typeof v.release === 'function') v.release(); });
-          }
-          activeVoice = null;
-        }
-        keyEl.classList.remove('is-pressed');
-        keyEl.classList.remove('is-active');
-        if (this._currentGlissandoKey === keyEl) {
-          this._currentGlissandoKey = null;
-          this._currentGlissandoVoice = null;
-          this._releaseCurrentGlissando = null;
-        }
-        if (clearPointerTimer) clearTimeout(clearPointerTimer);
-        clearPointerTimer = setTimeout(() => {
-          handledByPointer = false;
-          clearPointerTimer = null;
-        }, 400);
-      };
-
-      const activateKey = (clientY, clientRect) => {
-        // Prevent duplicate trigger if key is already actively held
-        if (this._currentGlissandoKey === keyEl && keyEl._isHeld) {
-          return;
-        }
-        // If transitioning from another key during glissando swipe, release previous key smoothly
-        if (this._currentGlissandoKey && this._currentGlissandoKey !== keyEl) {
-          if (typeof this._releaseCurrentGlissando === 'function') {
-            this._releaseCurrentGlissando();
-          }
-        }
-        handledByPointer = true;
-        if (clearPointerTimer) {
-          clearTimeout(clearPointerTimer);
-          clearPointerTimer = null;
-        }
-        if (activeVoice) {
-          this.activePointerVoices.delete(activeVoice);
-          if (typeof activeVoice.release === 'function') {
-            activeVoice.release();
-          } else if (activeVoice && typeof activeVoice.then === 'function') {
-            activeVoice.then(v => { if (v && typeof v.release === 'function') v.release(); });
-          }
-          activeVoice = null;
-        }
-        keyEl._isHeld = true;
-        keyEl.classList.add('is-pressed');
-        keyEl.classList.add('is-active');
-        activeVoice = triggerStrike(clientY, clientRect || (keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null), true);
-        if (activeVoice) {
-          this.activePointerVoices.add(activeVoice);
-        }
-        this._currentGlissandoKey = keyEl;
-        this._currentGlissandoVoice = activeVoice;
-        this._releaseCurrentGlissando = handleKeyRelease;
-      };
-
-      keyEl._activateGlissando = (clientY) => {
-        if (this._currentGlissandoKey !== keyEl) {
-          activateKey(clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
-        }
+      keyEl._activateGlissando = (clientY, pointerId = null) => {
+        const id = pointerId ?? (this.activeTouches.keys().next().value || 'mouse');
+        this._activatePointerKey(id, keyEl, clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
       };
 
       keyEl.addEventListener('pointerdown', (e) => {
@@ -320,27 +438,74 @@ export class BraunPlaySurface {
             e.target.releasePointerCapture(e.pointerId);
           }
         } catch (err) {}
-        this._isPointerGlissandoActive = true;
-        activateKey(e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
+        const pointerId = e.pointerId ?? 'mouse';
+        handledByPointer = true;
+        if (clearPointerTimer) clearTimeout(clearPointerTimer);
+        clearPointerTimer = setTimeout(() => {
+          handledByPointer = false;
+          clearPointerTimer = null;
+        }, 400);
+
+        this._activatePointerKey(pointerId, keyEl, e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
       });
 
       keyEl.addEventListener('pointerenter', (e) => {
-        // Expressive glissando: slide horizontally across keys while holding mouse button
-        if ((e.buttons === 1 || this._isPointerGlissandoActive) && this._currentGlissandoKey !== keyEl) {
-          this._isPointerGlissandoActive = true;
-          activateKey(e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
+        const pointerId = e.pointerId ?? 'mouse';
+        if (e.buttons === 1 || this.activeTouches.has(pointerId) || this._isPointerGlissandoActive) {
+          this._activatePointerKey(pointerId, keyEl, e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
         }
       });
 
-      keyEl.addEventListener('pointerup', () => {
-        this._isPointerGlissandoActive = false;
-        handleKeyRelease();
+      keyEl.addEventListener('pointerup', (e) => {
+        const pointerId = e && e.pointerId != null ? e.pointerId : (keyEl._activePointerIds ? Array.from(keyEl._activePointerIds)[0] : 'mouse');
+        this._releasePointerKey(pointerId ?? 'mouse');
         if (typeof keyEl.blur === 'function') keyEl.blur();
       });
 
-      keyEl.addEventListener('pointercancel', () => {
-        this._isPointerGlissandoActive = false;
-        handleKeyRelease();
+      keyEl.addEventListener('pointercancel', (e) => {
+        const pointerId = e && e.pointerId != null ? e.pointerId : (keyEl._activePointerIds ? Array.from(keyEl._activePointerIds)[0] : 'mouse');
+        this._releasePointerKey(pointerId ?? 'mouse');
+        if (typeof keyEl.blur === 'function') keyEl.blur();
+      });
+
+      keyEl.addEventListener('touchstart', (e) => {
+        if (handledByPointer) {
+          if (e.preventDefault) e.preventDefault();
+          return;
+        }
+        if (e.preventDefault) e.preventDefault();
+        handledByPointer = true;
+        if (clearPointerTimer) clearTimeout(clearPointerTimer);
+        clearPointerTimer = setTimeout(() => {
+          handledByPointer = false;
+          clearPointerTimer = null;
+        }, 400);
+
+        if (e.changedTouches) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            this._activatePointerKey(`touch-${t.identifier}`, keyEl, t.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
+          }
+        }
+      }, { passive: false });
+
+      keyEl.addEventListener('touchend', (e) => {
+        if (e.changedTouches) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            this._releasePointerKey(`touch-${t.identifier}`);
+          }
+        }
+        if (typeof keyEl.blur === 'function') keyEl.blur();
+      });
+
+      keyEl.addEventListener('touchcancel', (e) => {
+        if (e.changedTouches) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            this._releasePointerKey(`touch-${t.identifier}`);
+          }
+        }
         if (typeof keyEl.blur === 'function') keyEl.blur();
       });
 
@@ -391,31 +556,48 @@ export class BraunPlaySurface {
     };
 
     const handlePointerMove = (e) => {
+      const pointerId = e.pointerId ?? 'mouse';
       if (e.buttons === 0 && (e.pointerType === 'mouse' || e.pointerType === undefined)) {
-        if (this._isPointerGlissandoActive) {
-          this._isPointerGlissandoActive = false;
-          if (typeof this._releaseCurrentGlissando === 'function') {
-            this._releaseCurrentGlissando();
-          }
+        if (this.activeTouches.has(pointerId)) {
+          this._releasePointerKey(pointerId);
         }
         return;
       }
-      if (e.buttons === 1 || this._isPointerGlissandoActive) {
+      const touchRecord = this.activeTouches.get(pointerId);
+      const isDragging = touchRecord || (e.buttons === 1 && (e.pointerType === 'mouse' || e.pointerType === undefined));
+      if (isDragging) {
         const targetKey = findKeyAtPoint(e.clientX, e.clientY);
-        if (targetKey && targetKey !== this._currentGlissandoKey && typeof targetKey._activateGlissando === 'function') {
-          targetKey._activateGlissando(e.clientY);
+        if (targetKey && (!touchRecord || targetKey !== touchRecord.keyEl)) {
+          this._activatePointerKey(pointerId, targetKey, e.clientY);
+        }
+      }
+    };
+
+    const handleTouchMove = (e) => {
+      const touches = e.changedTouches || e.touches;
+      if (!touches) return;
+      for (let i = 0; i < touches.length; i++) {
+        const t = touches[i];
+        const touchId = `touch-${t.identifier}`;
+        const touchRecord = this.activeTouches.get(touchId);
+        if (touchRecord) {
+          const targetKey = findKeyAtPoint(t.clientX, t.clientY);
+          if (targetKey && targetKey !== touchRecord.keyEl) {
+            this._activatePointerKey(touchId, targetKey, t.clientY);
+          }
         }
       }
     };
 
     if (this.stripContainer && typeof this.stripContainer.addEventListener === 'function') {
       this.stripContainer.addEventListener('pointermove', handlePointerMove);
+      this.stripContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
 
       this.stripContainer.addEventListener('pointerleave', (e) => {
-        if (this._isPointerGlissandoActive && e.buttons === 0) {
-          this._isPointerGlissandoActive = false;
-          if (typeof this._releaseCurrentGlissando === 'function') {
-            this._releaseCurrentGlissando();
+        const pointerId = e.pointerId ?? 'mouse';
+        if (e.buttons === 0 && (e.pointerType === 'mouse' || e.pointerType === undefined)) {
+          if (this.activeTouches.has(pointerId)) {
+            this._releasePointerKey(pointerId);
           }
         }
       });
@@ -423,10 +605,15 @@ export class BraunPlaySurface {
 
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener('pointermove', (e) => {
-        if (this._isPointerGlissandoActive) {
+        if (this._isPointerGlissandoActive || this.activeTouches.size > 0) {
           handlePointerMove(e);
         }
       });
+      window.addEventListener('touchmove', (e) => {
+        if (this._isPointerGlissandoActive || this.activeTouches.size > 0) {
+          handleTouchMove(e);
+        }
+      }, { passive: false });
     }
   }
 
@@ -458,24 +645,18 @@ export class BraunPlaySurface {
         this._updateChordReadout(voicing, false);
       });
 
-      let activeSession = null;
       let handledByPointer = false;
       let clearPointerTimer = null;
 
-      const triggerChordRelease = () => {
-        btn._isHeld = false;
-        btn.classList.remove('is-active');
-        if (activeSession) {
-          this.activePointerChordSessions.delete(activeSession);
-          this.stopChordSession(activeSession);
-          activeSession = null;
-        }
+      const markChordPointerHandled = () => {
+        handledByPointer = true;
         if (clearPointerTimer) clearTimeout(clearPointerTimer);
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
           clearPointerTimer = null;
         }, 400);
       };
+      btn._markPointerHandled = markChordPointerHandled;
 
       btn.addEventListener('pointerdown', (e) => {
         if (e.button !== undefined && e.button !== 0) return;
@@ -485,48 +666,91 @@ export class BraunPlaySurface {
           clearTimeout(clearPointerTimer);
           clearPointerTimer = null;
         }
-        if (activeSession) {
-          this.activePointerChordSessions.delete(activeSession);
-          this.stopChordSession(activeSession);
-          activeSession = null;
-        }
+        clearPointerTimer = setTimeout(() => {
+          handledByPointer = false;
+          clearPointerTimer = null;
+        }, 400);
+
+        const pointerId = e.pointerId ?? 'mouse';
         try {
           if (btn.setPointerCapture && e.pointerId != null) {
             btn.setPointerCapture(e.pointerId);
           }
         } catch (err) {}
 
-        btn._isHeld = true;
-        btn.classList.add('is-active');
-        activeSession = this.startChord(voicing.id, true);
-        if (activeSession) {
-          this.activePointerChordSessions.add(activeSession);
-        }
+        this._activatePointerChord(pointerId, btn, voicing.id);
       });
 
       btn.addEventListener('pointerup', (e) => {
+        const pointerId = e && e.pointerId != null ? e.pointerId : (btn._activePointerIds ? Array.from(btn._activePointerIds)[0] : 'mouse');
         try {
-          if (btn.releasePointerCapture && e.pointerId != null) {
+          if (btn.releasePointerCapture && e && e.pointerId != null) {
             btn.releasePointerCapture(e.pointerId);
           }
         } catch (err) {}
-        triggerChordRelease();
+        this._releasePointerChord(pointerId ?? 'mouse');
         if (typeof btn.blur === 'function') btn.blur();
       });
 
       btn.addEventListener('pointercancel', (e) => {
+        const pointerId = e && e.pointerId != null ? e.pointerId : (btn._activePointerIds ? Array.from(btn._activePointerIds)[0] : 'mouse');
         try {
-          if (btn.releasePointerCapture && e.pointerId != null) {
+          if (btn.releasePointerCapture && e && e.pointerId != null) {
             btn.releasePointerCapture(e.pointerId);
           }
         } catch (err) {}
-        triggerChordRelease();
+        this._releasePointerChord(pointerId ?? 'mouse');
+        if (typeof btn.blur === 'function') btn.blur();
+      });
+
+      btn.addEventListener('touchstart', (e) => {
+        if (handledByPointer) {
+          if (e.preventDefault) e.preventDefault();
+          return;
+        }
+        if (e.preventDefault) e.preventDefault();
+        handledByPointer = true;
+        if (clearPointerTimer) {
+          clearTimeout(clearPointerTimer);
+          clearPointerTimer = null;
+        }
+        clearPointerTimer = setTimeout(() => {
+          handledByPointer = false;
+          clearPointerTimer = null;
+        }, 400);
+
+        if (e.changedTouches) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            this._activatePointerChord(`touch-${t.identifier}`, btn, voicing.id);
+          }
+        }
+      }, { passive: false });
+
+      btn.addEventListener('touchend', (e) => {
+        if (e.changedTouches) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            this._releasePointerChord(`touch-${t.identifier}`);
+          }
+        }
+        if (typeof btn.blur === 'function') btn.blur();
+      });
+
+      btn.addEventListener('touchcancel', (e) => {
+        if (e.changedTouches) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            this._releasePointerChord(`touch-${t.identifier}`);
+          }
+        }
         if (typeof btn.blur === 'function') btn.blur();
       });
 
       btn.addEventListener('pointerleave', (e) => {
-        if (activeSession && e.buttons === 0) {
-          triggerChordRelease();
+        const pointerId = e.pointerId ?? 'mouse';
+        if (e.buttons === 0 && (e.pointerType === 'mouse' || e.pointerType === undefined)) {
+          this._releasePointerChord(pointerId);
           if (typeof btn.blur === 'function') btn.blur();
         }
       });
@@ -991,77 +1215,102 @@ export class BraunPlaySurface {
       });
       this.activePointerChordSessions.clear();
 
+      this.activeTouches.clear();
+      this.activeChordTouches.clear();
       this._isPointerGlissandoActive = false;
       this._currentGlissandoKey = null;
       this._currentGlissandoVoice = null;
       this._releaseCurrentGlissando = null;
     });
 
-    window.addEventListener('pointerup', () => {
-      if (typeof this._releaseCurrentGlissando === 'function') {
-        this._releaseCurrentGlissando();
-      }
-
-      const isKeyHeldByKeyboard = (el) => {
-        if (!this.activeHeldKeys || this.activeHeldKeys.size === 0) return false;
-        for (const entry of this.activeHeldKeys.values()) {
-          if (entry && entry.keyEl === el) return true;
+    const handleWindowPointerUp = (e) => {
+      if (e && e.pointerId != null) {
+        this._releasePointerKey(e.pointerId);
+        this._releasePointerChord(e.pointerId);
+      } else {
+        if (typeof this._releaseCurrentGlissando === 'function') {
+          this._releaseCurrentGlissando();
         }
-        return false;
-      };
 
-      const isChordHeldByKeyboard = (btnEl) => {
-        if (!this.activeHeldChords || this.activeHeldChords.size === 0) return false;
-        for (const entry of this.activeHeldChords.values()) {
-          if (entry && entry.btn === btnEl) return true;
-        }
-        return false;
-      };
+        const touchKeys = Array.from(this.activeTouches.keys());
+        touchKeys.forEach(id => this._releasePointerKey(id));
+        this.activeTouches.clear();
 
-      this.keyElements.forEach(keyEl => {
-        if (!isKeyHeldByKeyboard(keyEl)) {
-          keyEl._isHeld = false;
-          keyEl.classList.remove('is-pressed');
-          keyEl.classList.remove('is-active');
-        }
-      });
-      if (this.semitoneKeys) {
-        this.semitoneKeys.forEach(keyEl => {
-          if (!isKeyHeldByKeyboard(keyEl)) {
+        const chordKeys = Array.from(this.activeChordTouches.keys());
+        chordKeys.forEach(id => this._releasePointerChord(id));
+        this.activeChordTouches.clear();
+
+        this.keyElements.forEach(keyEl => {
+          if (!this._isKeyHeldByKeyboard(keyEl)) {
             keyEl._isHeld = false;
+            if (keyEl._activePointerIds) keyEl._activePointerIds.clear();
             keyEl.classList.remove('is-pressed');
             keyEl.classList.remove('is-active');
           }
         });
-      }
+        if (this.semitoneKeys) {
+          this.semitoneKeys.forEach(keyEl => {
+            if (!this._isKeyHeldByKeyboard(keyEl)) {
+              keyEl._isHeld = false;
+              if (keyEl._activePointerIds) keyEl._activePointerIds.clear();
+              keyEl.classList.remove('is-pressed');
+              keyEl.classList.remove('is-active');
+            }
+          });
+        }
 
-      if (this.chordsContainer && typeof this.chordsContainer.querySelectorAll === 'function') {
-        const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
-        chordBtns.forEach(btn => {
-          if (!isChordHeldByKeyboard(btn)) {
-            btn._isHeld = false;
-            btn.classList.remove('is-active');
+        if (this.chordsContainer && typeof this.chordsContainer.querySelectorAll === 'function') {
+          const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
+          chordBtns.forEach(btn => {
+            if (!this._isChordHeldByKeyboard(btn)) {
+              btn._isHeld = false;
+              if (btn._activePointerIds) btn._activePointerIds.clear();
+              btn.classList.remove('is-active');
+            }
+          });
+        }
+
+        this.activePointerVoices.forEach(voiceOrPromise => {
+          if (voiceOrPromise) {
+            if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
+            else if (typeof voiceOrPromise.then === 'function') voiceOrPromise.then(v => v?.release?.());
           }
         });
+        this.activePointerVoices.clear();
+
+        this.activePointerChordSessions.forEach(session => {
+          if (session) this.stopChordSession(session);
+        });
+        this.activePointerChordSessions.clear();
+
+        this._isPointerGlissandoActive = false;
+        this._currentGlissandoKey = null;
+        this._currentGlissandoVoice = null;
+        this._releaseCurrentGlissando = null;
       }
+    };
 
-      this.activePointerVoices.forEach(voiceOrPromise => {
-        if (voiceOrPromise) {
-          if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
-          else if (typeof voiceOrPromise.then === 'function') voiceOrPromise.then(v => v?.release?.());
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerUp);
+
+    window.addEventListener('touchend', (e) => {
+      if (e && e.changedTouches) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          this._releasePointerKey(`touch-${t.identifier}`);
+          this._releasePointerChord(`touch-${t.identifier}`);
         }
-      });
-      this.activePointerVoices.clear();
+      }
+    });
 
-      this.activePointerChordSessions.forEach(session => {
-        if (session) this.stopChordSession(session);
-      });
-      this.activePointerChordSessions.clear();
-
-      this._isPointerGlissandoActive = false;
-      this._currentGlissandoKey = null;
-      this._currentGlissandoVoice = null;
-      this._releaseCurrentGlissando = null;
+    window.addEventListener('touchcancel', (e) => {
+      if (e && e.changedTouches) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          this._releasePointerKey(`touch-${t.identifier}`);
+          this._releasePointerChord(`touch-${t.identifier}`);
+        }
+      }
     });
   }
 }

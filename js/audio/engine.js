@@ -189,6 +189,50 @@ export class AudioEngine {
   }
 
   /**
+   * Synchronously unlock Web Audio on first user interaction for iOS / Safari.
+   * Creates or resumes AudioContext and plays a 1-sample silent buffer to ctx.destination.
+   * @returns {AudioContext|null}
+   */
+  unlockAudio() {
+    if (!this.ctx) {
+      const AudioContextClass = (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) ||
+                                (typeof globalThis !== 'undefined' && globalThis.AudioContext);
+      if (!AudioContextClass) return null;
+      try {
+        this.ctx = new AudioContextClass({ latencyHint: 'interactive' });
+      } catch (err) {
+        try {
+          this.ctx = new AudioContextClass();
+        } catch (e2) {
+          return null;
+        }
+      }
+    }
+    if (this.ctx) {
+      if ((this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') && typeof this.ctx.resume === 'function') {
+        try {
+          this.ctx.resume();
+        } catch (e) {}
+      }
+      try {
+        if (typeof this.ctx.createBuffer === 'function' && typeof this.ctx.createBufferSource === 'function') {
+          const buffer = this.ctx.createBuffer(1, 1, 22050);
+          const source = this.ctx.createBufferSource();
+          source.buffer = buffer;
+          if (this.ctx.destination) {
+            source.connect(this.ctx.destination);
+          }
+          if (typeof source.start === 'function') {
+            source.start(0);
+          }
+        }
+      } catch (e) {}
+    }
+    this.isAudioUnlocked = true;
+    return this.ctx;
+  }
+
+  /**
    * Initialize AudioContext on first user interaction
    */
   async init() {
@@ -305,15 +349,38 @@ export class AudioEngine {
                                   (typeof globalThis !== 'undefined' && globalThis.AudioContext);
         if (!AudioContextClass) return;
 
-        this.ctx = new AudioContextClass({ latencyHint: 'interactive' });
+        try {
+          this.ctx = new AudioContextClass({ latencyHint: 'interactive' });
+        } catch (err) {
+          try {
+            this.ctx = new AudioContextClass();
+          } catch (e2) {
+            console.warn('AudioContext creation error:', e2);
+            return;
+          }
+        }
       }
-      if (this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
+      if ((this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') && typeof this.ctx.resume === 'function') {
         try {
           await this.ctx.resume();
         } catch (e) {
           console.warn('AudioContext resume deferred:', e);
         }
       }
+      try {
+        if (typeof this.ctx.createBuffer === 'function' && typeof this.ctx.createBufferSource === 'function') {
+          const buffer = this.ctx.createBuffer(1, 1, 22050);
+          const source = this.ctx.createBufferSource();
+          source.buffer = buffer;
+          if (this.ctx.destination) {
+            source.connect(this.ctx.destination);
+          }
+          if (typeof source.start === 'function') {
+            source.start(0);
+          }
+        }
+      } catch (e) {}
+      this.isAudioUnlocked = true;
 
     // Generate band-limited wavetables
     this.wavetables = createWavetableCache(this.ctx);

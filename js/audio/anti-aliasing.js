@@ -81,6 +81,27 @@ export function generateWarmAnalogCoefficients(numHarmonics = 64) {
 }
 
 /**
+ * Safely create a PeriodicWave on AudioContext with fallback for older WebKit/Safari
+ * @param {AudioContext} ctx
+ * @param {Float32Array} real
+ * @param {Float32Array} imag
+ * @returns {PeriodicWave|null}
+ */
+export function safeCreatePeriodicWave(ctx, real, imag) {
+  if (!ctx || !ctx.createPeriodicWave) return null;
+  try {
+    return ctx.createPeriodicWave(real, imag, { disableNormalization: false });
+  } catch (err) {
+    try {
+      return ctx.createPeriodicWave(real, imag);
+    } catch (fallbackErr) {
+      console.warn('createPeriodicWave fallback error:', fallbackErr);
+      return null;
+    }
+  }
+}
+
+/**
  * Cache and create Web Audio PeriodicWave objects on an AudioContext
  * @param {AudioContext} ctx
  * @returns {Record<string, PeriodicWave>}
@@ -93,10 +114,10 @@ export function createWavetableCache(ctx) {
   const triCoeffs = generateTriangleCoefficients(64);
   const warmCoeffs = generateWarmAnalogCoefficients(64);
 
-  const saw = ctx.createPeriodicWave(sawCoeffs.real, sawCoeffs.imag, { disableNormalization: false });
-  const square = ctx.createPeriodicWave(squareCoeffs.real, squareCoeffs.imag, { disableNormalization: false });
-  const triangle = ctx.createPeriodicWave(triCoeffs.real, triCoeffs.imag, { disableNormalization: false });
-  const warm = ctx.createPeriodicWave(warmCoeffs.real, warmCoeffs.imag, { disableNormalization: false });
+  const saw = safeCreatePeriodicWave(ctx, sawCoeffs.real, sawCoeffs.imag);
+  const square = safeCreatePeriodicWave(ctx, squareCoeffs.real, squareCoeffs.imag);
+  const triangle = safeCreatePeriodicWave(ctx, triCoeffs.real, triCoeffs.imag);
+  const warm = safeCreatePeriodicWave(ctx, warmCoeffs.real, warmCoeffs.imag);
 
   return {
     saw,

@@ -692,6 +692,74 @@ export class AmbientApp {
       const allButtons = document.querySelectorAll('button');
       allButtons.forEach(btn => this._setupButtonFocusRelease(btn));
     }
+
+    // Attach iOS Safari audio autoplay unlock and interruption recovery listeners
+    this._attachAudioUnlockListeners();
+  }
+
+  /**
+   * Synchronously unlock Web Audio for iOS / iPad Safari
+   * @returns {AudioContext|null}
+   */
+  unlockAudio() {
+    if (this.engine && typeof this.engine.unlockAudio === 'function') {
+      return this.engine.unlockAudio();
+    }
+    return null;
+  }
+
+  _attachAudioUnlockListeners() {
+    if (this._hasAudioUnlockListeners) return;
+    this._hasAudioUnlockListeners = true;
+
+    const unlockEvents = ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'click'];
+    const unlockHandler = () => {
+      try {
+        if (this.engine && typeof this.engine.unlockAudio === 'function') {
+          this.engine.unlockAudio();
+        }
+      } catch (e) {}
+      this._isAudioUnlocked = true;
+      unlockEvents.forEach(evt => {
+        if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+          document.removeEventListener(evt, unlockHandler, true);
+        }
+        if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+          window.removeEventListener(evt, unlockHandler, true);
+        }
+      });
+    };
+
+    unlockEvents.forEach(evt => {
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener(evt, unlockHandler, { capture: true, passive: true });
+      }
+      if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener(evt, unlockHandler, { capture: true, passive: true });
+      }
+    });
+
+    // Interruption recovery for iPadOS Safari (screen lock, tab switch, app backgrounding)
+    const handleInterruptionRecovery = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (this.engine && this.engine.ctx && (this.engine.ctx.state === 'suspended' || this.engine.ctx.state === 'interrupted')) {
+        try {
+          if (typeof this.engine.ctx.resume === 'function') {
+            await this.engine.ctx.resume();
+          }
+        } catch (e) {
+          console.warn('Interruption recovery resume error:', e);
+        }
+      }
+    };
+
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', handleInterruptionRecovery);
+    }
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('visibilitychange', handleInterruptionRecovery);
+      window.addEventListener('pageshow', handleInterruptionRecovery);
+    }
   }
 
   /**

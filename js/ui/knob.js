@@ -89,26 +89,52 @@ export class BraunKnob {
     let isDragging = false;
     let startY = 0;
     let startVal = 0;
+    let dragMode = null; // 'pointer' | 'touch' | 'mouse'
+    let activeTouchId = null;
+    let activePointerId = null;
 
     const onPointerDown = (e) => {
       if (e.target === this.directInput) return;
-      e.preventDefault();
+      if (isDragging) return;
+      if (typeof e.preventDefault === 'function') {
+        e.preventDefault();
+      }
       if (this._animFrameId) {
         if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animFrameId);
         else clearTimeout(this._animFrameId);
         this._animFrameId = null;
       }
+
+      // Track touch identifier or pointer ID specifically to prevent multi-touch collisions
+      if (e.pointerId !== undefined && (e.type === 'pointerdown' || e.pointerType)) {
+        dragMode = 'pointer';
+        activePointerId = e.pointerId;
+        startY = e.clientY ?? 0;
+        try {
+          if (this.element.setPointerCapture && e.pointerId != null) {
+            this.element.setPointerCapture(e.pointerId);
+          }
+        } catch (err) {}
+      } else if (e.changedTouches && e.changedTouches.length > 0) {
+        dragMode = 'touch';
+        activeTouchId = e.changedTouches[0].identifier;
+        startY = e.changedTouches[0].clientY;
+      } else if (e.touches && e.touches.length > 0) {
+        dragMode = 'touch';
+        activeTouchId = e.touches[0].identifier;
+        startY = e.touches[0].clientY;
+      } else {
+        dragMode = 'mouse';
+        startY = e.clientY || 0;
+      }
+
       isDragging = true;
-      startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
       startVal = this.value;
       this.element.classList.add('is-active');
 
-      const onPointerMove = (ev) => {
-        if (!isDragging) return;
-        const currentY = ev.clientY || (ev.touches && ev.touches[0].clientY) || 0;
+      const applyDeltaY = (currentY, shiftKey) => {
         const deltaY = startY - currentY;
-        const sensitivity = ev.shiftKey ? 0.1 : 1.0;
-        const range = this.max - this.min;
+        const sensitivity = shiftKey ? 0.1 : 1.0;
         const pixelRange = 160;
 
         let normalizedChange = (deltaY / pixelRange) * sensitivity;
@@ -119,24 +145,125 @@ export class BraunKnob {
         this.setValue(newVal, true);
       };
 
-      const onPointerUp = () => {
-        if (!isDragging) return;
-        isDragging = false;
-        this.element.classList.remove('is-active');
-        window.removeEventListener('mousemove', onPointerMove);
-        window.removeEventListener('mouseup', onPointerUp);
-        window.removeEventListener('touchmove', onPointerMove);
-        window.removeEventListener('touchend', onPointerUp);
+      const onMouseMove = (ev) => {
+        if (!isDragging || dragMode !== 'mouse') return;
+        applyDeltaY(ev.clientY, ev.shiftKey);
       };
 
-      window.addEventListener('mousemove', onPointerMove, { passive: false });
-      window.addEventListener('mouseup', onPointerUp);
-      window.addEventListener('touchmove', onPointerMove, { passive: false });
-      window.addEventListener('touchend', onPointerUp);
+      const onPointerMove = (ev) => {
+        if (!isDragging || dragMode !== 'pointer') return;
+        if (activePointerId !== null && ev.pointerId !== undefined && ev.pointerId !== activePointerId) {
+          return; // Ignore other pointers
+        }
+        applyDeltaY(ev.clientY, ev.shiftKey);
+      };
+
+      const onTouchMove = (ev) => {
+        if (!isDragging || dragMode !== 'touch') return;
+        if (activeTouchId === null || !ev.touches) return;
+        let matchedTouch = null;
+        for (let i = 0; i < ev.touches.length; i++) {
+          if (ev.touches[i].identifier === activeTouchId) {
+            matchedTouch = ev.touches[i];
+            break;
+          }
+        }
+        if (matchedTouch) {
+          applyDeltaY(matchedTouch.clientY, ev.shiftKey);
+        }
+      };
+
+      const cleanup = () => {
+        if (!isDragging) return;
+        isDragging = false;
+        try {
+          if (this.element.releasePointerCapture && activePointerId != null) {
+            this.element.releasePointerCapture(activePointerId);
+          }
+        } catch (err) {}
+        dragMode = null;
+        activeTouchId = null;
+        activePointerId = null;
+        this.element.classList.remove('is-active');
+
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+          window.removeEventListener('pointercancel', onPointerCancel);
+          window.removeEventListener('touchmove', onTouchMove);
+          window.removeEventListener('touchend', onTouchEnd);
+          window.removeEventListener('touchcancel', onTouchCancel);
+        }
+      };
+
+      const onMouseUp = () => {
+        if (!isDragging || dragMode !== 'mouse') return;
+        cleanup();
+      };
+
+      const onPointerUp = (ev) => {
+        if (!isDragging || dragMode !== 'pointer') return;
+        if (activePointerId !== null && ev && ev.pointerId !== undefined && ev.pointerId !== activePointerId) {
+          return;
+        }
+        cleanup();
+      };
+
+      const onPointerCancel = (ev) => {
+        if (!isDragging || dragMode !== 'pointer') return;
+        if (activePointerId !== null && ev && ev.pointerId !== undefined && ev.pointerId !== activePointerId) {
+          return;
+        }
+        cleanup();
+      };
+
+      const onTouchEnd = (ev) => {
+        if (!isDragging || dragMode !== 'touch') return;
+        if (activeTouchId !== null && ev && ev.changedTouches) {
+          let matched = false;
+          for (let i = 0; i < ev.changedTouches.length; i++) {
+            if (ev.changedTouches[i].identifier === activeTouchId) {
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) return; // Different touch lifted
+        }
+        cleanup();
+      };
+
+      const onTouchCancel = (ev) => {
+        if (!isDragging || dragMode !== 'touch') return;
+        if (activeTouchId !== null && ev && ev.changedTouches) {
+          let matched = false;
+          for (let i = 0; i < ev.changedTouches.length; i++) {
+            if (ev.changedTouches[i].identifier === activeTouchId) {
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) return;
+        }
+        cleanup();
+      };
+
+      if (typeof window !== 'undefined') {
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+        window.addEventListener('pointermove', onPointerMove, { passive: false });
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerCancel);
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onTouchEnd);
+        window.addEventListener('touchcancel', onTouchCancel);
+      }
     };
 
     this.element.addEventListener('mousedown', onPointerDown);
     this.element.addEventListener('touchstart', onPointerDown, { passive: false });
+    this.element.addEventListener('pointerdown', onPointerDown);
 
     // Mouse wheel support
     this.element.addEventListener('wheel', (e) => {
