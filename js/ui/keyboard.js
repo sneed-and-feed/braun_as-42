@@ -4,7 +4,7 @@
  * visual voice illumination, and computer keyboard mapping.
  */
 
-import { getScaleDegreesInOctaves, CHORD_VOICINGS, getChordFrequencies, SCALES } from '../generative/scales.js';
+import { getScaleDegreesInOctaves, CHORD_VOICINGS, getChordFrequencies, SCALES, NOTE_NAMES, midiToFrequency } from '../generative/scales.js';
 
 export const CHIME_KEY_MAP = {
   'KeyA': 0, 'KeyS': 1, 'KeyD': 2, 'KeyF': 3,
@@ -16,6 +16,17 @@ export const CHIME_KEY_MAP = {
 export const CHIME_CHAR_MAP = {
   'a': 0, 's': 1, 'd': 2, 'f': 3, 'g': 4, 'h': 5, 'j': 6, 'k': 7,
   'l': 8, ';': 9, "'": 10, 'z': 11, 'x': 12, 'c': 13, 'v': 14
+};
+
+export const SEMITONE_KEY_MAP = {
+  'KeyW': 0, 'KeyE': 1, 'KeyR': 2, 'KeyT': 3,
+  'KeyY': 4, 'KeyU': 5, 'KeyI': 6, 'KeyO': 7,
+  'KeyP': 8, 'BracketLeft': 9, 'BracketRight': 10
+};
+
+export const SEMITONE_CHAR_MAP = {
+  'w': 0, 'e': 1, 'r': 2, 't': 3, 'y': 4, 'u': 5,
+  'i': 6, 'o': 7, 'p': 8, '[': 9, ']': 10
 };
 
 export const CHORD_KEY_MAP = {
@@ -34,6 +45,13 @@ export function getChimeKeyIndex(e) {
   return CHIME_CHAR_MAP[lower] !== undefined ? CHIME_CHAR_MAP[lower] : null;
 }
 
+export function getSemitoneKeyIndex(e) {
+  if (!e) return null;
+  if (e.code && SEMITONE_KEY_MAP[e.code] !== undefined) return SEMITONE_KEY_MAP[e.code];
+  const lower = e.key ? e.key.toLowerCase() : '';
+  return SEMITONE_CHAR_MAP[lower] !== undefined ? SEMITONE_CHAR_MAP[lower] : null;
+}
+
 export function getChordKeyIndex(e) {
   if (!e) return null;
   if (e.code && CHORD_KEY_MAP[e.code] !== undefined) return CHORD_KEY_MAP[e.code];
@@ -50,7 +68,7 @@ export function isFreezeHotkey(e) {
 }
 
 export function isPlayableSynthesizerKey(e) {
-  return getChimeKeyIndex(e) !== null || getChordKeyIndex(e) !== null || isFreezeHotkey(e);
+  return getChimeKeyIndex(e) !== null || getSemitoneKeyIndex(e) !== null || getChordKeyIndex(e) !== null || isFreezeHotkey(e);
 }
 
 export function isTextInputElement(el) {
@@ -78,6 +96,9 @@ export class BraunPlaySurface {
     this.onPlay = null;
 
     this.keyElements = new Map(); // midi -> HTMLElement
+    this.allKeysByMidi = new Map(); // midi -> HTMLElement[]
+    this.diatonicKeys = [];
+    this.semitoneKeys = [];
     this.activeTouches = new Map();
     this.activePointerVoices = new Set();
     this.activePointerChordSessions = new Set();
@@ -91,41 +112,68 @@ export class BraunPlaySurface {
     this._attachKeyboardShortcuts();
   }
 
+  _getShortcutKey(index) {
+    const keys = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'", 'Z', 'X', 'C', 'V'];
+    return keys[index] || '';
+  }
+
+  _getSemitoneShortcutKey(index) {
+    const keys = ['W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']'];
+    return keys[index] || '';
+  }
+
+  _registerKeyByMidi(midi, keyEl) {
+    const roundMidi = Math.round(midi);
+    if (!this.allKeysByMidi.has(roundMidi)) {
+      this.allKeysByMidi.set(roundMidi, []);
+    }
+    this.allKeysByMidi.get(roundMidi).push(keyEl);
+  }
+
   rebuildKeys() {
     if (!this.stripContainer) return;
     this.stripContainer.innerHTML = '';
     this.keyElements.clear();
+    this.allKeysByMidi.clear();
+    this.diatonicKeys = [];
+    this.semitoneKeys = [];
 
     const scale = SCALES[this.engine.currentScaleKey] || SCALES.BUDD_PENTATONIC;
     // 2 octaves from Octave 3 to 4
     const notes = getScaleDegreesInOctaves(this.engine.rootPitchClass, scale.intervals, 3, 4, this.engine.a4);
 
-    notes.forEach((note, idx) => {
-      const keyEl = document.createElement('button');
-      keyEl.className = 'braun-chime-key';
+    const setupKey = (keyEl, note, isSemitone, idx, colIndex) => {
+      keyEl.className = isSemitone ? 'braun-chime-key braun-semitone-key' : 'braun-chime-key braun-diatonic-key';
       keyEl.setAttribute('data-midi', note.midi);
       keyEl.setAttribute('data-freq', note.freq);
-      keyEl.setAttribute('aria-label', `Play ${note.name}`);
+      keyEl.setAttribute('aria-label', `Play ${note.name}${isSemitone ? ' (Semitone)' : ''}`);
+      keyEl.setAttribute('draggable', 'false');
+      if (keyEl.style) {
+        keyEl.style.gridRow = isSemitone ? '1' : '2';
+        keyEl.style.gridColumn = String(colIndex);
+      }
+
+      const shortcutKey = isSemitone ? this._getSemitoneShortcutKey(idx) : this._getShortcutKey(idx);
+      const degreeText = isSemitone ? `♯${note.degree}` : `DEG ${note.degree}`;
 
       keyEl.innerHTML = `
         <div class="braun-key-indicator"></div>
         <div class="braun-key-info">
           <span class="braun-key-name">${note.name}</span>
-          <span class="braun-key-degree">DEG ${note.degree}</span>
+          <span class="braun-key-degree">${degreeText}</span>
         </div>
-        <div class="braun-key-shortcut">${this._getShortcutKey(idx)}</div>
+        <div class="braun-key-shortcut">${shortcutKey}</div>
       `;
 
       let activeVoice = null;
       let handledByPointer = false;
       let clearPointerTimer = null;
 
-      keyEl.setAttribute('draggable', 'false');
       keyEl.addEventListener('dragstart', (e) => e.preventDefault());
 
       // Pointer event for velocity-sensitive strike
       const triggerStrike = (clientY, clientRect, isHold = false) => {
-        let velocity = 0.60;
+        let velocity = isSemitone ? 0.58 : 0.60;
         if (clientY !== undefined && clientY > 0 && clientRect && clientRect.height > 0) {
           const relY = Math.max(0, Math.min(1, (clientY - clientRect.top) / clientRect.height));
           // Lower hit gives firmer touch (0.45 .. 0.85)
@@ -244,8 +292,42 @@ export class BraunPlaySurface {
         if (typeof keyEl.blur === 'function') keyEl.blur();
       });
 
-      this.stripContainer.appendChild(keyEl);
+      return keyEl;
+    };
+
+    // 1. Diatonic / Modal Scale Keys (appended first so children[0] is primary note 0)
+    notes.forEach((note, idx) => {
+      const keyEl = document.createElement('button');
+      setupKey(keyEl, note, false, idx, idx + 1);
+      this.diatonicKeys.push(keyEl);
       this.keyElements.set(note.midi, keyEl);
+      this._registerKeyByMidi(note.midi, keyEl);
+      this.stripContainer.appendChild(keyEl);
+    });
+
+    // 2. Semitone Accidental Keys (+1 semitone above each diatonic note)
+    notes.forEach((note, idx) => {
+      const semiMidi = note.midi + 1;
+      const semiFreq = midiToFrequency(semiMidi, this.engine.a4);
+      const semiPitchClass = ((semiMidi % 12) + 12) % 12;
+      const semiOctave = Math.floor(semiMidi / 12) - 1;
+      const semiName = `${NOTE_NAMES[semiPitchClass]}${semiOctave}`;
+      const semiNote = {
+        midi: semiMidi,
+        freq: semiFreq,
+        name: semiName,
+        degree: note.degree,
+        interval: note.interval + 1
+      };
+
+      const semitoneKeyEl = document.createElement('button');
+      setupKey(semitoneKeyEl, semiNote, true, idx, idx + 1);
+      this.semitoneKeys.push(semitoneKeyEl);
+      if (!this.keyElements.has(semiMidi)) {
+        this.keyElements.set(semiMidi, semitoneKeyEl);
+      }
+      this._registerKeyByMidi(semiMidi, semitoneKeyEl);
+      this.stripContainer.appendChild(semitoneKeyEl);
     });
 
     // Support container & window level drag tracking for smooth glissando on touch & mouse swipe
@@ -312,11 +394,6 @@ export class BraunPlaySurface {
         }
       });
     }
-  }
-
-  _getShortcutKey(index) {
-    const keys = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'", 'Z', 'X', 'C', 'V'];
-    return keys[index] || '';
   }
 
   _renderChords() {
@@ -483,21 +560,30 @@ export class BraunPlaySurface {
    * Flash LED indicator on the key corresponding to midi note
    */
   flashKey(midi) {
-    const keyEl = this.keyElements.get(Math.round(midi));
-    if (keyEl) {
-      if (keyEl._flashTimer) {
-        clearTimeout(keyEl._flashTimer);
+    const roundMidi = Math.round(midi);
+    const elements = this.allKeysByMidi ? this.allKeysByMidi.get(roundMidi) : null;
+    if (elements && elements.length > 0) {
+      elements.forEach(keyEl => this._flashElement(keyEl));
+    } else {
+      const keyEl = this.keyElements.get(roundMidi);
+      if (keyEl) this._flashElement(keyEl);
+    }
+  }
+
+  _flashElement(keyEl) {
+    if (!keyEl) return;
+    if (keyEl._flashTimer) {
+      clearTimeout(keyEl._flashTimer);
+      keyEl._flashTimer = null;
+    }
+    keyEl.classList.add('is-pressed');
+    if (!keyEl._isHeld) {
+      keyEl._flashTimer = setTimeout(() => {
+        if (!keyEl._isHeld) {
+          keyEl.classList.remove('is-pressed');
+        }
         keyEl._flashTimer = null;
-      }
-      keyEl.classList.add('is-pressed');
-      if (!keyEl._isHeld) {
-        keyEl._flashTimer = setTimeout(() => {
-          if (!keyEl._isHeld) {
-            keyEl.classList.remove('is-pressed');
-          }
-          keyEl._flashTimer = null;
-        }, 250);
-      }
+      }, 250);
     }
   }
 
@@ -636,9 +722,10 @@ export class BraunPlaySurface {
       }
 
       const chimeIdx = getKeyIndex(e);
+      const semitoneIdx = getSemitoneKeyIndex(e);
       const chordIdx = getChordIndex(e);
       const isFreeze = isFreezeHotkey(e);
-      const isPlayable = (chimeIdx !== null || chordIdx !== null || isFreeze);
+      const isPlayable = (chimeIdx !== null || semitoneIdx !== null || chordIdx !== null || isFreeze);
 
       // If not a playable synthesizer key or hotkey, allow native input/select behavior (arrow navigation, tab, enter)
       if (!isPlayable) {
@@ -677,10 +764,27 @@ export class BraunPlaySurface {
         return;
       }
 
-      // Playable chime keys with continuous hold sustain
+      // Playable chime keys with continuous hold sustain (A, S, D, F, G, H...)
       if (chimeIdx !== null) {
-        const keys = Array.from(this.keyElements.values());
+        const keys = (this.diatonicKeys && this.diatonicKeys.length > 0) ? this.diatonicKeys : Array.from(this.keyElements.values());
         const keyEl = keys[chimeIdx] || (keys.length > 0 ? keys[chimeIdx % keys.length] : null);
+        if (keyEl) {
+          const freq = parseFloat(keyEl.getAttribute('data-freq'));
+          const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
+          keyEl._isHeld = true;
+          keyEl.classList.add('is-active');
+          keyEl.classList.add('is-pressed');
+          const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0, true);
+          const keyIdentifier = e.code || e.key;
+          this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise, code: e.code, key: e.key });
+        }
+        return;
+      }
+
+      // Playable semitone accidental keys with continuous hold sustain (W, E, R, T, U...)
+      if (semitoneIdx !== null) {
+        const semitones = (this.semitoneKeys && this.semitoneKeys.length > 0) ? this.semitoneKeys : [];
+        const keyEl = semitones[semitoneIdx] || (semitones.length > 0 ? semitones[semitoneIdx % semitones.length] : null);
         if (keyEl) {
           const freq = parseFloat(keyEl.getAttribute('data-freq'));
           const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
@@ -825,6 +929,13 @@ export class BraunPlaySurface {
         keyEl.classList.remove('is-pressed');
         keyEl.classList.remove('is-active');
       });
+      if (this.semitoneKeys) {
+        this.semitoneKeys.forEach(keyEl => {
+          keyEl._isHeld = false;
+          keyEl.classList.remove('is-pressed');
+          keyEl.classList.remove('is-active');
+        });
+      }
 
       if (this.chordsContainer && typeof this.chordsContainer.querySelectorAll === 'function') {
         const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
@@ -863,6 +974,13 @@ export class BraunPlaySurface {
         keyEl.classList.remove('is-pressed');
         keyEl.classList.remove('is-active');
       });
+      if (this.semitoneKeys) {
+        this.semitoneKeys.forEach(keyEl => {
+          keyEl._isHeld = false;
+          keyEl.classList.remove('is-pressed');
+          keyEl.classList.remove('is-active');
+        });
+      }
 
       if (this.chordsContainer && typeof this.chordsContainer.querySelectorAll === 'function') {
         const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');

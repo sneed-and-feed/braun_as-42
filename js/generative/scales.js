@@ -79,8 +79,8 @@ export const CHORD_VOICINGS = {
   ETHEREAL_11TH: {
     id: 'ETHEREAL_11TH',
     name: 'Ethereal 11th',
-    intervals: [0, 7, 10, 14, 17],
-    description: 'Eno ambient shimmer voicing (1 - 5 - b7 - 9 - 11)'
+    intervals: [0, 7, 11, 14, 17, 24],
+    description: 'Eno celestial shimmer voicing (1 - 5 - 7 - 9 - 11 - 15ma)'
   },
   LYDIAN_CASCADE: {
     id: 'LYDIAN_CASCADE',

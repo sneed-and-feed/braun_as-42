@@ -74,7 +74,7 @@ Designed for musicians who create intuitively by ear without formal music theory
   * **PAVILION SUS:** Open suspended 1 - 5 - 9 - 10 voicing.
   * **PLATEAUX MAJ9:** Lush felt piano major 9th spread.
   * **DEEP DRONE 5TH:** Wide spatial fifths and octaves.
-  * **ETHEREAL 11TH:** Brian Eno celestial shimmer voicing.
+  * **ETHEREAL 11TH:** Brian Eno celestial shimmer voicing (1 - 5 - 7 - 9 - 11 - 15ma) with luminous Major 7th and high octave bloom.
   * **LYDIAN CASCADE:** Sparkling #11 cluster.
   * **SOLAR BEATING:** Microtonally detuned acoustic beating stack.
 * **Harold Budd Poisson Auto-Evolve Engine:** Simulates organic contemplative piano playing where notes fall like rain droplets with inter-onset intervals following an exponential Poisson distribution:
@@ -134,7 +134,8 @@ This automatically syncs the latest files to `sneed-and-feed.github.io`, commits
 Additionally, this repository includes `.github/workflows/deploy.yml` which deploys automatically on every push to `main`.
 
 ### Keyboard Shortcuts & Gestures
-* **A, S, D, F, G, H, J, K, L, ;, ', Z, X, C, V:** Play scale degrees on the harmonic touch strip (click-free with key repeat protection and continuous hold sustain).
+* **A, S, D, F, G, H, J, K, L, ;, ', Z, X, C, V:** Play modal scale degrees on the lower tier of the harmonic touch strip (click-free with key repeat protection and continuous hold sustain).
+* **W, E, R, T, Y, U, I, O, P, [, ]:** Play semitone accidental inflections (+1 semitone chromatic sharp/suspension above each modal degree) on the upper tier of the chime strip.
 * **Click & Drag Glissando:** Slide finger or mouse horizontally across chime keys for expressive harp/chime glissandi. Each entered key articulates expressively with velocity sensitivity while smoothly releasing previous sounding notes. Holding in place maintains continuous pedal sustain until mouse release.
 * **1 to 9, 0, -, =:** Trigger Harold Budd Chord Cluster Macros (12 curated modal voicings with subtle humanized strum and hold sustain).
 * **Spacebar:** Toggle Infinite Reverb Freeze.

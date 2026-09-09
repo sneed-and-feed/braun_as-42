@@ -131,4 +131,59 @@ describe('Scales and Tuning Math', () => {
     assert.strictEqual(CHORD_VOICINGS.TEARS_IN_RAIN.name, 'Tears in Rain');
     assert.strictEqual(CHORD_VOICINGS.TEARS_IN_RAIN.description, 'Vangelis poignant resolution (1 - 5 - 7 - 9 - #11 - 13)');
   });
+
+  it('diversifies ETHEREAL_11TH with Eno celestial shimmer voicing distinct from NOSTALGIA_11TH', () => {
+    // Ethereal 11th (Cluster 4): [0, 7, 11, 14, 17, 24] -> MIDI [60, 67, 71, 74, 77, 84]
+    const ethFreqs = getChordFrequencies(60, 'ETHEREAL_11TH', 440);
+    assert.strictEqual(ethFreqs.length, 6);
+    const ethMidis = ethFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
+    assert.deepStrictEqual(ethMidis, [60, 67, 71, 74, 77, 84]);
+    assert.strictEqual(CHORD_VOICINGS.ETHEREAL_11TH.name, 'Ethereal 11th');
+    assert.strictEqual(CHORD_VOICINGS.ETHEREAL_11TH.description, 'Eno celestial shimmer voicing (1 - 5 - 7 - 9 - 11 - 15ma)');
+
+    // Nostalgia 11th (Cluster 0): [0, 7, 10, 14, 15, 17] -> MIDI [60, 67, 70, 74, 75, 77]
+    const nostFreqs = getChordFrequencies(60, 'NOSTALGIA_11TH', 440);
+    const nostMidis = nostFreqs.map(f => Math.round(frequencyToMidi(f, 440)));
+
+    // Assert that Cluster 4 and Cluster 0 are not identical and have distinct intervals
+    assert.notDeepStrictEqual(CHORD_VOICINGS.ETHEREAL_11TH.intervals, CHORD_VOICINGS.NOSTALGIA_11TH.intervals);
+    assert.notDeepStrictEqual(ethMidis, nostMidis);
+    // Cluster 4 has Major 7 (11) and 15ma octave shimmer (24), whereas Cluster 0 has b7 (10) and b10 (15)
+    assert.ok(CHORD_VOICINGS.ETHEREAL_11TH.intervals.includes(11), 'Cluster 4 must feature Major 7th (11)');
+    assert.ok(CHORD_VOICINGS.ETHEREAL_11TH.intervals.includes(24), 'Cluster 4 must feature 15ma high shimmer octave (24)');
+    assert.ok(!CHORD_VOICINGS.ETHEREAL_11TH.intervals.includes(10), 'Cluster 4 must not duplicate b7 (10)');
+    assert.ok(!CHORD_VOICINGS.ETHEREAL_11TH.intervals.includes(15), 'Cluster 4 must not duplicate b10 (15)');
+  });
+
+  it('maps W, E, R, T, U keys to semitone accidentals and recognizes them as playable synthesizer keys', async () => {
+    const {
+      SEMITONE_KEY_MAP,
+      SEMITONE_CHAR_MAP,
+      getSemitoneKeyIndex,
+      isPlayableSynthesizerKey
+    } = await import('../js/ui/keyboard.js');
+
+    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyW' }), 0);
+    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyE' }), 1);
+    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyR' }), 2);
+    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyT' }), 3);
+    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyY' }), 4);
+    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyU' }), 5);
+
+    // Case-insensitivity via key
+    assert.strictEqual(getSemitoneKeyIndex({ key: 'w' }), 0);
+    assert.strictEqual(getSemitoneKeyIndex({ key: 'W' }), 0);
+    assert.strictEqual(getSemitoneKeyIndex({ key: 'e' }), 1);
+    assert.strictEqual(getSemitoneKeyIndex({ key: 'r' }), 2);
+    assert.strictEqual(getSemitoneKeyIndex({ key: 't' }), 3);
+    assert.strictEqual(getSemitoneKeyIndex({ key: 'u' }), 5);
+
+    // Playable synthesizer key check
+    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyW' }), true);
+    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyE' }), true);
+    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyR' }), true);
+    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyT' }), true);
+    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyU' }), true);
+    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyQ' }), false);
+  });
 });
