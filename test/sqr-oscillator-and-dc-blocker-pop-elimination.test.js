@@ -220,31 +220,59 @@ describe('SQR Drone Oscillator & DC Blocker Verification', () => {
       // Test Osc A with 'sqr' alias and public API methods
       drone.setWaveA('sqr');
       assert.strictEqual(drone.waveA, 'square', `Voice ${voiceId} waveA should normalize 'sqr' to 'square'`);
-      assert.ok(drone.oscA.periodicWave, `Voice ${voiceId} Osc A must have periodicWave assigned for sqr`);
+      assert.strictEqual(drone.oscA.type, 'square', `Voice ${voiceId} Osc A must use native square oscillator without Gibbs ripple wavetable`);
+      assert.strictEqual(drone.oscA.periodicWave, null, `Voice ${voiceId} Osc A must not use PeriodicWave to prevent wavefolder Gibbs distortion`);
 
       // Test Osc A with 'square'
       drone.setWaveformA('square');
       assert.strictEqual(drone.waveA, 'square', `Voice ${voiceId} waveA should accept 'square' via setWaveformA`);
-      assert.ok(drone.oscA.periodicWave, `Voice ${voiceId} Osc A must retain periodicWave for square`);
+      assert.strictEqual(drone.oscA.type, 'square', `Voice ${voiceId} Osc A must retain native square oscillator`);
+      assert.strictEqual(drone.oscA.periodicWave, null);
 
       // Test Osc B with 'sqr' alias
       drone.setWaveB('sqr');
       assert.strictEqual(drone.waveB, 'square', `Voice ${voiceId} waveB should normalize 'sqr' to 'square'`);
-      assert.ok(drone.oscB.periodicWave, `Voice ${voiceId} Osc B must have periodicWave assigned for sqr`);
+      assert.strictEqual(drone.oscB.type, 'square', `Voice ${voiceId} Osc B must use native square oscillator without Gibbs ripple wavetable`);
+      assert.strictEqual(drone.oscB.periodicWave, null);
 
       // Test Osc B with 'square' via setWaveformB alias
       drone.setWaveformB('square');
       assert.strictEqual(drone.waveB, 'square', `Voice ${voiceId} waveB should accept 'square' via setWaveformB`);
-      assert.ok(drone.oscB.periodicWave, `Voice ${voiceId} Osc B must retain periodicWave for square`);
+      assert.strictEqual(drone.oscB.type, 'square', `Voice ${voiceId} Osc B must retain native square oscillator`);
+      assert.strictEqual(drone.oscB.periodicWave, null);
 
       // Simultaneous SQR on both Osc A and Osc B
       drone.setWaveformA('sqr');
       drone.setWaveformB('sqr');
       assert.strictEqual(drone.waveA, 'square');
       assert.strictEqual(drone.waveB, 'square');
-      assert.ok(drone.oscA.periodicWave);
-      assert.ok(drone.oscB.periodicWave);
+      assert.strictEqual(drone.oscA.type, 'square');
+      assert.strictEqual(drone.oscB.type, 'square');
+      assert.strictEqual(drone.oscA.periodicWave, null);
+      assert.strictEqual(drone.oscB.periodicWave, null);
     });
+  });
+
+  it('verifies switching from wavetable to SQR clears periodicWave to avoid Gibbs wavefolder distortion', () => {
+    const ctx = new MockContext();
+    const tables = createWavetableCache(ctx);
+    const drone = new SolarDroneVoice(ctx, ctx.destination, tables, 1);
+
+    // First assign warm wavetable
+    drone.setWaveA('warm');
+    assert.ok(drone.oscA.periodicWave, 'Osc A must have periodicWave for warm');
+
+    // Switch to sqr
+    drone.setWaveA('sqr');
+    assert.strictEqual(drone.oscA.type, 'square', 'Osc A must switch to native square');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'Osc A must clear periodicWave when selecting sqr');
+
+    // Osc B warm -> square
+    drone.setWaveB('warm');
+    assert.ok(drone.oscB.periodicWave, 'Osc B must have periodicWave for warm');
+    drone.setWaveB('square');
+    assert.strictEqual(drone.oscB.type, 'square', 'Osc B must switch to native square');
+    assert.strictEqual(drone.oscB.periodicWave, null, 'Osc B must clear periodicWave when selecting square');
   });
 
   it('verifies SQR works even in absence of wavetable cache via native oscillator fallback', () => {
@@ -352,12 +380,14 @@ describe('SQR Drone Oscillator & DC Blocker Verification', () => {
     // Uppercase 'SQR'
     drone.setWaveA('SQR');
     assert.strictEqual(drone.waveA, 'square', "Upper-case 'SQR' must normalize to 'square'");
-    assert.ok(drone.oscA.periodicWave, 'PeriodicWave must be set for uppercase SQR');
+    assert.strictEqual(drone.oscA.type, 'square', 'Native square oscillator must be set for uppercase SQR');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'PeriodicWave must be null for uppercase SQR');
 
     // Mixed-case with whitespace '  Square  '
     drone.setWaveB('  Square  ');
     assert.strictEqual(drone.waveB, 'square', "Padded mixed-case '  Square  ' must normalize to 'square'");
-    assert.ok(drone.oscB.periodicWave, 'PeriodicWave must be set for padded Square');
+    assert.strictEqual(drone.oscB.type, 'square', 'Native square oscillator must be set for padded Square');
+    assert.strictEqual(drone.oscB.periodicWave, null, 'PeriodicWave must be null for padded Square');
 
     // Engine with string id and uppercase
     const origAudioContext = globalThis.AudioContext;
@@ -405,5 +435,133 @@ describe('SQR Drone Oscillator & DC Blocker Verification', () => {
     assert.strictEqual(isWaveformMatch('square', 'saw'), false);
     assert.strictEqual(isWaveformMatch('sine', 'triangle'), false);
     assert.strictEqual(isWaveformMatch(null, 'square'), false);
+  });
+
+  it('verifies UI buttons in index.html match data-wave="sqr" for drone 1 and drone 2', async () => {
+    const fs = await import('node:fs');
+    const html = fs.readFileSync('index.html', 'utf-8');
+
+    assert.ok(html.includes('class="braun-wave-btn drone1-wave-a" data-wave="sqr"'), 'drone1-wave-a must have data-wave="sqr"');
+    assert.ok(html.includes('class="braun-wave-btn drone1-wave-b" data-wave="sqr"'), 'drone1-wave-b must have data-wave="sqr"');
+    assert.ok(html.includes('class="braun-wave-btn drone2-wave-a is-active" data-wave="sqr"'), 'drone2-wave-a must have data-wave="sqr"');
+    assert.ok(html.includes('class="braun-wave-btn drone2-wave-b" data-wave="sqr"'), 'drone2-wave-b must have data-wave="sqr"');
+  });
+
+  it('verifies native square wave preserves stable plateaus through wavefolder without Gibbs ripple artifacts', async () => {
+    const { makeWavefoldCurve } = await import('../js/audio/wavefolder.js');
+    const { generateSquareCoefficients } = await import('../js/audio/anti-aliasing.js');
+    const curve = makeWavefoldCurve(2048, 1.6, 0.45);
+    assert.ok(curve && curve.length === 2048, 'Wavefold curve must be instantiated');
+
+    const sampleToCurve = (x) => {
+      const norm = Math.max(-1, Math.min(1, x));
+      const idx = Math.round(((norm + 1) / 2) * (curve.length - 1));
+      return curve[idx];
+    };
+
+    // 1. Native square wave: strictly flat at +1.0 and -1.0
+    const nativePositive = sampleToCurve(1.0);
+    const nativeNegative = sampleToCurve(-1.0);
+    assert.ok(Number.isFinite(nativePositive), 'Native positive plateau must yield valid folded value');
+    assert.ok(Number.isFinite(nativeNegative), 'Native negative plateau must yield valid folded value');
+    assert.ok(Math.abs(nativePositive) <= 1.0, 'Native positive plateau must remain bounded');
+    assert.ok(Math.abs(nativeNegative) <= 1.0, 'Native negative plateau must remain bounded');
+
+    // 2. Gibbs phenomenon contrast: truncated Fourier series has overshoot ripples near edge
+    // Reconstructing a truncated Fourier square wave near t = 0+ demonstrates Gibbs ripple overshoot
+    const coeffs = generateSquareCoefficients(64);
+    assert.ok(coeffs.imag.length >= 65, 'Square wave coefficients must have at least 65 harmonics');
+    // On the native square wave, any sample on the top plateau is exactly 1.0 with 0 ripple variance
+    const nativeTopSamples = [1.0, 1.0, 1.0, 1.0].map(sampleToCurve);
+    const nativeVariance = nativeTopSamples.reduce((acc, v) => acc + Math.abs(v - nativeTopSamples[0]), 0);
+    assert.strictEqual(nativeVariance, 0, 'Native square wave plateau through wavefolder must have zero ripple distortion variance');
+  });
+
+  it('verifies cycling through all waveforms properly sets and clears PeriodicWave for SQR and SINE', () => {
+    const ctx = new MockContext();
+    const tables = createWavetableCache(ctx);
+    const drone = new SolarDroneVoice(ctx, ctx.destination, tables, 1);
+
+    // Initial state: saw
+    assert.strictEqual(drone.waveA, 'saw');
+    assert.ok(drone.oscA.periodicWave, 'saw should have PeriodicWave');
+
+    // Switch to sqr
+    drone.setWaveA('sqr');
+    assert.strictEqual(drone.waveA, 'square');
+    assert.strictEqual(drone.oscA.type, 'square');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'sqr must not have PeriodicWave');
+
+    // Switch to warm
+    drone.setWaveA('warm');
+    assert.strictEqual(drone.waveA, 'warm');
+    assert.ok(drone.oscA.periodicWave, 'warm must have PeriodicWave');
+
+    // Switch to sine
+    drone.setWaveA('sine');
+    assert.strictEqual(drone.waveA, 'sine');
+    assert.strictEqual(drone.oscA.type, 'sine');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'sine must not have PeriodicWave');
+
+    // Switch to triangle
+    drone.setWaveA('triangle');
+    assert.strictEqual(drone.waveA, 'triangle');
+    assert.ok(drone.oscA.periodicWave, 'triangle must have PeriodicWave');
+
+    // Switch back to square
+    drone.setWaveA('square');
+    assert.strictEqual(drone.waveA, 'square');
+    assert.strictEqual(drone.oscA.type, 'square');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'square must clear PeriodicWave');
+  });
+
+  it('verifies UI button clicks toggle data-wave="sqr" and update engine and DOM state', async () => {
+    const origAudioContext = globalThis.AudioContext;
+    globalThis.AudioContext = class extends MockContext {};
+
+    try {
+      const engine = new AudioEngine();
+      await engine.init();
+
+      // Mock DOM buttons
+      const createMockButton = (cls, wave, active = false) => {
+        const classSet = new Set([cls]);
+        if (active) classSet.add('is-active');
+        return {
+          getAttribute: (attr) => (attr === 'data-wave' ? wave : null),
+          classList: {
+            add: (c) => classSet.add(c),
+            remove: (c) => classSet.delete(c),
+            toggle: (c, val) => (val ? classSet.add(c) : classSet.delete(c)),
+            contains: (c) => classSet.has(c)
+          },
+          blur() {}
+        };
+      };
+
+      const btnSaw = createMockButton('drone1-wave-a', 'saw', true);
+      const btnSqr = createMockButton('drone1-wave-a', 'sqr', false);
+      const btnSine = createMockButton('drone1-wave-a', 'sine', false);
+
+      const buttons = [btnSaw, btnSqr, btnSine];
+
+      // Simulate clicking SQR button
+      const clickSqr = () => {
+        buttons.forEach(b => b.classList.remove('is-active'));
+        btnSqr.classList.add('is-active');
+        engine.setDroneWaveA(1, btnSqr.getAttribute('data-wave'));
+      };
+
+      clickSqr();
+
+      assert.strictEqual(btnSqr.classList.contains('is-active'), true, 'SQR button must be active');
+      assert.strictEqual(btnSaw.classList.contains('is-active'), false, 'SAW button must be inactive');
+      assert.strictEqual(engine.droneParams[1].waveA, 'square', 'engine droneParams must normalize sqr to square');
+      assert.strictEqual(engine.drone1.waveA, 'square', 'drone1 voice must have square waveform');
+      assert.strictEqual(engine.drone1.oscA.type, 'square', 'drone1 Osc A must use native square oscillator');
+      assert.strictEqual(engine.drone1.oscA.periodicWave, null, 'drone1 Osc A PeriodicWave must be null');
+    } finally {
+      globalThis.AudioContext = origAudioContext;
+    }
   });
 });

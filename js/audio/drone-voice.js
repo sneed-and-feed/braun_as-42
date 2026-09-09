@@ -151,6 +151,9 @@ export class SolarDroneVoice {
     if (norm === 'sine') {
       try {
         osc.type = 'sine';
+        if (osc.periodicWave !== undefined) {
+          osc.periodicWave = null;
+        }
       } catch (e) {}
     } else if (norm === 'warm') {
       if (this.wavetables && this.wavetables.warm) {
@@ -163,15 +166,18 @@ export class SolarDroneVoice {
         } catch (e) {}
       }
     } else if (norm === 'square') {
-      if (this.wavetables && (this.wavetables.square || this.wavetables.sqr)) {
-        try {
-          osc.setPeriodicWave(this.wavetables.square || this.wavetables.sqr);
-        } catch (e) {}
-      } else {
-        try {
-          osc.type = 'square';
-        } catch (e) {}
-      }
+      // Native Web Audio square oscillator uses optimal minBLEP / polyBLEP anti-aliasing
+      // without Gibbs overshoot ripples. A truncated Fourier series wavetable creates
+      // Gibbs ringing ripples at transitions that fold back and forth non-linearly
+      // in the analog wavefolder shaper (makeWavefoldCurve), causing harsh screeching
+      // and metallic distortion. Native osc.type = 'square' produces the authentic,
+      // warm, hollow analog square wave tone.
+      try {
+        osc.type = 'square';
+        if (osc.periodicWave !== undefined) {
+          osc.periodicWave = null;
+        }
+      } catch (e) {}
     } else if (norm === 'sawtooth') {
       if (this.wavetables && (this.wavetables.saw || this.wavetables.sawtooth)) {
         try {
