@@ -1242,54 +1242,14 @@ export class AmbientApp {
     if (!this.isPowerOn) {
       await this.startAudio();
     } else {
-      if (this.engine.ctx) {
-        try {
-          if (typeof this.engine.powerOff === 'function') {
-            await this.engine.powerOff();
-          } else {
-            const now = this.engine.ctx.currentTime;
-            const busses = [this.engine.masterGain, this.engine.droneBus, this.engine.pianoBus].filter(b => b && b.gain);
-            busses.forEach(bus => {
-              let held = false;
-              if (typeof bus.gain.cancelAndHoldAtTime === 'function') {
-                try {
-                  bus.gain.cancelAndHoldAtTime(now);
-                  held = true;
-                } catch (e) {
-                  held = false;
-                }
-              }
-              if (!held) {
-                if (typeof bus.gain.cancelScheduledValues === 'function') {
-                  bus.gain.cancelScheduledValues(now);
-                }
-                const cur = (typeof bus.gain.value === 'number' && isFinite(bus.gain.value)) ? bus.gain.value : 1.0;
-                if (typeof bus.gain.setValueAtTime === 'function') {
-                  bus.gain.setValueAtTime(cur, now);
-                }
-              }
-              if (typeof bus.gain.linearRampToValueAtTime === 'function') {
-                bus.gain.linearRampToValueAtTime(0.0, now + 0.035);
-              } else if (typeof bus.gain.setTargetAtTime === 'function') {
-                bus.gain.setTargetAtTime(0.0, now, 0.010);
-              } else if (typeof bus.gain.setValueAtTime === 'function') {
-                bus.gain.setValueAtTime(0.0, now + 0.035);
-              }
-            });
-            await new Promise(r => setTimeout(r, 50));
-            const endT = this.engine.ctx.currentTime;
-            busses.forEach(bus => {
-              if (typeof bus.gain.setValueAtTime === 'function') {
-                bus.gain.setValueAtTime(0.0, endT);
-              }
-            });
-            await this.engine.ctx.suspend();
-          }
-        } catch (e) {
-          console.warn('AudioContext suspend error:', e);
-        }
-      }
       this.isPowerOn = false;
+
+      // Immediately update power button UI
+      if (powerBtn) {
+        powerBtn.classList.remove('is-active');
+        const textEl = powerBtn.querySelector('.braun-status-text');
+        if (textEl) textEl.textContent = 'POWER ON';
+      }
 
       // Reset oscilloscope back to standby phosphor beam
       if (this.scope) {
@@ -1305,12 +1265,6 @@ export class AmbientApp {
           const textEl = recordBtn.querySelector('.braun-record-text');
           if (textEl) textEl.textContent = 'RECORD WAV';
         }
-      }
-
-      if (powerBtn) {
-        powerBtn.classList.remove('is-active');
-        const textEl = powerBtn.querySelector('.braun-status-text');
-        if (textEl) textEl.textContent = 'POWER ON';
       }
 
       // Gracefully disengage generative engines when powered down
@@ -1334,6 +1288,63 @@ export class AmbientApp {
           const bar = document.getElementById(`loop-progress-${l.id}`);
           if (bar) bar.style.width = '0%';
         });
+      }
+
+      if (this.engine.ctx) {
+        try {
+          if (typeof this.engine.powerOff === 'function') {
+            await this.engine.powerOff();
+          } else {
+            const now = this.engine.ctx.currentTime;
+            const rampDuration = 0.050;
+            const busses = [
+              this.engine.masterGain,
+              this.engine.droneBus,
+              this.engine.pianoBus,
+              this.engine.delayReturn,
+              this.engine.delaySend,
+              this.engine.drone1 && this.engine.drone1.voiceGain,
+              this.engine.drone2 && this.engine.drone2.voiceGain
+            ].filter(b => b && b.gain);
+            busses.forEach(bus => {
+              let held = false;
+              if (typeof bus.gain.cancelAndHoldAtTime === 'function') {
+                try {
+                  bus.gain.cancelAndHoldAtTime(now);
+                  held = true;
+                } catch (e) {
+                  held = false;
+                }
+              }
+              if (!held) {
+                if (typeof bus.gain.cancelScheduledValues === 'function') {
+                  bus.gain.cancelScheduledValues(now);
+                }
+                const cur = (typeof bus.gain.value === 'number' && isFinite(bus.gain.value)) ? bus.gain.value : 1.0;
+                if (typeof bus.gain.setValueAtTime === 'function') {
+                  bus.gain.setValueAtTime(cur, now);
+                }
+              }
+              if (typeof bus.gain.linearRampToValueAtTime === 'function') {
+                bus.gain.linearRampToValueAtTime(0.0, now + rampDuration);
+              } else if (typeof bus.gain.setTargetAtTime === 'function') {
+                bus.gain.setTargetAtTime(0.0, now, rampDuration / 3);
+              } else if (typeof bus.gain.setValueAtTime === 'function') {
+                bus.gain.setValueAtTime(0.0, now + rampDuration);
+              }
+            });
+            await new Promise(r => setTimeout(r, 80));
+            const endT = Math.max(this.engine.ctx.currentTime, now + rampDuration);
+            busses.forEach(bus => {
+              if (typeof bus.gain.setValueAtTime === 'function') {
+                bus.gain.setValueAtTime(0.0, endT);
+              }
+            });
+            await this.engine.ctx.suspend();
+          }
+        } catch (e) {
+          console.warn('AudioContext suspend error:', e);
+        }
       }
     }
   }

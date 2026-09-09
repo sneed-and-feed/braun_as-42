@@ -483,13 +483,32 @@ export class FeltPianoVoice {
       }
     } else {
       if (this.oscMixer && this.oscMixer.gain) {
-        if (typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
+        let mHeld = false;
+        if (typeof this.oscMixer.gain.cancelAndHoldAtTime === 'function') {
+          try {
+            this.oscMixer.gain.cancelAndHoldAtTime(cancelTime);
+            mHeld = true;
+          } catch (e) {
+            mHeld = false;
+          }
+        }
+        if (!mHeld && typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
           this.oscMixer.gain.cancelScheduledValues(cancelTime);
         }
-        if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
-          this.oscMixer.gain.setValueAtTime(0.0, cancelTime);
+        const curMixer = (typeof this.oscMixer.gain.value === 'number' && isFinite(this.oscMixer.gain.value)) ? this.oscMixer.gain.value : 0.0;
+        if (curMixer <= 0.0001) {
+          if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
+            this.oscMixer.gain.setValueAtTime(0.0, cancelTime);
+          } else {
+            this.oscMixer.gain.value = 0.0;
+          }
         } else {
-          this.oscMixer.gain.value = 0.0;
+          if (!mHeld && typeof this.oscMixer.gain.setValueAtTime === 'function') {
+            this.oscMixer.gain.setValueAtTime(curMixer, cancelTime);
+          }
+          if (typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
+            this.oscMixer.gain.linearRampToValueAtTime(0.0, noteStartTime);
+          }
         }
       }
     }
@@ -723,7 +742,23 @@ export class FeltPianoVoice {
       }
       if (!held) {
         this.voiceGain.gain.cancelScheduledValues(cancelTime);
-        this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
+        const curG = (this.voiceGain && this.voiceGain.gain && typeof this.voiceGain.gain.value === 'number' && isFinite(this.voiceGain.gain.value))
+          ? this.voiceGain.gain.value
+          : 0.0;
+        if (curG <= 0.0001) {
+          if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+            this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
+          } else {
+            this.voiceGain.gain.value = 0.0;
+          }
+        } else {
+          if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+            this.voiceGain.gain.setValueAtTime(curG, cancelTime);
+          }
+          if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
+            this.voiceGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
+          }
+        }
       } else {
         if (this.voiceGain.gain.value <= 0 && typeof this.voiceGain.gain.setValueAtTime === 'function') {
           this.voiceGain.gain.setValueAtTime(0.0, cancelTime);

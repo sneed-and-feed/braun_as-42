@@ -133,6 +133,10 @@ describe('Drone Active Power On/Off Pop Elimination', () => {
       engine.masterGain.gain.events = [];
       engine.droneBus.gain.events = [];
       engine.pianoBus.gain.events = [];
+      engine.delayReturn.gain.events = [];
+      engine.delaySend.gain.events = [];
+      engine.drone1.voiceGain.gain.events = [];
+      engine.drone2.voiceGain.gain.events = [];
 
       // Execute powerOff with drones active
       await engine.powerOff();
@@ -150,6 +154,20 @@ describe('Drone Active Power On/Off Pop Elimination', () => {
       // Verify pianoBus ramped down smoothly to 0.0
       const pianoRamp = engine.pianoBus.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
       assert.ok(pianoRamp, 'pianoBus must have linearRampToValueAtTime to 0.0');
+
+      // Verify delayReturn and delaySend ramped down smoothly to 0.0
+      const delayReturnRamp = engine.delayReturn.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
+      assert.ok(delayReturnRamp, 'delayReturn must have linearRampToValueAtTime to 0.0');
+
+      const delaySendRamp = engine.delaySend.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
+      assert.ok(delaySendRamp, 'delaySend must have linearRampToValueAtTime to 0.0');
+
+      // Verify active drone voices ramped down to 0.0
+      const drone1Ramp = engine.drone1.voiceGain.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
+      assert.ok(drone1Ramp, 'drone1 voiceGain must ramp to 0.0');
+
+      const drone2Ramp = engine.drone2.voiceGain.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
+      assert.ok(drone2Ramp, 'drone2 voiceGain must ramp to 0.0');
 
       // Verify final clamping to strict 0.0 before suspend
       const masterZero = engine.masterGain.gain.events.filter(e => e.type === 'setValueAtTime' && e.v === 0.0);
@@ -179,6 +197,9 @@ describe('Drone Active Power On/Off Pop Elimination', () => {
       engine.masterGain.gain.events = [];
       engine.droneBus.gain.events = [];
       engine.pianoBus.gain.events = [];
+      engine.delayReturn.gain.events = [];
+      engine.delaySend.gain.events = [];
+      engine.drone1.voiceGain.gain.events = [];
 
       // Resume via init()
       await engine.init();
@@ -195,6 +216,12 @@ describe('Drone Active Power On/Off Pop Elimination', () => {
       const pianoPreZero = engine.pianoBus.gain.events.find(e => e.type === 'setValueAtTime' && e.v === 0.0);
       assert.ok(pianoPreZero, 'pianoBus must be zeroed at suspendTime prior to resume');
 
+      const delayReturnPreZero = engine.delayReturn.gain.events.find(e => e.type === 'setValueAtTime' && e.v === 0.0);
+      assert.ok(delayReturnPreZero, 'delayReturn must be zeroed at suspendTime prior to resume');
+
+      const drone1PreZero = engine.drone1.voiceGain.gain.events.find(e => e.type === 'setValueAtTime' && e.v === 0.0);
+      assert.ok(drone1PreZero, 'drone1 voiceGain must be zeroed at suspendTime prior to resume');
+
       // Verify smooth exponential setTargetAtTime slew up to operating levels
       const masterSlew = engine.masterGain.gain.events.find(e => e.type === 'setTargetAtTime' && e.target === engine.masterVolume);
       assert.ok(masterSlew, 'masterGain must slew smoothly to masterVolume on resume');
@@ -204,6 +231,32 @@ describe('Drone Active Power On/Off Pop Elimination', () => {
 
       const pianoSlew = engine.pianoBus.gain.events.find(e => e.type === 'setTargetAtTime' && e.target === 1.0);
       assert.ok(pianoSlew, 'pianoBus must slew smoothly to unity on resume');
+
+      const drone1Slew = engine.drone1.voiceGain.gain.events.find(e => e.type === 'setTargetAtTime' && Math.abs(e.target - engine.droneParams[1].vol) < 1e-4);
+      assert.ok(drone1Slew, 'drone1 voiceGain must slew smoothly to active volume on resume');
+    } finally {
+      globalThis.AudioContext = origAudioContext;
+    }
+  });
+
+  it('verifies rapid power-off and immediate power-on serializes cleanly without race conditions', async () => {
+    const origAudioContext = globalThis.AudioContext;
+    globalThis.AudioContext = class extends MockContext {};
+
+    try {
+      const engine = new AudioEngine();
+      await engine.init();
+      engine.setDroneActive(1, true);
+
+      // Trigger powerOff without awaiting, then immediately trigger init()
+      const offPromise = engine.powerOff();
+      const onPromise = engine.init();
+
+      await Promise.all([offPromise, onPromise]);
+
+      assert.strictEqual(engine.ctx.state, 'running', 'Context must end in running state');
+      const masterSlew = engine.masterGain.gain.events.find(e => e.type === 'setTargetAtTime' && e.target === engine.masterVolume);
+      assert.ok(masterSlew, 'Master gain must schedule setTargetAtTime to masterVolume');
     } finally {
       globalThis.AudioContext = origAudioContext;
     }
@@ -275,4 +328,30 @@ describe('Click-Free Note Trigger & Voice Amplitude Continuity', () => {
     const mixerRamp = voice.oscMixer.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
     assert.ok(mixerRamp, 'voice.release() must ramp oscMixer to 0.0');
   });
+
+  it('verifies triggering idle voice in CS-80 mode maintains smooth filter continuity without step pop', () => {
+    const ctx = new MockContext();
+    const synth = new FeltPianoSynthesizer(ctx, null, 2);
+    const voice = synth.voices[0];
+    voice.setWaveform('cs80');
+
+    voice.filter1.frequency.events = [];
+    voice.voiceGain.gain.events = [];
+    voice.oscMixer.gain.events = [];
+
+    voice.trigger(440, 0.8, 3.5, synth.params, false);
+
+    // Verify filter1 has a linear ramp to brassMaxCutoff
+    const filterAttack = voice.filter1.frequency.events.find(e => e.type === 'linearRampToValueAtTime');
+    assert.ok(filterAttack, 'CS-80 mode must schedule linear ramp brass filter swell');
+    assert.ok(filterAttack.v >= 3200, 'Brass filter swell peak must reach brassMaxCutoff >= 3200 Hz');
+
+    // Verify oscMixer and voiceGain ramp up smoothly on attack
+    const ampAttack = voice.voiceGain.gain.events.find(e => e.type === 'linearRampToValueAtTime');
+    assert.ok(ampAttack, 'voiceGain must schedule smooth attack ramp');
+
+    const mixerAttack = voice.oscMixer.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 1.0);
+    assert.ok(mixerAttack, 'oscMixer must schedule smooth ramp to 1.0');
+  });
 });
+

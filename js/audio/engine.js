@@ -118,65 +118,96 @@ export class AudioEngine {
    */
   async powerOff() {
     if (!this.ctx || this.ctx.state === 'suspended') return;
-    const now = this.ctx.currentTime;
-    const rampDuration = 0.035; // 35ms smooth fade out to strict silence
+    if (this._powerOffPromise) return this._powerOffPromise;
 
-    const busses = [this.masterGain, this.droneBus, this.pianoBus].filter(b => b && b.gain);
-    busses.forEach(bus => {
-      let held = false;
-      if (typeof bus.gain.cancelAndHoldAtTime === 'function') {
-        try {
-          bus.gain.cancelAndHoldAtTime(now);
-          held = true;
-        } catch (e) {
-          held = false;
-        }
-      }
-      if (!held) {
-        if (typeof bus.gain.cancelScheduledValues === 'function') {
-          bus.gain.cancelScheduledValues(now);
-        }
-        const cur = (typeof bus.gain.value === 'number' && isFinite(bus.gain.value)) ? bus.gain.value : 1.0;
-        if (typeof bus.gain.setValueAtTime === 'function') {
-          bus.gain.setValueAtTime(cur, now);
-        }
-      }
-      if (typeof bus.gain.linearRampToValueAtTime === 'function') {
-        bus.gain.linearRampToValueAtTime(0.0, now + rampDuration);
-      } else if (typeof bus.gain.setTargetAtTime === 'function') {
-        bus.gain.setTargetAtTime(0.0, now, rampDuration / 3);
-      } else if (typeof bus.gain.setValueAtTime === 'function') {
-        bus.gain.setValueAtTime(0.0, now + rampDuration);
-      }
-    });
-
-    // Wait 50ms to ensure 35ms ramp completes into zero before suspend
-    await new Promise(r => setTimeout(r, 50));
-
-    const endT = this.ctx.currentTime;
-    busses.forEach(bus => {
-      if (typeof bus.gain.setValueAtTime === 'function') {
-        bus.gain.setValueAtTime(0.0, endT);
-      }
-    });
-
-    if (typeof this.ctx.suspend === 'function') {
+    this._powerOffPromise = (async () => {
       try {
-        await this.ctx.suspend();
-      } catch (e) {
-        console.warn('AudioContext suspend deferred:', e);
+        const now = this.ctx.currentTime;
+        const rampDuration = 0.050; // 50ms smooth fade out to strict silence across all registers
+
+        const busses = [
+          this.masterGain,
+          this.droneBus,
+          this.pianoBus,
+          this.delayReturn,
+          this.delaySend,
+          this.drone1 && this.drone1.voiceGain,
+          this.drone2 && this.drone2.voiceGain
+        ].filter(b => b && b.gain);
+
+        busses.forEach(bus => {
+          let held = false;
+          if (typeof bus.gain.cancelAndHoldAtTime === 'function') {
+            try {
+              bus.gain.cancelAndHoldAtTime(now);
+              held = true;
+            } catch (e) {
+              held = false;
+            }
+          }
+          if (!held) {
+            if (typeof bus.gain.cancelScheduledValues === 'function') {
+              bus.gain.cancelScheduledValues(now);
+            }
+            const cur = (typeof bus.gain.value === 'number' && isFinite(bus.gain.value)) ? bus.gain.value : 1.0;
+            if (typeof bus.gain.setValueAtTime === 'function') {
+              bus.gain.setValueAtTime(cur, now);
+            }
+          }
+          if (typeof bus.gain.linearRampToValueAtTime === 'function') {
+            bus.gain.linearRampToValueAtTime(0.0, now + rampDuration);
+          } else if (typeof bus.gain.setTargetAtTime === 'function') {
+            bus.gain.setTargetAtTime(0.0, now, rampDuration / 3);
+          } else if (typeof bus.gain.setValueAtTime === 'function') {
+            bus.gain.setValueAtTime(0.0, now + rampDuration);
+          }
+        });
+
+        // Wait 80ms to ensure 50ms ramp and 15Hz master DC blocker settle into complete silence before suspend
+        await new Promise(r => setTimeout(r, 80));
+
+        const endT = Math.max(this.ctx.currentTime, now + rampDuration);
+        busses.forEach(bus => {
+          if (typeof bus.gain.setValueAtTime === 'function') {
+            bus.gain.setValueAtTime(0.0, endT);
+          }
+        });
+
+        if (typeof this.ctx.suspend === 'function') {
+          try {
+            await this.ctx.suspend();
+          } catch (e) {
+            console.warn('AudioContext suspend deferred:', e);
+          }
+        }
+      } finally {
+        this._powerOffPromise = null;
       }
-    }
+    })();
+
+    return this._powerOffPromise;
   }
 
   /**
    * Initialize AudioContext on first user interaction
    */
   async init() {
+    if (this._powerOffPromise) {
+      await this._powerOffPromise;
+    }
     if (this.isInitialized && this.ctx) {
       if (this.ctx.state === 'suspended') {
         const suspendTime = this.ctx.currentTime;
-        const busses = [this.masterGain, this.droneBus, this.pianoBus].filter(b => b && b.gain);
+        const busses = [
+          this.masterGain,
+          this.droneBus,
+          this.pianoBus,
+          this.delayReturn,
+          this.delaySend,
+          this.drone1 && this.drone1.voiceGain,
+          this.drone2 && this.drone2.voiceGain
+        ].filter(b => b && b.gain);
+
         busses.forEach(bus => {
           if (typeof bus.gain.cancelScheduledValues === 'function') {
             bus.gain.cancelScheduledValues(suspendTime);
@@ -225,6 +256,41 @@ export class AudioEngine {
             this.pianoBus.gain.value = 1.0;
           }
         }
+        if (this.delayReturn && this.delayReturn.gain) {
+          if (typeof this.delayReturn.gain.setTargetAtTime === 'function') {
+            this.delayReturn.gain.setTargetAtTime(1.0, rampStartTime, rampTau);
+          } else {
+            this.delayReturn.gain.value = 1.0;
+          }
+        }
+        if (this.delaySend && this.delaySend.gain) {
+          if (typeof this.delaySend.gain.setTargetAtTime === 'function') {
+            this.delaySend.gain.setTargetAtTime(1.0, rampStartTime, rampTau);
+          } else {
+            this.delaySend.gain.value = 1.0;
+          }
+        }
+
+        // Smoothly ramp active drone voices up with setTargetAtTime
+        [1, 2].forEach(id => {
+          const drone = id === 1 ? this.drone1 : this.drone2;
+          const p = this.droneParams[id];
+          if (drone && drone.voiceGain && drone.voiceGain.gain) {
+            const shouldBeActive = (drone.isActive || (p && p.active));
+            const targetGain = shouldBeActive ? ((p && p.vol !== undefined) ? p.vol : (drone.volume ?? 0.55)) : 0.0;
+            if (targetGain > 0) {
+              drone._currentGain = targetGain;
+              if (typeof drone.voiceGain.gain.setTargetAtTime === 'function') {
+                drone.voiceGain.gain.setTargetAtTime(targetGain, rampStartTime, rampTau);
+              } else {
+                drone.voiceGain.gain.value = targetGain;
+              }
+            } else {
+              drone._currentGain = 0.0;
+              drone.voiceGain.gain.value = 0.0;
+            }
+          }
+        });
       }
       return;
     }
