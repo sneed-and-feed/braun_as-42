@@ -296,22 +296,41 @@ export class SolarDroneVoice {
     const isSqA = (this.waveA === 'square' || this.waveA === 'sqr');
     const isSqB = (this.waveB === 'square' || this.waveB === 'sqr');
 
-    if (this.oscAShaperGain && this.oscADirectGain) {
-      this.oscAShaperGain.gain.value = isSqA ? 0.0 : 1.0;
-      this.oscADirectGain.gain.value = isSqA ? 1.0 : 0.0;
-      if (typeof this.oscAShaperGain.gain.setTargetAtTime === 'function') {
-        this.oscAShaperGain.gain.setTargetAtTime(isSqA ? 0.0 : 1.0, now, 0.02);
-        this.oscADirectGain.gain.setTargetAtTime(isSqA ? 1.0 : 0.0, now, 0.02);
+    const targetShaperA = isSqA ? 0.0 : 1.0;
+    const targetDirectA = isSqA ? 1.0 : 0.0;
+    const targetShaperB = isSqB ? 0.0 : 1.0;
+    const targetDirectB = isSqB ? 1.0 : 0.0;
+
+    const slewRoutingParam = (gainNode, target) => {
+      if (!gainNode || !gainNode.gain) return;
+      const param = gainNode.gain;
+      const curVal = (typeof param.value === 'number' && isFinite(param.value)) ? param.value : target;
+      let held = false;
+      if (typeof param.cancelAndHoldAtTime === 'function') {
+        try {
+          param.cancelAndHoldAtTime(now);
+          held = true;
+        } catch (e) {
+          held = false;
+        }
       }
-    }
-    if (this.oscBShaperGain && this.oscBDirectGain) {
-      this.oscBShaperGain.gain.value = isSqB ? 0.0 : 1.0;
-      this.oscBDirectGain.gain.value = isSqB ? 1.0 : 0.0;
-      if (typeof this.oscBShaperGain.gain.setTargetAtTime === 'function') {
-        this.oscBShaperGain.gain.setTargetAtTime(isSqB ? 0.0 : 1.0, now, 0.02);
-        this.oscBDirectGain.gain.setTargetAtTime(isSqB ? 1.0 : 0.0, now, 0.02);
+      if (!held && typeof param.cancelScheduledValues === 'function') {
+        param.cancelScheduledValues(now);
+        if (typeof param.setValueAtTime === 'function') {
+          param.setValueAtTime(curVal, now);
+        }
       }
-    }
+      if (typeof param.setTargetAtTime === 'function') {
+        param.setTargetAtTime(target, now, 0.02);
+      } else {
+        param.value = target;
+      }
+    };
+
+    if (this.oscAShaperGain) slewRoutingParam(this.oscAShaperGain, targetShaperA);
+    if (this.oscADirectGain) slewRoutingParam(this.oscADirectGain, targetDirectA);
+    if (this.oscBShaperGain) slewRoutingParam(this.oscBShaperGain, targetShaperB);
+    if (this.oscBDirectGain) slewRoutingParam(this.oscBDirectGain, targetDirectB);
   }
 
   /**

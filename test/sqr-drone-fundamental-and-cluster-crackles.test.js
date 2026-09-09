@@ -341,10 +341,10 @@ describe('Chord Cluster Spam & Voice Stealing Crackle Elimination', () => {
     assert.ok(chordAttack, 'Chord note should have positive hammer attack ramp');
     const chordPeakGain = chordAttack.v;
 
-    // Chord hammer transient should be scaled by 0.55 relative to single note
+    // Chord hammer transient should be scaled by 0.40 relative to single note
     assert.ok(chordPeakGain < singlePeakGain, 'Chord hammer peak gain must be attenuated relative to single note');
     const ratio = chordPeakGain / singlePeakGain;
-    assert.ok(Math.abs(ratio - 0.55) < 0.01, `Expected chord hammer ratio ~0.55, got ${ratio}`);
+    assert.ok(Math.abs(ratio - 0.40) < 0.01, `Expected chord hammer ratio ~0.40, got ${ratio}`);
   });
 
   it('guarantees getEstimatedGain returns non-zero during the 5ms declick micro-ramp', () => {
@@ -360,4 +360,93 @@ describe('Chord Cluster Spam & Voice Stealing Crackle Elimination', () => {
     assert.ok(estimatedGainImmediate > 0.10, `Estimated gain during ramp must not collapse to 0.0001, got ${estimatedGainImmediate}`);
     assert.strictEqual(estimatedGainImmediate, voice._lastPeakGain);
   });
+
+  it('verifies voice stealing ramps voiceGain and hammerGain down to 0.0001 and oscMixer to 0.0 before retuning', () => {
+    const ctx = new MockContext();
+    const synth = new FeltPianoSynthesizer(ctx, null, 1);
+    ctx.currentTime = 1.0;
+
+    // Trigger first note
+    synth.playNote(261.63, 0.8, 3.5, false, false);
+    const voice = synth.voices[0];
+
+    // Simulate stealing at t = 1.10
+    ctx.currentTime = 1.10;
+    voice.voiceGain.gain.events.length = 0;
+    voice.hammerGain.gain.events.length = 0;
+    voice.oscMixer.gain.events.length = 0;
+
+    synth.playNote(523.25, 0.8, 3.5, false, false);
+
+    // Verify voiceGain has a linear ramp down to 0.0001 at noteStartTime
+    const declickRamp = voice.voiceGain.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0001);
+    assert.ok(declickRamp, 'voiceGain must ramp to 0.0001 at noteStartTime during stealing');
+    assert.strictEqual(declickRamp.t, 1.10 + 0.005);
+
+    // Verify hammerGain also ramps down to 0.0001
+    const hammerDeclick = voice.hammerGain.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0001);
+    assert.ok(hammerDeclick, 'hammerGain must ramp to 0.0001 at noteStartTime during stealing');
+
+    // Verify oscMixer ramps down to exact 0.0
+    const oscMixerDeclick = voice.oscMixer.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
+    assert.ok(oscMixerDeclick, 'oscMixer must ramp down to exact 0.0 at noteStartTime');
+  });
+
+  it('verifies _updateWaveformRouting cancels scheduled values before setTargetAtTime', () => {
+    const ctx = new MockContext();
+    const dest = ctx.createGain();
+    const tables = createWavetableCache(ctx);
+    const drone = new SolarDroneVoice(ctx, dest, tables, 1);
+
+    ctx.currentTime = 2.0;
+    drone.oscAShaperGain.gain.events.length = 0;
+    drone.oscADirectGain.gain.events.length = 0;
+
+    drone.setWaveA('sqr');
+
+    // Verify cancellation event occurred before setTargetAtTime
+    const shaperCancel = drone.oscAShaperGain.gain.events.find(e => e.type === 'cancelAndHoldAtTime' || e.type === 'cancelScheduledValues');
+    const directCancel = drone.oscADirectGain.gain.events.find(e => e.type === 'cancelAndHoldAtTime' || e.type === 'cancelScheduledValues');
+    assert.ok(shaperCancel, 'oscAShaperGain must cancel previous timeline automations');
+    assert.ok(directCancel, 'oscADirectGain must cancel previous timeline automations');
+
+    const shaperTarget = drone.oscAShaperGain.gain.events.find(e => e.type === 'setTargetAtTime');
+    const directTarget = drone.oscADirectGain.gain.events.find(e => e.type === 'setTargetAtTime');
+    assert.ok(shaperTarget && shaperTarget.target === 0.0);
+    assert.ok(directTarget && directTarget.target === 1.0);
+  });
+
+  it('verifies FeltPianoVoice.setWaveform clears periodicWave on native fallbacks', () => {
+    const ctx = new MockContext();
+    const voice = new (synthVoiceClass())(ctx, null);
+
+    // Set initial periodicWave
+    voice.osc1.setPeriodicWave({});
+    voice.osc2.setPeriodicWave({});
+    assert.ok(voice.osc1.periodicWave);
+    assert.ok(voice.osc2.periodicWave);
+
+    // Switch to square with null wavetables
+    voice.wavetables = null;
+    voice.setWaveform('square');
+    assert.strictEqual(voice.osc1.type, 'square');
+    assert.strictEqual(voice.osc2.type, 'square');
+    assert.strictEqual(voice.osc1.periodicWave, null);
+    assert.strictEqual(voice.osc2.periodicWave, null);
+
+    // Switch to sine
+    voice.osc1.setPeriodicWave({});
+    voice.osc2.setPeriodicWave({});
+    voice.setWaveform('sine');
+    assert.strictEqual(voice.osc1.type, 'sine');
+    assert.strictEqual(voice.osc2.type, 'sine');
+    assert.strictEqual(voice.osc1.periodicWave, null);
+    assert.strictEqual(voice.osc2.periodicWave, null);
+  });
 });
+
+function synthVoiceClass() {
+  const ctx = new MockContext();
+  const synth = new FeltPianoSynthesizer(ctx, null, 1);
+  return synth.voices[0].constructor;
+}

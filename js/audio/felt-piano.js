@@ -213,6 +213,8 @@ export class FeltPianoVoice {
       } else {
         this.osc1.type = 'square';
         this.osc2.type = 'square';
+        if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
+        if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
       }
       if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
         this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
@@ -226,6 +228,8 @@ export class FeltPianoVoice {
     } else if (type === 'sine') {
       this.osc1.type = 'sine';
       this.osc2.type = 'sine';
+      if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
+      if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
       if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
         this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
       }
@@ -237,10 +241,12 @@ export class FeltPianoVoice {
       }
     } else { // 'felt' / 'triangle' default
       this.osc1.type = 'sine';
+      if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
       if (this.wavetables && this.wavetables.triangle) {
         this.osc2.setPeriodicWave(this.wavetables.triangle);
       } else {
         this.osc2.type = 'triangle';
+        if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
       }
       if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
         this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
@@ -563,6 +569,14 @@ export class FeltPianoVoice {
     }
     this.osc1.frequency.setValueAtTime(freq, noteStartTime);
     this.osc2.frequency.setValueAtTime(freq, noteStartTime);
+    if (this.subOsc && this.subOsc.frequency) {
+      if (typeof this.subOsc.frequency.cancelScheduledValues === 'function') {
+        this.subOsc.frequency.cancelScheduledValues(cancelTime);
+      }
+      if (typeof this.subOsc.frequency.setValueAtTime === 'function') {
+        this.subOsc.frequency.setValueAtTime(freq * 0.5, noteStartTime);
+      }
+    }
 
     this.osc1Gain.gain.setValueAtTime(osc1Vol, noteStartTime);
     this.osc2Gain.gain.setValueAtTime(osc2Vol, noteStartTime);
@@ -671,7 +685,7 @@ export class FeltPianoVoice {
         : hammerThump;
 
       // Scale hammer thump down for chord clusters so multiple simultaneous noise bursts don't constructively peak
-      const chordHammerScale = this.isChord ? 0.55 : 1.0;
+      const chordHammerScale = this.isChord ? 0.40 : 1.0;
       const targetHammerGain = Math.max(0.0001, velocity * effectiveHammerThump * hammerThumpGainMult * chordHammerScale);
       // Smooth micro-attack to peak, then exponential decay down to silence with future-guaranteed targets
       const hammerAttackTime = (this.currentWaveform === 'sine') ? 0.0065 : 0.0050; // 5-6.5ms smooth micro-fade eliminates high-velocity transient impulse pop
@@ -701,10 +715,17 @@ export class FeltPianoVoice {
       const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || brassStartCutoff));
       const curCutoff2 = Math.max(20, Math.min(20000, this.filter2.frequency.value || brassStartCutoff));
 
+      let f1Held = false;
       if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
-        this.filter1.frequency.cancelAndHoldAtTime(cancelTime);
-        this.filter2.frequency.cancelAndHoldAtTime(cancelTime);
-      } else {
+        try {
+          this.filter1.frequency.cancelAndHoldAtTime(cancelTime);
+          this.filter2.frequency.cancelAndHoldAtTime(cancelTime);
+          f1Held = true;
+        } catch (e) {
+          f1Held = false;
+        }
+      }
+      if (!f1Held) {
         this.filter1.frequency.cancelScheduledValues(cancelTime);
         this.filter2.frequency.cancelScheduledValues(cancelTime);
         this.filter1.frequency.setValueAtTime(curCutoff1, cancelTime);
@@ -735,10 +756,17 @@ export class FeltPianoVoice {
       const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || restCutoff));
       const curCutoff2 = Math.max(20, Math.min(20000, this.filter2.frequency.value || restCutoff));
 
+      let f2Held = false;
       if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
-        this.filter1.frequency.cancelAndHoldAtTime(cancelTime);
-        this.filter2.frequency.cancelAndHoldAtTime(cancelTime);
-      } else {
+        try {
+          this.filter1.frequency.cancelAndHoldAtTime(cancelTime);
+          this.filter2.frequency.cancelAndHoldAtTime(cancelTime);
+          f2Held = true;
+        } catch (e) {
+          f2Held = false;
+        }
+      }
+      if (!f2Held) {
         this.filter1.frequency.cancelScheduledValues(cancelTime);
         this.filter2.frequency.cancelScheduledValues(cancelTime);
         this.filter1.frequency.setValueAtTime(curCutoff1, cancelTime);
