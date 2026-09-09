@@ -163,6 +163,9 @@ export class SolarDroneVoice {
       } else {
         try {
           osc.type = 'sawtooth';
+          if (osc.periodicWave !== undefined) {
+            osc.periodicWave = null;
+          }
         } catch (e) {}
       }
     } else if (norm === 'square') {
@@ -186,6 +189,9 @@ export class SolarDroneVoice {
       } else {
         try {
           osc.type = 'sawtooth';
+          if (osc.periodicWave !== undefined) {
+            osc.periodicWave = null;
+          }
         } catch (e) {}
       }
     } else if (norm === 'triangle') {
@@ -196,6 +202,9 @@ export class SolarDroneVoice {
       } else {
         try {
           osc.type = 'triangle';
+          if (osc.periodicWave !== undefined) {
+            osc.periodicWave = null;
+          }
         } catch (e) {}
       }
     } else if (this.wavetables && (this.wavetables[raw] || this.wavetables[type])) {
@@ -205,6 +214,9 @@ export class SolarDroneVoice {
     } else {
       try {
         osc.type = 'sawtooth';
+        if (osc.periodicWave !== undefined) {
+          osc.periodicWave = null;
+        }
       } catch (e) {}
     }
   }

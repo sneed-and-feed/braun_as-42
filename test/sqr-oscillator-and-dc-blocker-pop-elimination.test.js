@@ -560,8 +560,84 @@ describe('SQR Drone Oscillator & DC Blocker Verification', () => {
       assert.strictEqual(engine.drone1.waveA, 'square', 'drone1 voice must have square waveform');
       assert.strictEqual(engine.drone1.oscA.type, 'square', 'drone1 Osc A must use native square oscillator');
       assert.strictEqual(engine.drone1.oscA.periodicWave, null, 'drone1 Osc A PeriodicWave must be null');
+
+      // Test Voice 1 Osc B
+      const btnWarmB = createMockButton('drone1-wave-b', 'warm', true);
+      const btnSqrB = createMockButton('drone1-wave-b', 'sqr', false);
+      const buttonsB = [btnWarmB, btnSqrB];
+
+      const clickSqrB = () => {
+        buttonsB.forEach(b => b.classList.remove('is-active'));
+        btnSqrB.classList.add('is-active');
+        engine.setDroneWaveB(1, btnSqrB.getAttribute('data-wave'));
+      };
+
+      clickSqrB();
+      assert.strictEqual(engine.droneParams[1].waveB, 'square');
+      assert.strictEqual(engine.drone1.waveB, 'square');
+      assert.strictEqual(engine.drone1.oscB.type, 'square');
+      assert.strictEqual(engine.drone1.oscB.periodicWave, null);
+
+      // Test Voice 2 Osc A & Osc B
+      engine.setDroneWaveA(2, 'sqr');
+      engine.setDroneWaveB(2, 'sqr');
+      assert.strictEqual(engine.droneParams[2].waveA, 'square');
+      assert.strictEqual(engine.droneParams[2].waveB, 'square');
+      assert.strictEqual(engine.drone2.waveA, 'square');
+      assert.strictEqual(engine.drone2.waveB, 'square');
+      assert.strictEqual(engine.drone2.oscA.type, 'square');
+      assert.strictEqual(engine.drone2.oscB.type, 'square');
+      assert.strictEqual(engine.drone2.oscA.periodicWave, null);
+      assert.strictEqual(engine.drone2.oscB.periodicWave, null);
     } finally {
       globalThis.AudioContext = origAudioContext;
     }
+  });
+
+  it('verifies all native fallback branches in _applyWaveform clear periodicWave when defined', () => {
+    const ctx = new MockContext();
+    const tables = createWavetableCache(ctx);
+    const drone = new SolarDroneVoice(ctx, ctx.destination, tables, 1);
+
+    // Set warm with wavetables -> periodicWave assigned
+    drone.setWaveA('warm');
+    assert.ok(drone.oscA.periodicWave, 'warm must set periodicWave');
+
+    // Simulate switching to native fallback with null wavetables
+    drone.wavetables = null;
+
+    // Fallback saw
+    drone.setWaveA('saw');
+    assert.strictEqual(drone.oscA.type, 'sawtooth');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'saw fallback must clear periodicWave');
+
+    // Assign periodicWave back manually to test tri fallback
+    drone.oscA.setPeriodicWave({});
+    assert.ok(drone.oscA.periodicWave);
+    drone.setWaveA('triangle');
+    assert.strictEqual(drone.oscA.type, 'triangle');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'triangle fallback must clear periodicWave');
+
+    // Assign periodicWave back manually to test warm fallback
+    drone.oscA.setPeriodicWave({});
+    assert.ok(drone.oscA.periodicWave);
+    drone.setWaveA('warm');
+    assert.strictEqual(drone.oscA.type, 'sawtooth');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'warm fallback must clear periodicWave');
+
+    // Assign periodicWave back manually to test unknown fallback
+    drone.oscA.setPeriodicWave({});
+    assert.ok(drone.oscA.periodicWave);
+    drone.setWaveA('unknown-waveform');
+    assert.strictEqual(drone.oscA.type, 'sawtooth');
+    assert.strictEqual(drone.oscA.periodicWave, null, 'unknown fallback must clear periodicWave');
+  });
+
+  it('verifies deploy-pages.bat includes README.md in sync and commit commands', async () => {
+    const fs = await import('node:fs');
+    const bat = fs.readFileSync('deploy-pages.bat', 'utf-8');
+
+    assert.ok(bat.includes('copy /y "README.md" "%TARGET_DIR%\\"'), 'deploy-pages.bat must copy README.md to target directory');
+    assert.ok(bat.includes('git add index.html .nojekyll README.md'), 'deploy-pages.bat must git add README.md');
   });
 });
