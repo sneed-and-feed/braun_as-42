@@ -528,9 +528,17 @@ export class AudioEngine {
     if (this.shimmerReverb) this.shimmerReverb.setDecay(decay);
   }
 
+  setReverbDiffusion(diffusion) {
+    this.setReverbDecay(diffusion);
+  }
+
   setReverbDamping(damping) {
     this.reverbParams.damping = damping;
     if (this.shimmerReverb) this.shimmerReverb.setDamping(damping);
+  }
+
+  setReverbDamp(damping) {
+    this.setReverbDamping(damping);
   }
 
   setReverbShimmer(shimmer) {

@@ -370,8 +370,11 @@ export class FeltPianoVoice {
       if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
         this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
       } else {
+        const safeCurGain = (this.voiceGain.gain.value && this.voiceGain.gain.value > 0.001)
+          ? this.voiceGain.gain.value
+          : (this._currentVoiceGain || curGain);
         this.voiceGain.gain.cancelScheduledValues(cancelTime);
-        this.voiceGain.gain.setValueAtTime(curGain, cancelTime);
+        this.voiceGain.gain.setValueAtTime(safeCurGain, cancelTime);
       }
       this.voiceGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
     }
@@ -554,6 +557,7 @@ export class FeltPianoVoice {
     // Ramping directly to peakGain from noteStartTime prevents redundant setValueAtTime collisions.
     const attackTarget = Math.max(noteStartTime + attackTime, ctx.currentTime + 0.005);
     this.voiceGain.gain.linearRampToValueAtTime(peakGain, attackTarget);
+    this._currentVoiceGain = peakGain;
 
     if (isCS80) {
       // Singing CS-80 sustain: maintains 72% peak gain for powerful presence matching the drone
@@ -608,7 +612,9 @@ export class FeltPianoVoice {
     }
     const now = this.ctx.currentTime;
     const cancelTime = Math.max(now, this.ctx.currentTime);
-    const curGain = Math.max(0.0001, this.voiceGain.gain.value || 0.0001);
+    const curGain = (this.voiceGain.gain.value && this.voiceGain.gain.value > 0.001)
+      ? this.voiceGain.gain.value
+      : (this._currentVoiceGain || 0.15);
     if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
       this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
     } else {
@@ -619,6 +625,7 @@ export class FeltPianoVoice {
     const relDuration = isCS80 ? 0.65 : 0.40;
     const releaseTarget = Math.max(cancelTime + relDuration, this.ctx.currentTime + 0.01);
     this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, releaseTarget);
+    this._currentVoiceGain = 0.0001;
     if (isCS80 && this.currentFreq) {
       const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || 800));
       const curCutoff2 = Math.max(20, Math.min(20000, this.filter2.frequency.value || 800));
@@ -780,16 +787,22 @@ export class FeltPianoSynthesizer {
     if (typeof this.output.gain.cancelAndHoldAtTime === 'function') {
       this.output.gain.cancelAndHoldAtTime(now);
     } else if (typeof this.output.gain.cancelScheduledValues === 'function') {
-      const curGain = (this.output.gain.value !== undefined && this.output.gain.value !== null) ? this.output.gain.value : targetGain;
+      const curGain = (this._currentHeadroomGain !== undefined)
+        ? this._currentHeadroomGain
+        : ((this.output.gain.value !== undefined && this.output.gain.value !== null) ? this.output.gain.value : targetGain);
       this.output.gain.cancelScheduledValues(now);
       if (typeof this.output.gain.setValueAtTime === 'function') {
         this.output.gain.setValueAtTime(curGain, now);
       }
     }
+    this._currentHeadroomGain = targetGain;
+    this._lastHeadroomTarget = targetGain;
+
     if (typeof this.output.gain.setTargetAtTime === 'function') {
-      this.output.gain.setTargetAtTime(targetGain, Math.max(now, this.ctx.currentTime), 0.035);
+      // 0.075s (75ms) smooth polyphonic headroom transition prevents envelope ducking pops on active chords
+      this.output.gain.setTargetAtTime(targetGain, Math.max(now, this.ctx.currentTime), 0.075);
     } else if (typeof this.output.gain.linearRampToValueAtTime === 'function') {
-      this.output.gain.linearRampToValueAtTime(targetGain, now + 0.035);
+      this.output.gain.linearRampToValueAtTime(targetGain, now + 0.075);
     } else {
       this.output.gain.value = targetGain;
     }
@@ -816,16 +829,19 @@ export class FeltPianoSynthesizer {
     }
 
     // 2. If all voices are active, steal the quietest or oldest sounding voice,
-    // prioritizing stealing non-held voices over actively held voices to protect user sustained notes.
+    // strictly prioritizing stealing non-held voices over actively held voices to protect user sustained notes.
     if (!voice) {
       voice = this.voices.reduce((best, v) => {
+        // Never steal held voices when non-held voices exist
         if (v.isHold && !best.isHold) return best;
         if (!v.isHold && best.isHold) return v;
 
+        // Compare current gain or elapsed time among similar status voices
         const vGain = v.voiceGain ? v.voiceGain.gain.value : 0;
         const bestGain = best.voiceGain ? best.voiceGain.gain.value : 0;
-        if (vGain < bestGain) return v;
-        if (Math.abs(vGain - bestGain) < 0.01 && v.startTime < best.startTime) return v;
+        if (vGain < bestGain && Math.abs(vGain - bestGain) >= 0.01) return v;
+        if (bestGain < vGain && Math.abs(vGain - bestGain) >= 0.01) return best;
+        if (v.startTime < best.startTime) return v;
         return best;
       }, this.voices[0]);
     }

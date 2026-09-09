@@ -35,9 +35,22 @@ export class ShimmerReverb {
     this.input.connect(this.dryGain);
     this.dryGain.connect(this.output);
 
-    // Wet convolver path
-    this.convolver = ctx.createConvolver();
-    this.convolver.normalize = true;
+    // Wet convolver path with dual crossfaded convolvers and real-time air damping filter
+    this.convolverA = ctx.createConvolver();
+    this.convolverA.normalize = true;
+    this.convolverB = ctx.createConvolver();
+    this.convolverB.normalize = true;
+    this.convolver = this.convolverA;
+    this.activeConvolver = 'A';
+    this._hasInitialBuffer = false;
+
+    this.convolverGainA = ctx.createGain();
+    this.convolverGainB = ctx.createGain();
+    this.convolverGainA.gain.setValueAtTime(1.0, ctx.currentTime);
+    this.convolverGainB.gain.setValueAtTime(0.0, ctx.currentTime);
+
+    this.convolverBus = ctx.createGain();
+    this.convolverBus.gain.setValueAtTime(1.0, ctx.currentTime);
 
     this.reverbPreGain = ctx.createGain();
     this.reverbPreGain.gain.setValueAtTime(0.85, ctx.currentTime);
@@ -45,9 +58,22 @@ export class ShimmerReverb {
     this.reverbWetGain = ctx.createGain();
     this.reverbWetGain.gain.setValueAtTime(this.wetLevel, ctx.currentTime);
 
+    // Real-time acoustic air damping filter (lowpass with 0.707 Butterworth Q)
+    this.dampingFilter = ctx.createBiquadFilter();
+    this.dampingFilter.type = 'lowpass';
+    this.dampingFilter.Q.setValueAtTime(0.707, ctx.currentTime);
+    const initialCutoff = this._calculateDampingCutoff(this.damping);
+    this.dampingFilter.frequency.setValueAtTime(initialCutoff, ctx.currentTime);
+
     this.input.connect(this.reverbPreGain);
-    this.reverbPreGain.connect(this.convolver);
-    this.convolver.connect(this.reverbWetGain);
+    this.reverbPreGain.connect(this.convolverA);
+    this.reverbPreGain.connect(this.convolverB);
+    this.convolverA.connect(this.convolverGainA);
+    this.convolverB.connect(this.convolverGainB);
+    this.convolverGainA.connect(this.convolverBus);
+    this.convolverGainB.connect(this.convolverBus);
+    this.convolverBus.connect(this.dampingFilter);
+    this.dampingFilter.connect(this.reverbWetGain);
     this.reverbWetGain.connect(this.output);
 
     // --- Shimmer Feedback Path ---
@@ -67,8 +93,8 @@ export class ShimmerReverb {
     // Octave-Up Pitch Shifter (+1 Octave = 2.0x frequency)
     this._buildPitchShifter();
 
-    // Connect shimmer routing
-    this.convolver.connect(this.shimmerSend);
+    // Connect shimmer routing through damping filter
+    this.dampingFilter.connect(this.shimmerSend);
     this.shimmerSend.connect(this.shimmerFilter);
     this.shimmerFilter.connect(this.pitchShiftInput);
     this.pitchShiftOutput.connect(this.shimmerFeedback);
@@ -196,6 +222,13 @@ export class ShimmerReverb {
     this.gainModSource.start();
   }
 
+  _calculateDampingCutoff(damping) {
+    const d = Math.max(0.05, Math.min(0.98, damping));
+    const minCutoff = 1200;
+    const maxCutoff = 18000;
+    return maxCutoff * Math.pow(minCutoff / maxCutoff, (d - 0.05) / (0.98 - 0.05));
+  }
+
   /**
    * Synthesize a lush, high-density velvet/exponential diffuse impulse response
    * @param {number} decaySec - RT60 in seconds
@@ -211,6 +244,7 @@ export class ShimmerReverb {
 
     // Time constant tau for -60dB decay
     const decayTau = decaySec / 6.91; // ln(1000) ~ 6.91
+    const decayMul = Math.exp(-1.0 / (sampleRate * decayTau));
 
     // Early reflection taps (prime spacing with stereo divergence)
     const earlyTapTimes = [0.011, 0.017, 0.023, 0.031, 0.043, 0.059, 0.071, 0.089, 0.103, 0.127];
@@ -226,14 +260,14 @@ export class ShimmerReverb {
     }
 
     // Late diffuse tail with frequency-dependent damping
-    // High frequencies smoothed progressively with time
+    // Fast scalar decayMul replaces hundreds of thousands of Math.exp calls
     let lpL = 0;
     let lpR = 0;
     const dampAlphaBase = 0.15 + (1.0 - dampingFactor) * 0.75;
+    let envelope = 1.0;
 
     for (let i = 0; i < numSamples; i++) {
       const t = i / sampleRate;
-      const envelope = Math.exp(-t / decayTau);
 
       // White/Velvet noise generator
       const noiseL = (Math.random() * 2 - 1);
@@ -247,16 +281,75 @@ export class ShimmerReverb {
 
       left[i] += (0.6 * noiseL + 0.4 * lpL) * envelope;
       right[i] += (0.6 * noiseR + 0.4 * lpR) * envelope;
+
+      envelope *= decayMul;
     }
 
-    this.convolver.buffer = impulseBuffer;
+    // Initial construction check: load primary convolver before audio graph starts
+    if (!this._hasInitialBuffer) {
+      this._hasInitialBuffer = true;
+      this.convolverA.buffer = impulseBuffer;
+      this.convolver = this.convolverA;
+      return;
+    }
+
+    // Dual-convolver clickless crossfading:
+    // Create new convolver, assign buffer BEFORE connecting to active graph,
+    // then smoothly crossfade from old to new convolver over 50ms.
+    // This eliminates audio thread pauses and delay line chops/drops.
+    const now = ctx.currentTime;
+    const crossfadeTime = 0.050; // 50ms smooth crossfade
+    const newConvolver = ctx.createConvolver();
+    newConvolver.normalize = true;
+    newConvolver.buffer = impulseBuffer;
+
+    if (this.activeConvolver === 'A') {
+      const oldConvolver = this.convolverA;
+      this.convolverB = newConvolver;
+      this.convolver = newConvolver;
+      this.reverbPreGain.connect(newConvolver);
+      newConvolver.connect(this.convolverGainB);
+
+      this.convolverGainB.gain.setTargetAtTime(1.0, now, crossfadeTime);
+      this.convolverGainA.gain.setTargetAtTime(0.0, now, crossfadeTime);
+      this.activeConvolver = 'B';
+
+      setTimeout(() => {
+        try {
+          if (oldConvolver) {
+            this.reverbPreGain.disconnect(oldConvolver);
+            oldConvolver.disconnect();
+          }
+        } catch (e) {}
+      }, 150);
+    } else {
+      const oldConvolver = this.convolverB;
+      this.convolverA = newConvolver;
+      this.convolver = newConvolver;
+      this.reverbPreGain.connect(newConvolver);
+      newConvolver.connect(this.convolverGainA);
+
+      this.convolverGainA.gain.setTargetAtTime(1.0, now, crossfadeTime);
+      this.convolverGainB.gain.setTargetAtTime(0.0, now, crossfadeTime);
+      this.activeConvolver = 'A';
+
+      setTimeout(() => {
+        try {
+          if (oldConvolver) {
+            this.reverbPreGain.disconnect(oldConvolver);
+            oldConvolver.disconnect();
+          }
+        } catch (e) {}
+      }, 150);
+    }
   }
 
   _scheduleImpulseRegeneration() {
     if (this._regenTimer) clearTimeout(this._regenTimer);
     this._regenTimer = setTimeout(() => {
       this.regenerateImpulse(this.decayTime, this.damping);
-    }, 80);
+      this._regenTimer = null;
+    }, 60);
   }
 
   setDecay(seconds) {
@@ -264,9 +357,27 @@ export class ShimmerReverb {
     this._scheduleImpulseRegeneration();
   }
 
+  setDiffusion(seconds) {
+    this.setDecay(seconds);
+  }
+
   setDamping(damping) {
     this.damping = Math.max(0.05, Math.min(0.98, damping));
+    // Real-time damping filter responds immediately and continuously without delay
+    if (this.dampingFilter && this.dampingFilter.frequency) {
+      const cutoff = this._calculateDampingCutoff(this.damping);
+      const now = this.ctx.currentTime;
+      if (typeof this.dampingFilter.frequency.setTargetAtTime === 'function') {
+        this.dampingFilter.frequency.setTargetAtTime(cutoff, now, 0.025);
+      } else {
+        this.dampingFilter.frequency.setValueAtTime(cutoff, now);
+      }
+    }
     this._scheduleImpulseRegeneration();
+  }
+
+  setDamp(damping) {
+    this.setDamping(damping);
   }
 
   setShimmer(amount) {
