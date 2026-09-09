@@ -353,7 +353,7 @@
           <h2 class="braun-panel-title">HARMONIC TOUCH SURFACE & PERFORMANCE MACROS</h2>
           <span class="braun-subtitle">Dieter Rams 2×6 Chord Matrix · Braun AS 42 Vector Touchpad · Chime Strip</span>
         </div>
-        <span class="braun-subtitle">Shortcuts: A–V modal keys · W–U semitones · 1–6 / 7–= chord clusters · Spacebar freeze</span>
+        <span class="braun-subtitle">Shortcuts: A–' chime keys · 1–6 / 7–= chord clusters · Spacebar freeze</span>
       </div>
 
       <!-- Performance Split Deck: 2x6 Chords on Left, AS 42 Vector Touchpad on Right -->
@@ -361,8 +361,19 @@
         <!-- Left: 2x6 Tactile Macro Chord Buttons -->
         <div class="braun-chord-deck">
           <div class="braun-deck-header">
-            <span class="braun-panel-title">CHORD CLUSTERS</span>
-            <span class="braun-badge">2×6 MATRIX · 1–6 / 7–=</span>
+            <div class="braun-chord-title-group">
+              <span class="braun-panel-title">CHORD CLUSTERS</span>
+              <span class="braun-badge">2×6 MATRIX · 1–6 / 7–=</span>
+            </div>
+            <div class="braun-chord-speed-switch" id="chord-speed-switch" role="radiogroup" aria-label="Chord Strum Speed">
+              <span class="braun-speed-label">STRUM</span>
+              <div class="braun-speed-toggles">
+                <button type="button" class="braun-speed-btn" data-speed="slow" title="Slow Ambient Drone Strum (120ms)">SLOW</button>
+                <button type="button" class="braun-speed-btn is-active" data-speed="med" title="Medium Gentle Roll (50ms)">MED</button>
+                <button type="button" class="braun-speed-btn" data-speed="fast" title="Fast Quick Flourish (20ms)">FAST</button>
+                <button type="button" class="braun-speed-btn" data-speed="instant" title="Instant Block Strike (0ms)">INSTANT</button>
+              </div>
+            </div>
           </div>
           <div id="chord-macros" class="braun-chord-macros-grid"></div>
           <div class="braun-chord-readout">
@@ -387,7 +398,7 @@
       <!-- Playable Chime Strip -->
       <div class="braun-chime-deck">
         <div class="braun-deck-header">
-          <span class="braun-panel-title">CHROMATIC HARMONIC CHIME STRIP</span>
+          <span class="braun-panel-title">MODAL HARMONIC CHIME STRIP</span>
           <span class="braun-subtitle">Touch / Click / Glissando · Lower Strike = Firmer Velocity</span>
         </div>
         <div id="chime-strip" class="braun-chime-strip"></div>

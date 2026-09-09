@@ -825,6 +825,83 @@ body {
   border-bottom: 1px solid var(--border-line);
 }
 
+.braun-chord-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.braun-chord-speed-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.braun-speed-label {
+  font-size: 8.5px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.braun-speed-toggles {
+  display: inline-flex;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-line);
+  border-radius: 2px;
+  padding: 1px;
+  gap: 1px;
+}
+
+.braun-speed-btn {
+  background-color: transparent;
+  border: none;
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-size: 8.5px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.braun-speed-btn:hover {
+  color: var(--text-primary);
+}
+
+.braun-speed-btn.is-active {
+  background-color: var(--text-primary);
+  color: var(--bg-panel);
+}
+
+[data-theme="dark"] .braun-speed-toggles,
+[data-theme="matte-black"] .braun-speed-toggles {
+  background-color: #1A1C20;
+  border-color: #383B44;
+}
+
+[data-theme="dark"] .braun-speed-btn,
+[data-theme="matte-black"] .braun-speed-btn {
+  color: #9E9E9E;
+}
+
+[data-theme="dark"] .braun-speed-btn:hover,
+[data-theme="matte-black"] .braun-speed-btn:hover {
+  color: #FFFFFF;
+}
+
+[data-theme="dark"] .braun-speed-btn.is-active,
+[data-theme="matte-black"] .braun-speed-btn.is-active {
+  background-color: var(--braun-orange);
+  color: #FFFFFF;
+}
+
 .braun-badge {
   font-size: 9px;
   font-family: var(--font-mono);
@@ -1177,9 +1254,7 @@ body {
 }
 
 .braun-chime-strip {
-  display: grid;
-  grid-template-rows: 32px 58px;
-  grid-auto-columns: minmax(42px, 1fr);
+  display: flex;
   gap: 4px;
   width: 100%;
   overflow-x: auto;
@@ -1332,123 +1407,10 @@ body {
   border-color: var(--braun-orange);
 }
 
-/* --- Diatonic and Semitone Accidental Chime Key Variations --- */
-.braun-chime-key.braun-diatonic-key {
-  height: 58px;
-}
-
-.braun-chime-key.braun-semitone-key {
-  height: 32px;
-  background: linear-gradient(180deg, var(--bg-panel-inset) 0%, #25282d 100%);
-  border: 1px solid var(--border-line);
-  padding: 3px 2px;
-  border-radius: 2px;
-}
-
-.braun-chime-key.braun-semitone-key .braun-key-indicator {
-  width: 8px;
-  height: 2px;
-}
-
-.braun-chime-key.braun-semitone-key .braun-key-info {
-  display: flex;
-  flex-direction: row;
-  justify-content: center;
-  align-items: baseline;
-  gap: 3px;
-  line-height: 1;
-}
-
-.braun-chime-key.braun-semitone-key .braun-key-name {
-  font-size: 9.5px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.braun-chime-key.braun-semitone-key .braun-key-degree {
-  font-size: 7.5px;
-  font-weight: 700;
-  color: var(--braun-orange);
-  letter-spacing: 0.02em;
-}
-
-.braun-chime-key.braun-semitone-key .braun-key-shortcut {
-  font-size: 8.5px;
-  min-width: 12px;
-  padding: 0 3px;
-  background-color: var(--bg-panel);
-  border-color: var(--border-line);
-}
-
 .braun-key-shortcut:empty {
   display: none;
 }
 
-.braun-chime-key.braun-semitone-key:hover {
-  border-color: var(--braun-orange);
-}
-
-.braun-chime-key.braun-semitone-key.is-pressed,
-.braun-chime-key.braun-semitone-key.is-active {
-  background: var(--braun-orange);
-  color: #FFFFFF;
-  border-color: var(--braun-orange);
-}
-
-.braun-chime-key.braun-semitone-key.is-pressed .braun-key-name,
-.braun-chime-key.braun-semitone-key.is-active .braun-key-name,
-.braun-chime-key.braun-semitone-key.is-pressed .braun-key-degree,
-.braun-chime-key.braun-semitone-key.is-active .braun-key-degree {
-  color: #FFFFFF;
-}
-
-.braun-chime-key.braun-semitone-key.is-pressed .braun-key-shortcut,
-.braun-chime-key.braun-semitone-key.is-active .braun-key-shortcut {
-  background-color: #FFFFFF;
-  color: var(--braun-orange);
-  border-color: #FFFFFF;
-}
-
-/* Dark theme overrides for semitone accidental keys */
-[data-theme="dark"] .braun-chime-key.braun-semitone-key,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key {
-  background: linear-gradient(180deg, #16181B 0%, #0E0F12 100%);
-  border-color: #2F323A;
-}
-
-[data-theme="dark"] .braun-chime-key.braun-semitone-key .braun-key-name,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key .braun-key-name {
-  color: #E2E2E2;
-}
-
-[data-theme="dark"] .braun-chime-key.braun-semitone-key .braun-key-shortcut,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key .braun-key-shortcut {
-  background-color: #1F2126;
-  color: #E2E2E2;
-  border-color: #383B44;
-}
-
-[data-theme="dark"] .braun-chime-key.braun-semitone-key.is-pressed,
-[data-theme="dark"] .braun-chime-key.braun-semitone-key.is-active,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key.is-pressed,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key.is-active {
-  background: var(--braun-orange);
-  border-color: var(--braun-orange);
-}
-
-[data-theme="dark"] .braun-chime-key.braun-semitone-key.is-pressed .braun-key-name,
-[data-theme="dark"] .braun-chime-key.braun-semitone-key.is-active .braun-key-name,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key.is-pressed .braun-key-name,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key.is-active .braun-key-name {
-  color: #FFFFFF;
-}
-
-[data-theme="dark"] .braun-chime-key.braun-semitone-key.is-pressed .braun-key-degree,
-[data-theme="dark"] .braun-chime-key.braun-semitone-key.is-active .braun-key-degree,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key.is-pressed .braun-key-degree,
-[data-theme="matte-black"] .braun-chime-key.braun-semitone-key.is-active .braun-key-degree {
-  color: #FFFFFF;
-}
 
 /* --- Rotary Knob Component Styling --- */
 .braun-knob-wrapper {

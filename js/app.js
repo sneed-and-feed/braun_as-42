@@ -37,6 +37,7 @@ export const PRESETS = {
     drone2Snap: 'perfect-5th',
     vectorX: 0.50,
     vectorY: 0.50,
+    chordSpeed: 'med',
     knobs: {
       masterVol: 80,
       masterDrive: 18,
@@ -85,6 +86,7 @@ export const PRESETS = {
     drone2Snap: 'perfect-5th',
     vectorX: 0.25,
     vectorY: 0.60,
+    chordSpeed: 'slow',
     knobs: {
       masterVol: 82,
       masterDrive: 14,
@@ -133,6 +135,7 @@ export const PRESETS = {
     drone2Snap: 'major-9th',
     vectorX: 0.81,
     vectorY: 0.70,
+    chordSpeed: 'fast',
     knobs: {
       masterVol: 78,
       masterDrive: 28,
@@ -181,6 +184,7 @@ export const PRESETS = {
     drone2Snap: 'beating-unison',
     vectorX: 0.68,
     vectorY: 0.75,
+    chordSpeed: 'slow',
     knobs: {
       masterVol: 80,
       masterDrive: 12,
@@ -817,6 +821,11 @@ export class AmbientApp {
       this.updateLoopNotes();
     }
 
+    // 7. Chord Trigger / Strum Speed
+    if (preset.chordSpeed && this.playSurface && typeof this.playSurface.setChordSpeed === 'function') {
+      this.playSurface.setChordSpeed(preset.chordSpeed);
+    }
+
     // Release applying preset flag once animation finishes
     const releaseDelay = (animate && duration > 0) ? (duration + 50) : 0;
     if (releaseDelay > 0) {
@@ -904,6 +913,7 @@ export class AmbientApp {
       currentScaleKey: this.engine ? this.engine.currentScaleKey : 'BUDD_PENTATONIC',
       a4: this.engine ? this.engine.a4 : 440,
       pianoWave,
+      chordSpeed: this.playSurface ? this.playSurface.chordSpeed : 'med',
       knobs: knobValues,
       drone1: {
         active: this.engine?.droneParams?.[1]?.active ?? false,
@@ -975,19 +985,27 @@ export class AmbientApp {
       const scaleKey = patch.currentScaleKey || this.engine.currentScaleKey;
       this.engine.setScale(scaleKey, root);
 
-      const rootSelect = document.getElementById('select-root');
-      if (rootSelect) rootSelect.value = root;
+      if (typeof document !== 'undefined') {
+        const rootSelect = document.getElementById('select-root');
+        if (rootSelect) rootSelect.value = root;
 
-      const scaleSelect = document.getElementById('select-scale');
-      if (scaleSelect) scaleSelect.value = scaleKey;
+        const scaleSelect = document.getElementById('select-scale');
+        if (scaleSelect) scaleSelect.value = scaleKey;
+      }
 
-      if (this.playSurface) this.playSurface.rebuildKeys();
-      this.updateLoopNotes();
+      if (this.playSurface && typeof this.playSurface.rebuildKeys === 'function') {
+        this.playSurface.rebuildKeys();
+      }
+      if (typeof this.updateLoopNotes === 'function') {
+        this.updateLoopNotes();
+      }
 
       if (patch.a4 !== undefined) {
         this.engine.setTuningReference(patch.a4);
-        const tuningSelect = document.getElementById('select-tuning');
-        if (tuningSelect) tuningSelect.value = String(patch.a4);
+        if (typeof document !== 'undefined') {
+          const tuningSelect = document.getElementById('select-tuning');
+          if (tuningSelect) tuningSelect.value = String(patch.a4);
+        }
       }
     }
 
@@ -996,6 +1014,11 @@ export class AmbientApp {
       document.body.setAttribute('data-theme', patch.theme);
       const themeSelect = document.getElementById('select-theme');
       if (themeSelect) themeSelect.value = patch.theme;
+    }
+
+    // Chord Trigger / Strum Speed
+    if (patch.chordSpeed && this.playSurface && typeof this.playSurface.setChordSpeed === 'function') {
+      this.playSurface.setChordSpeed(patch.chordSpeed);
     }
 
     // 2. Knobs

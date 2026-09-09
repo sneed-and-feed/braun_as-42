@@ -155,35 +155,24 @@ describe('Scales and Tuning Math', () => {
     assert.ok(!CHORD_VOICINGS.ETHEREAL_11TH.intervals.includes(15), 'Cluster 4 must not duplicate b10 (15)');
   });
 
-  it('maps W, E, R, T, U keys to semitone accidentals and recognizes them as playable synthesizer keys', async () => {
+  it('maps A through \' keys across single-row 11-key chime strip and excludes semitone keys W, E, R, T, U', async () => {
     const {
-      SEMITONE_KEY_MAP,
-      SEMITONE_CHAR_MAP,
-      getSemitoneKeyIndex,
+      getChimeKeyIndex,
       isPlayableSynthesizerKey
     } = await import('../js/ui/keyboard.js');
 
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyW' }), 0);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyE' }), 1);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyR' }), 2);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyT' }), 3);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyY' }), 4);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyU' }), 5);
+    // Diatonic 11-key range: A, S, D, F, G, H, J, K, L, ;, '
+    const codes = ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon', 'Quote'];
+    codes.forEach((code, idx) => {
+      assert.strictEqual(getChimeKeyIndex({ code }), idx, `Code ${code} must map to chime index ${idx}`);
+      assert.strictEqual(isPlayableSynthesizerKey({ code }), true, `Code ${code} must be a playable synthesizer key`);
+    });
 
-    // Case-insensitivity via key
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'w' }), 0);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'W' }), 0);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'e' }), 1);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'r' }), 2);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 't' }), 3);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'u' }), 5);
-
-    // Playable synthesizer key check
-    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyW' }), true);
-    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyE' }), true);
-    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyR' }), true);
-    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyT' }), true);
-    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyU' }), true);
-    assert.strictEqual(isPlayableSynthesizerKey({ code: 'KeyQ' }), false);
+    // Keys W, E, R, T, Y, U, etc. must not trigger semitones or be playable synthesizer keys
+    const nonPlayable = ['KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'BracketLeft', 'BracketRight'];
+    nonPlayable.forEach((code) => {
+      assert.strictEqual(getChimeKeyIndex({ code }), null, `Code ${code} must not be a chime key`);
+      assert.strictEqual(isPlayableSynthesizerKey({ code }), false, `Code ${code} must not be a playable synthesizer key`);
+    });
   });
 });

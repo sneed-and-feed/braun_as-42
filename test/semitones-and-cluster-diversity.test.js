@@ -15,12 +15,11 @@ import {
 
 import {
   BraunPlaySurface,
-  SEMITONE_KEY_MAP,
-  SEMITONE_CHAR_MAP,
+  CHORD_SPEEDS,
   CHIME_KEY_MAP,
   CHIME_CHAR_MAP,
-  getSemitoneKeyIndex,
   getChimeKeyIndex,
+  getChordKeyIndex,
   isPlayableSynthesizerKey
 } from '../js/ui/keyboard.js';
 
@@ -39,6 +38,16 @@ class MockElement {
       add: (c) => set.add(c),
       remove: (c) => set.delete(c),
       contains: (c) => set.has(c),
+      toggle: (c, force) => {
+        if (force === undefined) {
+          if (set.has(c)) { set.delete(c); return false; }
+          else { set.add(c); return true; }
+        } else if (force) {
+          set.add(c); return true;
+        } else {
+          set.delete(c); return false;
+        }
+      },
       get length() { return set.size; }
     };
     this._className = '';
@@ -105,52 +114,68 @@ class MockElement {
   getBoundingClientRect() {
     return { top: 100, bottom: 200, left: 10, right: 60, width: 50, height: 100 };
   }
+
+  querySelectorAll(sel) {
+    const res = [];
+    const walk = (el) => {
+      for (const ch of (el.children || [])) {
+        if (sel.startsWith('.') && ch.classList && ch.classList.contains(sel.slice(1))) res.push(ch);
+        else if (sel.startsWith('#') && ch.getAttribute && ch.getAttribute('id') === sel.slice(1)) res.push(ch);
+        walk(ch);
+      }
+    };
+    walk(this);
+    return res;
+  }
 }
 
-describe('WERTU Semitone Keys Architecture & Dieter Rams Chime Strip', () => {
-  it('maps W, E, R, T, Y, U keys to exact sequential semitone indices', () => {
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyW'], 0, 'KeyW must map to semitone index 0');
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyE'], 1, 'KeyE must map to semitone index 1');
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyR'], 2, 'KeyR must map to semitone index 2');
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyT'], 3, 'KeyT must map to semitone index 3');
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyY'], 4, 'KeyY must map to semitone index 4');
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyU'], 5, 'KeyU must map to semitone index 5');
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyI'], 6, 'KeyI must map to semitone index 6');
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyO'], 7, 'KeyO must map to semitone index 7');
-    assert.strictEqual(SEMITONE_KEY_MAP['KeyP'], 8, 'KeyP must map to semitone index 8');
-    assert.strictEqual(SEMITONE_KEY_MAP['BracketLeft'], 9, 'BracketLeft must map to semitone index 9');
+describe('Single-Row 11-Key Modal Chime Strip Architecture & Dieter Rams Strum Control', () => {
+  it('maps A through \' keys across single-row 11-key chime strip (11 modal keys)', () => {
+    // 11-key range: A, S, D, F, G, H, J, K, L, ;, '
+    const expectedShortcuts = ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon', 'Quote'];
+    expectedShortcuts.forEach((code, idx) => {
+      assert.strictEqual(CHIME_KEY_MAP[code], idx, `Code ${code} must map to chime index ${idx}`);
+      assert.strictEqual(getChimeKeyIndex({ code }), idx, `getChimeKeyIndex({ code: '${code}' }) must return ${idx}`);
+      assert.strictEqual(isPlayableSynthesizerKey({ code }), true, `Code ${code} must be recognized as playable synth key`);
+    });
+
+    // Keys W, E, R, T, Y, U, etc. must not trigger notes or be playable synth keys
+    const semitoneCodes = ['KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'BracketLeft', 'BracketRight'];
+    semitoneCodes.forEach((code) => {
+      assert.strictEqual(getChimeKeyIndex({ code }), null, `Code ${code} must not map to chime index`);
+      assert.strictEqual(isPlayableSynthesizerKey({ code }), false, `Code ${code} must not be a playable synth key`);
+    });
   });
 
-  it('correctly resolves semitones by event code and event key case-insensitively', () => {
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyW' }), 0);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'W' }), 0);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'w' }), 0);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyE' }), 1);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'E' }), 1);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'e' }), 1);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyR' }), 2);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'r' }), 2);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyT' }), 3);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 't' }), 3);
-    assert.strictEqual(getSemitoneKeyIndex({ code: 'KeyU' }), 5);
-    assert.strictEqual(getSemitoneKeyIndex({ key: 'u' }), 5);
+  it('correctly resolves chime keys case-insensitively by key character', () => {
+    assert.strictEqual(getChimeKeyIndex({ key: 'a' }), 0);
+    assert.strictEqual(getChimeKeyIndex({ key: 'A' }), 0);
+    assert.strictEqual(getChimeKeyIndex({ key: 's' }), 1);
+    assert.strictEqual(getChimeKeyIndex({ key: 'S' }), 1);
+    assert.strictEqual(getChimeKeyIndex({ key: ';' }), 9);
+    assert.strictEqual(getChimeKeyIndex({ key: '\'' }), 10);
+    assert.strictEqual(getChimeKeyIndex({ key: 'w' }), null);
+    assert.strictEqual(getChimeKeyIndex({ key: 'W' }), null);
   });
 
-  it('identifies W, E, R, T, U as playable synthesizer keys to blur UI controls and prevent default', () => {
-    ['KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP'].forEach(code => {
+  it('identifies chime keys, chord keys, and spacebar as playable synthesizer keys while ignoring non-synth keys', () => {
+    ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon', 'Quote'].forEach(code => {
       assert.strictEqual(isPlayableSynthesizerKey({ code }), true, `${code} must be a playable synth key`);
     });
+    ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'].forEach(code => {
+      assert.strictEqual(isPlayableSynthesizerKey({ code }), true, `${code} must be a playable chord key`);
+    });
+    assert.strictEqual(isPlayableSynthesizerKey({ code: 'Space' }), true, 'Space must be freeze key');
+
     // Non-synth keys
-    ['KeyQ', 'Tab', 'Escape', 'Enter'].forEach(code => {
+    ['KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyQ', 'Tab', 'Escape', 'Enter'].forEach(code => {
       assert.strictEqual(isPlayableSynthesizerKey({ code }), false, `${code} must not be a playable synth key`);
     });
   });
 
-  it('rebuilds chime strip with dual-tier grid: Semitones on Row 1, Diatonics on Row 2', () => {
+  it('rebuilds chime strip as serene single-row 11-key layout with clean DEG typography and no semitones', () => {
     const mockStrip = new MockElement('div');
     const mockChords = new MockElement('div');
-    const playedNotes = [];
-    const releasedVoices = [];
 
     const mockEngine = {
       isInitialized: true,
@@ -158,337 +183,7 @@ describe('WERTU Semitone Keys Architecture & Dieter Rams Chime Strip', () => {
       rootPitchClass: 0, // C
       a4: 440,
       feltPiano: {
-        playNote: (freq, vel, dur, isHold) => {
-          const voice = {
-            freq,
-            vel,
-            dur,
-            isHold,
-            released: false,
-            release: () => {
-              voice.released = true;
-              releasedVoices.push(voice);
-            }
-          };
-          playedNotes.push(voice);
-          return voice;
-        }
-      }
-    };
-
-    const origDoc = globalThis.document;
-    globalThis.document = {
-      createElement: (tag) => new MockElement(tag),
-      activeElement: null,
-      body: new MockElement('body')
-    };
-
-    try {
-      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
-
-      // In Budd Pentatonic (5 notes/octave * 2 octaves = 10 notes)
-      assert.strictEqual(surface.diatonicKeys.length, 10, 'Must have 10 diatonic keys');
-      assert.strictEqual(surface.semitoneKeys.length, 10, 'Must have 10 semitone keys');
-      // Strip container contains 20 total keys (10 diatonic + 10 semitones)
-      assert.strictEqual(mockStrip.children.length, 20, 'Strip container must have 20 children');
-
-      // First child is Note 0 Diatonic (C3)
-      const firstDiatonic = mockStrip.children[0];
-      assert.strictEqual(firstDiatonic.getAttribute('data-midi'), '48', 'First child must be C3 (MIDI 48)');
-      assert.strictEqual(firstDiatonic.classList.contains('braun-diatonic-key'), true, 'Must have braun-diatonic-key class');
-      assert.strictEqual(firstDiatonic.style.gridRow, '2', 'Diatonic key must be on grid row 2');
-      assert.strictEqual(firstDiatonic.style.gridColumn, '1', 'Diatonic key 0 must be in grid column 1');
-
-      // Semitone keys are on Row 1
-      const firstSemitone = surface.semitoneKeys[0];
-      assert.strictEqual(firstSemitone.getAttribute('data-midi'), '49', 'First semitone must be C#3 (MIDI 49)');
-      assert.strictEqual(firstSemitone.classList.contains('braun-semitone-key'), true, 'Must have braun-semitone-key class');
-      assert.strictEqual(firstSemitone.style.gridRow, '1', 'Semitone key must be on grid row 1');
-      assert.strictEqual(firstSemitone.style.gridColumn, '1', 'Semitone key 0 must align with column 1');
-
-      // Verify second pair (D3 on bottom, D#3 on top)
-      const secondDiatonic = surface.diatonicKeys[1];
-      const secondSemitone = surface.semitoneKeys[1];
-      assert.strictEqual(secondDiatonic.getAttribute('data-midi'), '50', 'Second diatonic must be D3 (MIDI 50)');
-      assert.strictEqual(secondSemitone.getAttribute('data-midi'), '51', 'Second semitone must be D#3 (MIDI 51)');
-      assert.strictEqual(secondDiatonic.style.gridColumn, '2');
-      assert.strictEqual(secondSemitone.style.gridColumn, '2');
-
-      // Verify third pair (E3 on bottom, F3 on top for singing 4th suspension)
-      const thirdDiatonic = surface.diatonicKeys[2];
-      const thirdSemitone = surface.semitoneKeys[2];
-      assert.strictEqual(thirdDiatonic.getAttribute('data-midi'), '52', 'Third diatonic must be E3 (MIDI 52)');
-      assert.strictEqual(thirdSemitone.getAttribute('data-midi'), '53', 'Third semitone must be F3 (MIDI 53)');
-      assert.strictEqual(thirdSemitone.innerHTML.includes('>R<') || thirdSemitone.innerHTML.includes('[R]'), true, 'Shortcut R must be displayed on semitone 2');
-
-      // Verify keyboard shortcuts match badges
-      assert.strictEqual(surface._getShortcutKey(0), 'A');
-      assert.strictEqual(surface._getShortcutKey(1), 'S');
-      assert.strictEqual(surface._getShortcutKey(2), 'D');
-      assert.strictEqual(surface._getSemitoneShortcutKey(0), 'W');
-      assert.strictEqual(surface._getSemitoneShortcutKey(1), 'E');
-      assert.strictEqual(surface._getSemitoneShortcutKey(2), 'R');
-      assert.strictEqual(surface._getSemitoneShortcutKey(3), 'T');
-      assert.strictEqual(surface._getSemitoneShortcutKey(4), 'Y');
-      assert.strictEqual(surface._getSemitoneShortcutKey(5), 'U');
-    } finally {
-      globalThis.document = origDoc;
-    }
-  });
-
-  it('triggers and releases semitone notes with continuous hold-sustain via WERTU keys', () => {
-    const mockStrip = new MockElement('div');
-    const mockChords = new MockElement('div');
-    const playedNotes = [];
-    const releasedVoices = [];
-
-    const mockEngine = {
-      isInitialized: true,
-      currentScaleKey: 'BUDD_PENTATONIC',
-      rootPitchClass: 0,
-      a4: 440,
-      feltPiano: {
-        playNote: (freq, vel, dur, isHold) => {
-          const voice = {
-            freq,
-            vel,
-            dur,
-            isHold,
-            released: false,
-            release: () => {
-              voice.released = true;
-              releasedVoices.push(voice);
-            }
-          };
-          playedNotes.push(voice);
-          return voice;
-        }
-      }
-    };
-
-    let keydownHandler = null;
-    let keyupHandler = null;
-    const origWin = globalThis.window;
-    globalThis.window = {
-      addEventListener: (type, cb) => {
-        if (type === 'keydown') keydownHandler = cb;
-        if (type === 'keyup') keyupHandler = cb;
-      },
-      removeEventListener: () => {}
-    };
-    const origDoc = globalThis.document;
-    globalThis.document = {
-      createElement: (tag) => new MockElement(tag),
-      activeElement: null,
-      body: new MockElement('body')
-    };
-
-    try {
-      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
-      assert.ok(keydownHandler, 'keydown handler must be registered');
-      assert.ok(keyupHandler, 'keyup handler must be registered');
-
-      // 1. Press KeyW (C#3 semitone)
-      keydownHandler({
-        code: 'KeyW',
-        key: 'w',
-        repeat: false,
-        target: { tagName: 'DIV' },
-        preventDefault: () => {}
-      });
-
-      assert.strictEqual(playedNotes.length, 1, 'KeyW must trigger note');
-      const voiceW = playedNotes[0];
-      assert.strictEqual(Math.round(frequencyToMidi(voiceW.freq, 440)), 49, 'KeyW must sound C#3 (MIDI 49)');
-      assert.strictEqual(voiceW.isHold, true, 'Holding KeyW must engage isHold');
-      assert.strictEqual(releasedVoices.length, 0, 'Note must not be released while held');
-
-      const semitoneKeyW = surface.semitoneKeys[0];
-      assert.strictEqual(semitoneKeyW._isHeld, true, 'Semitone key element must be marked held');
-      assert.strictEqual(semitoneKeyW.classList.contains('is-active'), true, 'Semitone key must have is-active class');
-
-      // 2. Release KeyW
-      keyupHandler({
-        code: 'KeyW',
-        key: 'w',
-        target: { tagName: 'DIV' }
-      });
-
-      assert.strictEqual(releasedVoices.length, 1, 'Releasing KeyW must release voice');
-      assert.strictEqual(releasedVoices[0], voiceW, 'Released voice must match KeyW voice');
-      assert.strictEqual(semitoneKeyW._isHeld, false, 'Semitone key must no longer be held');
-      assert.strictEqual(semitoneKeyW.classList.contains('is-active'), false, 'Semitone key is-active must be removed');
-
-      // 3. Press KeyE (D#3 semitone, index 1)
-      keydownHandler({
-        code: 'KeyE',
-        key: 'e',
-        repeat: false,
-        target: { tagName: 'DIV' },
-        preventDefault: () => {}
-      });
-
-      assert.strictEqual(playedNotes.length, 2, 'KeyE must trigger note');
-      const voiceE = playedNotes[1];
-      assert.strictEqual(Math.round(frequencyToMidi(voiceE.freq, 440)), 51, 'KeyE must sound D#3 (MIDI 51)');
-
-      // 4. Press KeyR (F3 semitone, index 2)
-      keydownHandler({
-        code: 'KeyR',
-        key: 'r',
-        repeat: false,
-        target: { tagName: 'DIV' },
-        preventDefault: () => {}
-      });
-
-      assert.strictEqual(playedNotes.length, 3, 'KeyR must trigger note');
-      const voiceR = playedNotes[2];
-      assert.strictEqual(Math.round(frequencyToMidi(voiceR.freq, 440)), 53, 'KeyR must sound F3 (MIDI 53)');
-
-      // 5. Release KeyE and KeyR
-      keyupHandler({ code: 'KeyE', key: 'e', target: { tagName: 'DIV' } });
-      keyupHandler({ code: 'KeyR', key: 'r', target: { tagName: 'DIV' } });
-      assert.strictEqual(releasedVoices.length, 3, 'All voices must be released cleanly');
-    } finally {
-      globalThis.window = origWin;
-      globalThis.document = origDoc;
-    }
-  });
-
-  it('supports mouse/touch glissando swiping across semitone accidental keys', () => {
-    const mockStrip = new MockElement('div');
-    const mockChords = new MockElement('div');
-    const playedNotes = [];
-    const releasedVoices = [];
-
-    const mockEngine = {
-      isInitialized: true,
-      currentScaleKey: 'BUDD_PENTATONIC',
-      rootPitchClass: 0,
-      a4: 440,
-      feltPiano: {
-        playNote: (freq, vel, dur, isHold) => {
-          const voice = {
-            freq,
-            vel,
-            dur,
-            isHold,
-            released: false,
-            release: () => {
-              voice.released = true;
-              releasedVoices.push(voice);
-            }
-          };
-          playedNotes.push(voice);
-          return voice;
-        }
-      }
-    };
-
-    const origDoc = globalThis.document;
-    globalThis.document = {
-      createElement: (tag) => new MockElement(tag),
-      activeElement: null,
-      body: new MockElement('body')
-    };
-
-    try {
-      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
-      const semitone1 = surface.semitoneKeys[0]; // C#3
-      const semitone2 = surface.semitoneKeys[1]; // D#3
-
-      // 1. Pointerdown on Semitone 1
-      semitone1.dispatchEvent('pointerdown', { buttons: 1, clientY: 50, preventDefault: () => {} });
-      assert.strictEqual(playedNotes.length, 1, 'Semitone 1 must sound');
-      assert.strictEqual(semitone1._isHeld, true);
-      assert.strictEqual(semitone1.classList.contains('is-pressed'), true);
-
-      // 2. Glissando enter Semitone 2
-      semitone2.dispatchEvent('pointerenter', { buttons: 1, clientY: 48 });
-      assert.strictEqual(playedNotes.length, 2, 'Semitone 2 must sound on glissando swipe');
-      assert.strictEqual(releasedVoices.length, 1, 'Semitone 1 must be released');
-      assert.strictEqual(semitone1._isHeld, false);
-      assert.strictEqual(semitone2._isHeld, true);
-
-      // 3. Pointerup releases active semitone
-      semitone2.dispatchEvent('pointerup', {});
-      assert.strictEqual(releasedVoices.length, 2, 'Semitone 2 must be released on pointerup');
-      assert.strictEqual(semitone2._isHeld, false);
-    } finally {
-      globalThis.document = origDoc;
-    }
-  });
-
-  it('verifies CSS style rules for braun-chime-strip grid and braun-semitone-key contrast', () => {
-    const cssPath = path.join(__dirname, '..', 'css', 'style.css');
-    const css = fs.readFileSync(cssPath, 'utf8');
-
-    // 1. Grid layout for dual-tier chime strip
-    assert.ok(
-      css.includes('.braun-chime-strip {') &&
-      css.includes('display: grid;') &&
-      css.includes('grid-template-rows: 32px 58px;') &&
-      css.includes('grid-auto-columns: minmax(42px, 1fr);'),
-      'Chime strip must use CSS Grid with 32px semitone row, 58px diatonic row, and responsive minmax(42px, 1fr) columns'
-    );
-
-    // 2. Semitone accidental key styling
-    assert.ok(
-      css.includes('.braun-chime-key.braun-semitone-key {') &&
-      css.includes('height: 32px;'),
-      'Semitone keys must have dedicated height 32px'
-    );
-
-    // 3. Semitone horizontal info layout
-    assert.ok(
-      css.includes('.braun-chime-key.braun-semitone-key .braun-key-info {') &&
-      css.includes('flex-direction: row;') &&
-      css.includes('align-items: baseline;'),
-      'Semitone key info must arrange name and degree horizontally to fit cleanly within 32px height'
-    );
-
-    // 4. Signal orange active/pressed state
-    assert.ok(
-      css.includes('.braun-chime-key.braun-semitone-key.is-pressed') &&
-      css.includes('background: var(--braun-orange);'),
-      'Active semitone keys must illuminate in Braun signal orange'
-    );
-
-    // 5. Dark theme high contrast
-    assert.ok(
-      css.includes('[data-theme="dark"] .braun-chime-key.braun-semitone-key') &&
-      css.includes('border-color: #2F323A;'),
-      'Dark theme semitone keys must have high-contrast border and anthracite background'
-    );
-  });
-
-  it('discriminates accurately between Row 1 semitone keys and Row 2 diatonic keys during pointermove glissando fallback', () => {
-    const mockStrip = new MockElement('div');
-    const mockChords = new MockElement('div');
-    const playedNotes = [];
-    const releasedVoices = [];
-
-    const mockEngine = {
-      isInitialized: true,
-      currentScaleKey: 'BUDD_PENTATONIC',
-      rootPitchClass: 0,
-      a4: 440,
-      feltPiano: {
-        playNote: (freq, vel, dur, isHold) => {
-          const voice = {
-            freq,
-            vel,
-            dur,
-            isHold,
-            released: false,
-            release: () => {
-              voice.released = true;
-              releasedVoices.push(voice);
-            }
-          };
-          playedNotes.push(voice);
-          return voice;
-        }
+        playNote: () => ({ release: () => {} })
       }
     };
 
@@ -497,44 +192,225 @@ describe('WERTU Semitone Keys Architecture & Dieter Rams Chime Strip', () => {
       createElement: (tag) => new MockElement(tag),
       activeElement: null,
       body: new MockElement('body'),
-      elementFromPoint: () => null // Force fallback hit-testing path
+      getElementById: () => null,
+      querySelectorAll: () => []
     };
 
     try {
-      mockStrip.getBoundingClientRect = () => ({ top: 100, bottom: 194, left: 0, right: 500 });
       const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
 
-      // Setup geometric bounding rects for column 0 (Semitone W, Diatonic A) and column 1 (Semitone E, Diatonic S)
-      const semitone0 = surface.semitoneKeys[0]; // C#3
-      const diatonic0 = surface.diatonicKeys[0]; // C3
-      const semitone1 = surface.semitoneKeys[1]; // D#3
-      const diatonic1 = surface.diatonicKeys[1]; // D3
+      // Exactly 11 keys (octaves 3 through 5 in Budd Pentatonic)
+      assert.strictEqual(surface.diatonicKeys.length, 11, 'Must have 11 diatonic keys');
+      assert.strictEqual(surface.semitoneKeys.length, 0, 'Must have 0 semitone keys');
+      assert.strictEqual(mockStrip.children.length, 11, 'Strip container must have exactly 11 children');
 
-      semitone0.getBoundingClientRect = () => ({ top: 100, bottom: 132, left: 0, right: 50 });
-      diatonic0.getBoundingClientRect = () => ({ top: 136, bottom: 194, left: 0, right: 50 });
-      semitone1.getBoundingClientRect = () => ({ top: 100, bottom: 132, left: 54, right: 104 });
-      diatonic1.getBoundingClientRect = () => ({ top: 136, bottom: 194, left: 54, right: 104 });
+      // Check each of the 11 keys
+      const expectedMidis = [48, 50, 52, 55, 57, 60, 62, 64, 67, 69, 72]; // Budd Pentatonic C3..C5
+      const expectedBadges = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'"];
 
-      // 1. Initial pointerdown on Semitone 0 (W, C#3, Y=115)
-      semitone0.dispatchEvent('pointerdown', { buttons: 1, clientY: 115, preventDefault: () => {} });
-      assert.strictEqual(playedNotes.length, 1);
-      assert.strictEqual(Math.round(frequencyToMidi(playedNotes[0].freq, 440)), 49, 'Initial strike must be C#3 (MIDI 49)');
+      surface.diatonicKeys.forEach((keyEl, idx) => {
+        assert.strictEqual(keyEl.getAttribute('data-midi'), String(expectedMidis[idx]), `Key ${idx} MIDI mismatch`);
+        assert.strictEqual(keyEl.classList.contains('braun-chime-key'), true, `Key ${idx} must have braun-chime-key class`);
+        assert.strictEqual(keyEl.classList.contains('braun-semitone-key'), false, `Key ${idx} must not have semitone class`);
+        assert.strictEqual(keyEl.classList.contains('braun-diatonic-key'), false, `Key ${idx} must not have dual-tier class`);
 
-      // 2. Drag pointer into Column 1 on Row 1 (X=75, Y=115 -> Semitone 1, D#3)
-      mockStrip.dispatchEvent('pointermove', { clientX: 75, clientY: 115, buttons: 1 });
-      assert.strictEqual(playedNotes.length, 2, 'Moving to Column 1 Row 1 must trigger note');
-      assert.strictEqual(Math.round(frequencyToMidi(playedNotes[1].freq, 440)), 51, 'Row 1 swipe must trigger D#3 (MIDI 51), NOT diatonic D3');
-      assert.strictEqual(releasedVoices.length, 1, 'Previous semitone voice must be released');
+        // Check shortcut badge
+        assert.strictEqual(surface._getShortcutKey(idx), expectedBadges[idx]);
+        assert.ok(keyEl.innerHTML.includes(expectedBadges[idx]), `Key ${idx} must display shortcut badge ${expectedBadges[idx]}`);
 
-      // 3. Drag pointer down into Column 1 on Row 2 (X=75, Y=165 -> Diatonic 1, D3)
-      mockStrip.dispatchEvent('pointermove', { clientX: 75, clientY: 165, buttons: 1 });
-      assert.strictEqual(playedNotes.length, 3, 'Moving down to Row 2 must trigger diatonic note');
-      assert.strictEqual(Math.round(frequencyToMidi(playedNotes[2].freq, 440)), 50, 'Row 2 swipe must trigger D3 (MIDI 50)');
-      assert.strictEqual(releasedVoices.length, 2, 'Previous voice must be released');
+        // Degree label must be clean DEG X without chromatic accidental offsets
+        assert.ok(keyEl.innerHTML.includes('DEG '), `Key ${idx} must display DEG label`);
+      });
+    } finally {
+      globalThis.document = origDoc;
+    }
+  });
 
-      // 4. Release pointer on currently sounding key (Diatonic 1)
-      diatonic1.dispatchEvent('pointerup', {});
-      assert.strictEqual(releasedVoices.length, 3, 'Releasing pointer on active diatonic key must release voice');
+  it('provides 4-position Dieter Rams STRUM speed switch: SLOW (120ms), MED (50ms), FAST (20ms), INSTANT (0ms)', () => {
+    assert.strictEqual(CHORD_SPEEDS.slow.rateMs, 120);
+    assert.strictEqual(CHORD_SPEEDS.slow.label, 'SLOW');
+    assert.strictEqual(CHORD_SPEEDS.med.rateMs, 50);
+    assert.strictEqual(CHORD_SPEEDS.med.label, 'MED');
+    assert.strictEqual(CHORD_SPEEDS.fast.rateMs, 20);
+    assert.strictEqual(CHORD_SPEEDS.fast.label, 'FAST');
+    assert.strictEqual(CHORD_SPEEDS.instant.rateMs, 0);
+    assert.strictEqual(CHORD_SPEEDS.instant.label, 'INSTANT');
+
+    const mockStrip = new MockElement('div');
+    const mockChords = new MockElement('div');
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: { playNote: () => ({ release: () => {} }) }
+    };
+
+    // Build mock speed switch with 4 buttons
+    const speedSwitch = new MockElement('div');
+    speedSwitch.setAttribute('id', 'chord-speed-switch');
+    const btnSlow = new MockElement('button');
+    btnSlow.className = 'braun-speed-btn';
+    btnSlow.setAttribute('data-speed', 'slow');
+    const btnMed = new MockElement('button');
+    btnMed.className = 'braun-speed-btn is-active';
+    btnMed.setAttribute('data-speed', 'med');
+    const btnFast = new MockElement('button');
+    btnFast.className = 'braun-speed-btn';
+    btnFast.setAttribute('data-speed', 'fast');
+    const btnInstant = new MockElement('button');
+    btnInstant.className = 'braun-speed-btn';
+    btnInstant.setAttribute('data-speed', 'instant');
+    speedSwitch.appendChild(btnSlow);
+    speedSwitch.appendChild(btnMed);
+    speedSwitch.appendChild(btnFast);
+    speedSwitch.appendChild(btnInstant);
+
+    const origDoc = globalThis.document;
+    globalThis.document = {
+      createElement: (tag) => new MockElement(tag),
+      activeElement: null,
+      body: new MockElement('body'),
+      getElementById: (id) => id === 'chord-speed-switch' ? speedSwitch : null,
+      querySelectorAll: (sel) => sel === '.braun-speed-btn' ? [btnSlow, btnMed, btnFast, btnInstant] : []
+    };
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      assert.strictEqual(surface.chordSpeed, 'med', 'Default speed must be med');
+      assert.strictEqual(btnMed.classList.contains('is-active'), true);
+      assert.strictEqual(btnSlow.classList.contains('is-active'), false);
+
+      // Change to slow
+      surface.setChordSpeed('slow');
+      assert.strictEqual(surface.chordSpeed, 'slow');
+      assert.strictEqual(btnSlow.classList.contains('is-active'), true);
+      assert.strictEqual(btnMed.classList.contains('is-active'), false);
+      assert.strictEqual(btnSlow.getAttribute('aria-checked'), 'true');
+
+      // Click fast button
+      btnFast.click();
+      assert.strictEqual(surface.chordSpeed, 'fast');
+      assert.strictEqual(btnFast.classList.contains('is-active'), true);
+      assert.strictEqual(btnSlow.classList.contains('is-active'), false);
+
+      // Instant button
+      btnInstant.click();
+      assert.strictEqual(surface.chordSpeed, 'instant');
+      assert.strictEqual(btnInstant.classList.contains('is-active'), true);
+
+      // Fallback on invalid input
+      surface.setChordSpeed('hyperspeed');
+      assert.strictEqual(surface.chordSpeed, 'med');
+    } finally {
+      globalThis.document = origDoc;
+    }
+  });
+
+  it('triggers chord clusters with appropriate strum delay according to chordSpeed', () => {
+    const mockStrip = new MockElement('div');
+    const mockChords = new MockElement('div');
+
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: () => ({ release: () => {} })
+      }
+    };
+
+    const origDoc = globalThis.document;
+    globalThis.document = {
+      createElement: (tag) => new MockElement(tag),
+      activeElement: null,
+      body: new MockElement('body'),
+      getElementById: () => null,
+      querySelectorAll: () => []
+    };
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+
+      // 1. Instant speed: rateMs = 0 -> all notes triggered in 0ms timers
+      surface.setChordSpeed('instant');
+      const sessionInstant = surface.startChord('ETHEREAL_11TH');
+      assert.ok(sessionInstant);
+      assert.strictEqual(sessionInstant.timers.length, 6, 'Cluster 4 (6 notes) must create 6 timers');
+      surface.stopChordSession(sessionInstant);
+
+      // 2. Slow speed: rateMs = 120 -> 6 timers created
+      surface.setChordSpeed('slow');
+      const sessionSlow = surface.startChord('NOSTALGIA_11TH');
+      assert.ok(sessionSlow);
+      assert.strictEqual(sessionSlow.timers.length, 6);
+      surface.stopChordSession(sessionSlow);
+      assert.strictEqual(sessionSlow.isReleased, true);
+    } finally {
+      globalThis.document = origDoc;
+    }
+  });
+
+  it('supports mouse/touch glissando swiping across single-row 11 chime keys', () => {
+    const mockStrip = new MockElement('div');
+    const mockChords = new MockElement('div');
+    const playedNotes = [];
+    const releasedVoices = [];
+
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: (freq, vel, dur, isHold) => {
+          const voice = {
+            freq,
+            vel,
+            dur,
+            isHold,
+            released: false,
+            release: () => {
+              voice.released = true;
+              releasedVoices.push(voice);
+            }
+          };
+          playedNotes.push(voice);
+          return voice;
+        }
+      }
+    };
+
+    const origDoc = globalThis.document;
+    globalThis.document = {
+      createElement: (tag) => new MockElement(tag),
+      activeElement: null,
+      body: new MockElement('body')
+    };
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      const key0 = surface.diatonicKeys[0]; // C3
+      const key1 = surface.diatonicKeys[1]; // D3
+
+      // 1. Pointerdown on Key 0
+      key0.dispatchEvent('pointerdown', { buttons: 1, clientY: 50, preventDefault: () => {} });
+      assert.strictEqual(playedNotes.length, 1, 'Key 0 must sound');
+      assert.strictEqual(key0._isHeld, true);
+      assert.strictEqual(key0.classList.contains('is-pressed'), true);
+
+      // 2. Glissando swipe into Key 1
+      key1.dispatchEvent('pointerenter', { buttons: 1, clientY: 48 });
+      assert.strictEqual(playedNotes.length, 2, 'Key 1 must sound on glissando swipe');
+      assert.strictEqual(releasedVoices.length, 1, 'Key 0 must be released');
+      assert.strictEqual(key0._isHeld, false);
+      assert.strictEqual(key1._isHeld, true);
+
+      // 3. Pointerup releases active key
+      key1.dispatchEvent('pointerup', {});
+      assert.strictEqual(releasedVoices.length, 2, 'Key 1 must be released on pointerup');
+      assert.strictEqual(key1._isHeld, false);
     } finally {
       globalThis.document = origDoc;
     }
@@ -588,41 +464,43 @@ describe('WERTU Semitone Keys Architecture & Dieter Rams Chime Strip', () => {
     globalThis.document = {
       createElement: (tag) => new MockElement(tag),
       activeElement: null,
-      body: new MockElement('body')
+      body: new MockElement('body'),
+      getElementById: () => null,
+      querySelectorAll: () => []
     };
 
     try {
       const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
-      const semitoneW = surface.semitoneKeys[0]; // C#3
+      const keyA = surface.diatonicKeys[0]; // C3
 
-      // 1. Press and hold KeyW via physical keyboard
+      // 1. Press and hold KeyA via physical keyboard
       keydownHandler({
-        code: 'KeyW',
-        key: 'w',
+        code: 'KeyA',
+        key: 'a',
         repeat: false,
         target: { tagName: 'DIV' },
         preventDefault: () => {}
       });
 
       assert.strictEqual(playedNotes.length, 1);
-      assert.strictEqual(semitoneW._isHeld, true);
-      assert.strictEqual(semitoneW.classList.contains('is-active'), true);
-      assert.strictEqual(semitoneW.classList.contains('is-pressed'), true);
+      assert.strictEqual(keyA._isHeld, true);
+      assert.strictEqual(keyA.classList.contains('is-active'), true);
+      assert.strictEqual(keyA.classList.contains('is-pressed'), true);
 
       // 2. User clicks somewhere else in the UI and pointerup fires on window
       windowPointerupHandler({});
 
-      // 3. Semitone key must STILL be held and visually illuminated because KeyW is still physically pressed
-      assert.strictEqual(semitoneW._isHeld, true, 'Semitone key must remain held despite window pointerup');
-      assert.strictEqual(semitoneW.classList.contains('is-active'), true, 'Semitone key must retain is-active class');
-      assert.strictEqual(semitoneW.classList.contains('is-pressed'), true, 'Semitone key must retain is-pressed class');
+      // 3. Key must STILL be held and visually illuminated because KeyA is still physically pressed
+      assert.strictEqual(keyA._isHeld, true, 'Key must remain held despite window pointerup');
+      assert.strictEqual(keyA.classList.contains('is-active'), true, 'Key must retain is-active class');
+      assert.strictEqual(keyA.classList.contains('is-pressed'), true, 'Key must retain is-pressed class');
       assert.strictEqual(releasedVoices.length, 0, 'Voice must not be prematurely released');
 
       // 4. Physical keyup finally arrives
-      keyupHandler({ code: 'KeyW', key: 'w', target: { tagName: 'DIV' } });
-      assert.strictEqual(semitoneW._isHeld, false, 'Key must be released on keyup');
-      assert.strictEqual(semitoneW.classList.contains('is-active'), false);
-      assert.strictEqual(semitoneW.classList.contains('is-pressed'), false);
+      keyupHandler({ code: 'KeyA', key: 'a', target: { tagName: 'DIV' } });
+      assert.strictEqual(keyA._isHeld, false, 'Key must be released on keyup');
+      assert.strictEqual(keyA.classList.contains('is-active'), false);
+      assert.strictEqual(keyA.classList.contains('is-pressed'), false);
       assert.strictEqual(releasedVoices.length, 1, 'Voice must be released on keyup');
     } finally {
       globalThis.window = origWin;
@@ -676,7 +554,9 @@ describe('WERTU Semitone Keys Architecture & Dieter Rams Chime Strip', () => {
     globalThis.document = {
       createElement: (tag) => new MockElement(tag),
       activeElement: null,
-      body: new MockElement('body')
+      body: new MockElement('body'),
+      getElementById: () => null,
+      querySelectorAll: () => []
     };
 
     try {
@@ -684,8 +564,8 @@ describe('WERTU Semitone Keys Architecture & Dieter Rams Chime Strip', () => {
 
       // First keydown
       keydownHandler({
-        code: 'KeyW',
-        key: 'w',
+        code: 'KeyA',
+        key: 'a',
         repeat: false,
         target: { tagName: 'DIV' },
         preventDefault: () => {}
@@ -695,24 +575,97 @@ describe('WERTU Semitone Keys Architecture & Dieter Rams Chime Strip', () => {
 
       // Second keydown on same key before keyup
       keydownHandler({
-        code: 'KeyW',
-        key: 'w',
+        code: 'KeyA',
+        key: 'a',
         repeat: false,
         target: { tagName: 'DIV' },
         preventDefault: () => {}
       });
       assert.strictEqual(playedNotes.length, 2);
-      assert.strictEqual(releasedVoices.length, 1, 'Re-triggering KeyW must release prior sounding voice');
+      assert.strictEqual(releasedVoices.length, 1, 'Re-triggering KeyA must release prior sounding voice');
       assert.strictEqual(releasedVoices[0], playedNotes[0]);
 
       // Release keyup
-      keyupHandler({ code: 'KeyW', key: 'w', target: { tagName: 'DIV' } });
-      assert.strictEqual(releasedVoices.length, 2, 'Releasing KeyW must release second voice');
+      keyupHandler({ code: 'KeyA', key: 'a', target: { tagName: 'DIV' } });
+      assert.strictEqual(releasedVoices.length, 2, 'Releasing KeyA must release second voice');
       assert.strictEqual(releasedVoices[1], playedNotes[1]);
     } finally {
       globalThis.window = origWin;
       globalThis.document = origDoc;
     }
+  });
+
+  it('verifies CSS style rules for single-row flex chime strip and Dieter Rams strum toggle switch', () => {
+    const cssPath = path.join(__dirname, '..', 'css', 'style.css');
+    const css = fs.readFileSync(cssPath, 'utf8');
+
+    // 1. Single-row flex layout for serene chime strip
+    assert.ok(
+      css.includes('.braun-chime-strip {') &&
+      css.includes('display: flex;') &&
+      css.includes('gap: 4px;'),
+      'Chime strip must use clean single-row flex layout'
+    );
+
+    // 2. Chime key styling
+    assert.ok(
+      css.includes('.braun-chime-key {') &&
+      css.includes('height: 74px;'),
+      'Chime keys must have 74px height'
+    );
+
+    // 3. Strum speed switch styling
+    assert.ok(
+      css.includes('.braun-chord-speed-switch {') &&
+      css.includes('.braun-speed-btn {') &&
+      css.includes('.braun-speed-btn.is-active {'),
+      'Dieter Rams strum speed toggle switch must be styled'
+    );
+
+    // 4. Dark theme high contrast for strum toggles
+    assert.ok(
+      css.includes('[data-theme="dark"] .braun-speed-btn.is-active'),
+      'Dark theme must style active strum toggle'
+    );
+  });
+
+  it('integrates chordSpeed with patch export, load, and curated sound presets', async () => {
+    const { PRESETS, AmbientApp } = await import('../js/app.js');
+
+    assert.strictEqual(PRESETS.DEFAULT.chordSpeed, 'med');
+    assert.strictEqual(PRESETS.HAROLD_BUDD.chordSpeed, 'slow');
+    assert.strictEqual(PRESETS.VANGELIS.chordSpeed, 'fast');
+    assert.strictEqual(PRESETS.ENO_AIRPORTS.chordSpeed, 'slow');
+
+    // Test patch export and load
+    const mockApp = {
+      engine: {
+        rootPitchClass: 0,
+        currentScaleKey: 'BUDD_PENTATONIC',
+        a4: 440,
+        setScale(scaleKey, root) { this.currentScaleKey = scaleKey; this.rootPitchClass = root; },
+        feltParams: { waveform: 'felt' },
+        droneParams: { 1: {}, 2: {} }
+      },
+      knobs: {},
+      vectorPad: { x: 0.5, y: 0.5 },
+      playSurface: {
+        chordSpeed: 'slow',
+        setChordSpeed(s) { this.chordSpeed = s; },
+        rebuildKeys() {}
+      },
+      updateLoopNotes() {},
+      exportPatch: AmbientApp.prototype.exportPatch,
+      loadPatch: AmbientApp.prototype.loadPatch
+    };
+
+    const exported = mockApp.exportPatch();
+    assert.strictEqual(exported.chordSpeed, 'slow');
+
+    // Change and reload
+    mockApp.playSurface.chordSpeed = 'fast';
+    mockApp.loadPatch({ chordSpeed: 'instant' });
+    assert.strictEqual(mockApp.playSurface.chordSpeed, 'instant');
   });
 });
 

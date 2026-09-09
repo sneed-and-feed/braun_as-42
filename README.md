@@ -134,10 +134,10 @@ This automatically syncs the latest files to `sneed-and-feed.github.io`, commits
 Additionally, this repository includes `.github/workflows/deploy.yml` which deploys automatically on every push to `main`.
 
 ### Keyboard Shortcuts & Gestures
-* **A, S, D, F, G, H, J, K, L, ;, ', Z, X, C, V:** Play modal scale degrees on the lower tier of the harmonic touch strip (click-free with key repeat protection and continuous hold sustain).
-* **W, E, R, T, Y, U, I, O, P, [, ]:** Play semitone accidental inflections (+1 semitone chromatic sharp/suspension above each modal degree) on the upper tier of the chime strip.
+* **A, S, D, F, G, H, J, K, L, ;, ':** Play the 11 modal scale degrees on the serene single-row harmonic chime strip (spanning octaves 3 through 5, click-free with key repeat protection and continuous hold sustain). Additional bass chime shortcuts `Z, X, C, V` are also supported.
 * **Click & Drag Glissando:** Slide finger or mouse horizontally across chime keys for expressive harp/chime glissandi. Each entered key articulates expressively with velocity sensitivity while smoothly releasing previous sounding notes. Holding in place maintains continuous pedal sustain until mouse release.
-* **1 to 9, 0, -, =:** Trigger Harold Budd Chord Cluster Macros (12 curated modal voicings with subtle humanized strum and hold sustain).
+* **1 to 9, 0, -, =:** Trigger Harold Budd Chord Cluster Macros (12 curated modal voicings with hold sustain).
+* **STRUM Speed Switch (SLOW · MED · FAST · INSTANT):** 4-position hardware toggle switch controlling the chord cluster trigger speed (`SLOW` [120ms strum], `MED` [50ms strum], `FAST` [20ms strum], and `INSTANT` [0ms simultaneous block]). Designed in accordance with Dieter Rams principles to prevent abrupt chord disruption over slower ambient drones.
 * **Spacebar:** Toggle Infinite Reverb Freeze.
 
 ---

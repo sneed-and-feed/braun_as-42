@@ -1,7 +1,7 @@
 /**
  * @file keyboard.js
  * @brief Playable harmonic touch strip, tactile chord cluster macro buttons,
- * visual voice illumination, and computer keyboard mapping.
+ * visual voice illumination, computer keyboard mapping, and chord strum speed control.
  */
 
 import { getScaleDegreesInOctaves, CHORD_VOICINGS, getChordFrequencies, SCALES, NOTE_NAMES, midiToFrequency } from '../generative/scales.js';
@@ -18,17 +18,6 @@ export const CHIME_CHAR_MAP = {
   'l': 8, ';': 9, "'": 10, 'z': 11, 'x': 12, 'c': 13, 'v': 14
 };
 
-export const SEMITONE_KEY_MAP = {
-  'KeyW': 0, 'KeyE': 1, 'KeyR': 2, 'KeyT': 3,
-  'KeyY': 4, 'KeyU': 5, 'KeyI': 6, 'KeyO': 7,
-  'KeyP': 8, 'BracketLeft': 9, 'BracketRight': 10
-};
-
-export const SEMITONE_CHAR_MAP = {
-  'w': 0, 'e': 1, 'r': 2, 't': 3, 'y': 4, 'u': 5,
-  'i': 6, 'o': 7, 'p': 8, '[': 9, ']': 10
-};
-
 export const CHORD_KEY_MAP = {
   'Digit1': 0, 'Digit2': 1, 'Digit3': 2, 'Digit4': 3, 'Digit5': 4, 'Digit6': 5,
   'Digit7': 6, 'Digit8': 7, 'Digit9': 8, 'Digit0': 9,
@@ -38,18 +27,46 @@ export const CHORD_KEY_MAP = {
   'NumpadSubtract': 10, 'NumpadAdd': 11
 };
 
+export const CHORD_SPEEDS = {
+  slow: {
+    id: 'slow',
+    name: 'SLOW',
+    label: 'SLOW',
+    rateMs: 120,
+    jitterMs: 10,
+    description: 'Slow ambient drone wash (120ms strum)'
+  },
+  med: {
+    id: 'med',
+    name: 'MED',
+    label: 'MED',
+    rateMs: 50,
+    jitterMs: 6,
+    description: 'Gentle roll (50ms strum)'
+  },
+  fast: {
+    id: 'fast',
+    name: 'FAST',
+    label: 'FAST',
+    rateMs: 20,
+    jitterMs: 4,
+    description: 'Quick flourish (20ms strum)'
+  },
+  instant: {
+    id: 'instant',
+    name: 'INSTANT',
+    label: 'INSTANT',
+    rateMs: 0,
+    jitterMs: 0,
+    description: 'Simultaneous block strike (0ms)'
+  }
+};
+
 export function getChimeKeyIndex(e) {
   if (!e) return null;
   if (e.code && CHIME_KEY_MAP[e.code] !== undefined) return CHIME_KEY_MAP[e.code];
   const lower = e.key ? e.key.toLowerCase() : '';
   return CHIME_CHAR_MAP[lower] !== undefined ? CHIME_CHAR_MAP[lower] : null;
-}
-
-export function getSemitoneKeyIndex(e) {
-  if (!e) return null;
-  if (e.code && SEMITONE_KEY_MAP[e.code] !== undefined) return SEMITONE_KEY_MAP[e.code];
-  const lower = e.key ? e.key.toLowerCase() : '';
-  return SEMITONE_CHAR_MAP[lower] !== undefined ? SEMITONE_CHAR_MAP[lower] : null;
 }
 
 export function getChordKeyIndex(e) {
@@ -68,7 +85,7 @@ export function isFreezeHotkey(e) {
 }
 
 export function isPlayableSynthesizerKey(e) {
-  return getChimeKeyIndex(e) !== null || getSemitoneKeyIndex(e) !== null || getChordKeyIndex(e) !== null || isFreezeHotkey(e);
+  return getChimeKeyIndex(e) !== null || getChordKeyIndex(e) !== null || isFreezeHotkey(e);
 }
 
 export function isTextInputElement(el) {
@@ -98,7 +115,8 @@ export class BraunPlaySurface {
     this.keyElements = new Map(); // midi -> HTMLElement
     this.allKeysByMidi = new Map(); // midi -> HTMLElement[]
     this.diatonicKeys = [];
-    this.semitoneKeys = [];
+    this.semitoneKeys = []; // kept empty for backward compatibility
+    this.chordSpeed = 'med'; // 'slow' | 'med' | 'fast' | 'instant'
     this.activeTouches = new Map();
     this.activePointerVoices = new Set();
     this.activePointerChordSessions = new Set();
@@ -108,17 +126,13 @@ export class BraunPlaySurface {
     this._releaseCurrentGlissando = null;
 
     this._renderChords();
+    this._attachChordSpeedControls();
     this.rebuildKeys();
     this._attachKeyboardShortcuts();
   }
 
   _getShortcutKey(index) {
-    const keys = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'", 'Z', 'X', 'C', 'V'];
-    return keys[index] || '';
-  }
-
-  _getSemitoneShortcutKey(index) {
-    const keys = ['W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']'];
+    const keys = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'"];
     return keys[index] || '';
   }
 
@@ -130,6 +144,57 @@ export class BraunPlaySurface {
     this.allKeysByMidi.get(roundMidi).push(keyEl);
   }
 
+  _attachChordSpeedControls() {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+    const speedSwitch = document.getElementById('chord-speed-switch');
+    const speedBtns = speedSwitch
+      ? (speedSwitch.querySelectorAll ? speedSwitch.querySelectorAll('.braun-speed-btn') : (speedSwitch.children || []))
+      : (typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.braun-speed-btn') : []);
+
+    Array.from(speedBtns).forEach(btn => {
+      if (btn._hasSpeedListener) return;
+      btn._hasSpeedListener = true;
+      btn.addEventListener('click', (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        const speed = btn.getAttribute('data-speed');
+        if (speed) {
+          this.setChordSpeed(speed);
+        }
+        if (typeof btn.blur === 'function') btn.blur();
+      });
+    });
+
+    this._updateSpeedButtonsUI();
+  }
+
+  /**
+   * Set chord cluster trigger speed: 'slow', 'med', 'fast', or 'instant'
+   * @param {string} speed
+   */
+  setChordSpeed(speed) {
+    const valid = CHORD_SPEEDS[speed] ? speed : 'med';
+    this.chordSpeed = valid;
+    this._updateSpeedButtonsUI();
+  }
+
+  _updateSpeedButtonsUI() {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+    const speedSwitch = document.getElementById('chord-speed-switch');
+    const speedBtns = speedSwitch
+      ? (speedSwitch.querySelectorAll ? speedSwitch.querySelectorAll('.braun-speed-btn') : (speedSwitch.children || []))
+      : (typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.braun-speed-btn') : []);
+
+    Array.from(speedBtns).forEach(btn => {
+      const match = btn.getAttribute && btn.getAttribute('data-speed') === this.chordSpeed;
+      if (btn.classList) {
+        btn.classList.toggle('is-active', match);
+      }
+      if (typeof btn.setAttribute === 'function') {
+        btn.setAttribute('aria-checked', match ? 'true' : 'false');
+      }
+    });
+  }
+
   rebuildKeys() {
     if (!this.stripContainer) return;
     this.stripContainer.innerHTML = '';
@@ -138,29 +203,26 @@ export class BraunPlaySurface {
     this.diatonicKeys = [];
     this.semitoneKeys = [];
 
-    const scale = SCALES[this.engine.currentScaleKey] || SCALES.BUDD_PENTATONIC;
-    // 2 octaves from Octave 3 to 4
-    const notes = getScaleDegreesInOctaves(this.engine.rootPitchClass, scale.intervals, 3, 4, this.engine.a4);
+    const scale = SCALES[this.engine?.currentScaleKey] || SCALES.BUDD_PENTATONIC;
+    // Generate scale degrees across octaves 3 to 5 and slice exactly the 11 diatonic/modal keys (A through ')
+    const allNotes = getScaleDegreesInOctaves(this.engine?.rootPitchClass ?? 0, scale.intervals, 3, 5, this.engine?.a4 ?? 440);
+    const notes = allNotes.slice(0, 11);
 
-    const setupKey = (keyEl, note, isSemitone, idx, colIndex) => {
-      keyEl.className = isSemitone ? 'braun-chime-key braun-semitone-key' : 'braun-chime-key braun-diatonic-key';
+    notes.forEach((note, idx) => {
+      const keyEl = document.createElement('button');
+      keyEl.className = 'braun-chime-key';
       keyEl.setAttribute('data-midi', note.midi);
       keyEl.setAttribute('data-freq', note.freq);
-      keyEl.setAttribute('aria-label', `Play ${note.name}${isSemitone ? ' (Semitone)' : ''}`);
+      keyEl.setAttribute('aria-label', `Play ${note.name}`);
       keyEl.setAttribute('draggable', 'false');
-      if (keyEl.style) {
-        keyEl.style.gridRow = isSemitone ? '1' : '2';
-        keyEl.style.gridColumn = String(colIndex);
-      }
 
-      const shortcutKey = isSemitone ? this._getSemitoneShortcutKey(idx) : this._getShortcutKey(idx);
-      const degreeText = isSemitone ? `♯${note.degree}` : `DEG ${note.degree}`;
+      const shortcutKey = this._getShortcutKey(idx);
 
       keyEl.innerHTML = `
         <div class="braun-key-indicator"></div>
         <div class="braun-key-info">
           <span class="braun-key-name">${note.name}</span>
-          <span class="braun-key-degree">${degreeText}</span>
+          <span class="braun-key-degree">DEG ${note.degree}</span>
         </div>
         <div class="braun-key-shortcut">${shortcutKey}</div>
       `;
@@ -173,10 +235,10 @@ export class BraunPlaySurface {
 
       // Pointer event for velocity-sensitive strike
       const triggerStrike = (clientY, clientRect, isHold = false) => {
-        let velocity = isSemitone ? 0.58 : 0.60;
+        let velocity = 0.60;
         if (clientY !== undefined && clientY > 0 && clientRect && clientRect.height > 0) {
           const relY = Math.max(0, Math.min(1, (clientY - clientRect.top) / clientRect.height));
-          // Lower hit gives firmer touch (0.45 .. 0.85)
+          // Lower hit gives firmer touch (0.35 .. 0.85)
           velocity = 0.35 + relY * 0.50;
         }
         return this.playNote(note.freq, note.midi, velocity, isHold ? 20.0 : 3.5, isHold);
@@ -292,42 +354,10 @@ export class BraunPlaySurface {
         if (typeof keyEl.blur === 'function') keyEl.blur();
       });
 
-      return keyEl;
-    };
-
-    // 1. Diatonic / Modal Scale Keys (appended first so children[0] is primary note 0)
-    notes.forEach((note, idx) => {
-      const keyEl = document.createElement('button');
-      setupKey(keyEl, note, false, idx, idx + 1);
       this.diatonicKeys.push(keyEl);
       this.keyElements.set(note.midi, keyEl);
       this._registerKeyByMidi(note.midi, keyEl);
       this.stripContainer.appendChild(keyEl);
-    });
-
-    // 2. Semitone Accidental Keys (+1 semitone above each diatonic note)
-    notes.forEach((note, idx) => {
-      const semiMidi = note.midi + 1;
-      const semiFreq = midiToFrequency(semiMidi, this.engine.a4);
-      const semiPitchClass = ((semiMidi % 12) + 12) % 12;
-      const semiOctave = Math.floor(semiMidi / 12) - 1;
-      const semiName = `${NOTE_NAMES[semiPitchClass]}${semiOctave}`;
-      const semiNote = {
-        midi: semiMidi,
-        freq: semiFreq,
-        name: semiName,
-        degree: note.degree,
-        interval: note.interval + 1
-      };
-
-      const semitoneKeyEl = document.createElement('button');
-      setupKey(semitoneKeyEl, semiNote, true, idx, idx + 1);
-      this.semitoneKeys.push(semitoneKeyEl);
-      if (!this.keyElements.has(semiMidi)) {
-        this.keyElements.set(semiMidi, semitoneKeyEl);
-      }
-      this._registerKeyByMidi(semiMidi, semitoneKeyEl);
-      this.stripContainer.appendChild(semitoneKeyEl);
     });
 
     // Support container & window level drag tracking for smooth glissando on touch & mouse swipe
@@ -339,36 +369,22 @@ export class BraunPlaySurface {
         const target = el ? (el.classList && el.classList.contains && el.classList.contains('braun-chime-key') ? el : (el.closest ? el.closest('.braun-chime-key') : null)) : null;
         if (target) return target;
       }
-      // 2. Dual-tier fallback: accurately discriminate between Row 1 (semitones) and Row 2 (diatonics)
+      // 2. Fallback: horizontal hit test across keys in chime strip
       if (this.stripContainer && typeof this.stripContainer.getBoundingClientRect === 'function') {
         const stripRect = this.stripContainer.getBoundingClientRect();
         if (stripRect && clientY >= stripRect.top - 40 && clientY <= stripRect.bottom + 40) {
-          const allKeys = (this.stripContainer.children && this.stripContainer.children.length > 0)
+          const keys = (this.stripContainer.children && this.stripContainer.children.length > 0)
             ? Array.from(this.stripContainer.children)
-            : [...this.diatonicKeys, ...this.semitoneKeys];
+            : this.diatonicKeys;
 
-          let bestKey = null;
-          let minDistance = Infinity;
-
-          for (const keyEl of allKeys) {
+          for (const keyEl of keys) {
             if (typeof keyEl.getBoundingClientRect === 'function') {
               const r = keyEl.getBoundingClientRect();
               if (r && clientX >= r.left && clientX <= r.right) {
-                // Exact hit within key bounds
-                if (clientY >= r.top && clientY <= r.bottom) {
-                  return keyEl;
-                }
-                // Vertical distance from center of key
-                const centerY = (r.top + r.bottom) / 2;
-                const dist = Math.abs(clientY - centerY);
-                if (dist < minDistance) {
-                  minDistance = dist;
-                  bestKey = keyEl;
-                }
+                return keyEl;
               }
             }
           }
-          if (bestKey) return bestKey;
         }
       }
       return null;
@@ -683,14 +699,22 @@ export class BraunPlaySurface {
       }
     };
 
+    const speedConfig = CHORD_SPEEDS[this.chordSpeed] || CHORD_SPEEDS.med;
+    const isInstant = speedConfig.rateMs === 0;
+
     freqs.forEach((freq, idx) => {
-      // Humanized micro-strum delay (18ms to 38ms per note)
-      const delayMs = idx * (22 + Math.random() * 14);
+      // Strum delay based on selected chord speed
+      const baseDelay = idx * speedConfig.rateMs;
+      const jitter = (idx > 0 && speedConfig.jitterMs > 0) ? Math.random() * speedConfig.jitterMs : 0;
+      const delayMs = isInstant ? 0 : (baseDelay + jitter);
+
       const timerId = setTimeout(() => {
         if (session.isReleased && isHold) {
           return;
         }
-        const vel = 0.55 + Math.random() * 0.22;
+        // For slow strum, slightly soften the initial attack velocity so it blooms gently over drone beds
+        const velBase = speedConfig.rateMs >= 100 ? 0.50 : 0.55;
+        const vel = velBase + Math.random() * 0.20;
         const midi = rootMidi + (voicing ? voicing.intervals[idx] : 0);
         triggerChordVoice(freq, vel, midi);
       }, delayMs);
@@ -740,10 +764,9 @@ export class BraunPlaySurface {
       }
 
       const chimeIdx = getKeyIndex(e);
-      const semitoneIdx = getSemitoneKeyIndex(e);
       const chordIdx = getChordIndex(e);
       const isFreeze = isFreezeHotkey(e);
-      const isPlayable = (chimeIdx !== null || semitoneIdx !== null || chordIdx !== null || isFreeze);
+      const isPlayable = (chimeIdx !== null || chordIdx !== null || isFreeze);
 
       // If not a playable synthesizer key or hotkey, allow native input/select behavior (arrow navigation, tab, enter)
       if (!isPlayable) {
@@ -804,29 +827,7 @@ export class BraunPlaySurface {
         return;
       }
 
-      // Playable semitone accidental keys with continuous hold sustain (W, E, R, T, U...)
-      if (semitoneIdx !== null) {
-        const semitones = (this.semitoneKeys && this.semitoneKeys.length > 0) ? this.semitoneKeys : [];
-        const keyEl = semitones[semitoneIdx] || (semitones.length > 0 ? semitones[semitoneIdx % semitones.length] : null);
-        if (keyEl) {
-          const freq = parseFloat(keyEl.getAttribute('data-freq'));
-          const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
-          keyEl._isHeld = true;
-          keyEl.classList.add('is-active');
-          keyEl.classList.add('is-pressed');
-          const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0, true);
-          const keyIdentifier = e.code || e.key;
-          const existing = this.activeHeldKeys.get(keyIdentifier);
-          if (existing && existing.voiceOrPromise) {
-            if (typeof existing.voiceOrPromise.release === 'function') existing.voiceOrPromise.release();
-            else if (existing.voiceOrPromise && typeof existing.voiceOrPromise.then === 'function') existing.voiceOrPromise.then(v => v?.release?.());
-          }
-          this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise, code: e.code, key: e.key });
-        }
-        return;
-      }
-
-      // Chord clusters with continuous hold sustain
+      // Chord clusters with continuous hold sustain (1-9, 0, -, =)
       if (chordIdx !== null) {
         const chordBtns = this.chordsContainer ? this.chordsContainer.querySelectorAll('.braun-chord-macro-btn') : [];
         const btn = chordBtns[chordIdx] || (chordBtns.length > 0 ? chordBtns[chordIdx % chordBtns.length] : null);
