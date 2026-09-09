@@ -114,34 +114,115 @@ export class AudioEngine {
   }
 
   /**
+   * Power down synthesizer with clickless bus ramping before AudioContext suspend
+   */
+  async powerOff() {
+    if (!this.ctx || this.ctx.state === 'suspended') return;
+    const now = this.ctx.currentTime;
+    const rampDuration = 0.035; // 35ms smooth fade out to strict silence
+
+    const busses = [this.masterGain, this.droneBus, this.pianoBus].filter(b => b && b.gain);
+    busses.forEach(bus => {
+      let held = false;
+      if (typeof bus.gain.cancelAndHoldAtTime === 'function') {
+        try {
+          bus.gain.cancelAndHoldAtTime(now);
+          held = true;
+        } catch (e) {
+          held = false;
+        }
+      }
+      if (!held) {
+        if (typeof bus.gain.cancelScheduledValues === 'function') {
+          bus.gain.cancelScheduledValues(now);
+        }
+        const cur = (typeof bus.gain.value === 'number' && isFinite(bus.gain.value)) ? bus.gain.value : 1.0;
+        if (typeof bus.gain.setValueAtTime === 'function') {
+          bus.gain.setValueAtTime(cur, now);
+        }
+      }
+      if (typeof bus.gain.linearRampToValueAtTime === 'function') {
+        bus.gain.linearRampToValueAtTime(0.0, now + rampDuration);
+      } else if (typeof bus.gain.setTargetAtTime === 'function') {
+        bus.gain.setTargetAtTime(0.0, now, rampDuration / 3);
+      } else if (typeof bus.gain.setValueAtTime === 'function') {
+        bus.gain.setValueAtTime(0.0, now + rampDuration);
+      }
+    });
+
+    // Wait 50ms to ensure 35ms ramp completes into zero before suspend
+    await new Promise(r => setTimeout(r, 50));
+
+    const endT = this.ctx.currentTime;
+    busses.forEach(bus => {
+      if (typeof bus.gain.setValueAtTime === 'function') {
+        bus.gain.setValueAtTime(0.0, endT);
+      }
+    });
+
+    if (typeof this.ctx.suspend === 'function') {
+      try {
+        await this.ctx.suspend();
+      } catch (e) {
+        console.warn('AudioContext suspend deferred:', e);
+      }
+    }
+  }
+
+  /**
    * Initialize AudioContext on first user interaction
    */
   async init() {
     if (this.isInitialized && this.ctx) {
       if (this.ctx.state === 'suspended') {
-        if (this.masterGain && this.masterGain.gain) {
-          if (typeof this.masterGain.gain.cancelScheduledValues === 'function') {
-            this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        const suspendTime = this.ctx.currentTime;
+        const busses = [this.masterGain, this.droneBus, this.pianoBus].filter(b => b && b.gain);
+        busses.forEach(bus => {
+          if (typeof bus.gain.cancelScheduledValues === 'function') {
+            bus.gain.cancelScheduledValues(suspendTime);
           }
-          this.masterGain.gain.setValueAtTime(0.0, this.ctx.currentTime);
-        }
+          if (typeof bus.gain.setValueAtTime === 'function') {
+            bus.gain.setValueAtTime(0.0, suspendTime);
+          }
+        });
+
         try {
           await this.ctx.resume();
         } catch (e) {
           console.warn('AudioContext resume deferred:', e);
         }
+
+        const now = this.ctx.currentTime;
+        busses.forEach(bus => {
+          if (typeof bus.gain.cancelScheduledValues === 'function') {
+            bus.gain.cancelScheduledValues(now);
+          }
+          if (typeof bus.gain.setValueAtTime === 'function') {
+            bus.gain.setValueAtTime(0.0, now);
+          }
+        });
+
+        const rampStartTime = now + 0.005;
+        const rampTau = 0.025;
         if (this.masterGain && this.masterGain.gain) {
-          const now = this.ctx.currentTime;
-          if (typeof this.masterGain.gain.cancelScheduledValues === 'function') {
-            this.masterGain.gain.cancelScheduledValues(now);
-          }
-          if (typeof this.masterGain.gain.setValueAtTime === 'function') {
-            this.masterGain.gain.setValueAtTime(0.0, now);
-          }
           if (typeof this.masterGain.gain.setTargetAtTime === 'function') {
-            this.masterGain.gain.setTargetAtTime(this.masterVolume, now + 0.005, 0.025);
+            this.masterGain.gain.setTargetAtTime(this.masterVolume, rampStartTime, rampTau);
           } else {
             this.masterGain.gain.value = this.masterVolume;
+          }
+        }
+        if (this.droneBus && this.droneBus.gain) {
+          if (typeof this.droneBus.gain.setTargetAtTime === 'function') {
+            this.droneBus.gain.setTargetAtTime(this.droneBusGain, rampStartTime, rampTau);
+          } else {
+            this.droneBus.gain.value = this.droneBusGain;
+          }
+        }
+        if (this.pianoBus && this.pianoBus.gain) {
+          if (typeof this.pianoBus.gain.setTargetAtTime === 'function') {
+            this.pianoBus.gain.setTargetAtTime(1.0, rampStartTime, rampTau);
+          } else {
+            this.pianoBus.gain.value = 1.0;
           }
         }
       }
@@ -303,7 +384,12 @@ export class AudioEngine {
 
     // Elta Solar 42n Microtonal Drone Voices (Voice 1 & Voice 2)
     this.droneBus = this.ctx.createGain();
-    this.droneBus.gain.setValueAtTime(this.droneBusGain, this.ctx.currentTime);
+    this.droneBus.gain.setValueAtTime(0.0, this.ctx.currentTime);
+    if (typeof this.droneBus.gain.setTargetAtTime === 'function') {
+      this.droneBus.gain.setTargetAtTime(this.droneBusGain, this.ctx.currentTime + 0.005, 0.025);
+    } else {
+      this.droneBus.gain.value = this.droneBusGain;
+    }
 
     this.drone1 = new SolarDroneVoice(this.ctx, this.droneBus, this.wavetables, 1);
     this.drone2 = new SolarDroneVoice(this.ctx, this.droneBus, this.wavetables, 2);

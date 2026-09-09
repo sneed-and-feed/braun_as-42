@@ -133,6 +133,10 @@ export class FeltPianoVoice {
 
     // Connect oscillators -> Voice Mixer
     this.oscMixer = ctx.createGain();
+    this.oscMixer.gain.value = 0.0;
+    if (this.oscMixer.gain && typeof this.oscMixer.gain.setValueAtTime === 'function') {
+      this.oscMixer.gain.setValueAtTime(0.0, ctx.currentTime);
+    }
     this.osc1.connect(this.osc1Gain);
     this.osc2.connect(this.osc2Gain);
     this.osc1Gain.connect(this.oscMixer);
@@ -436,7 +440,7 @@ export class FeltPianoVoice {
     // Check if voice is being stolen / re-triggered while currently sounding
     const curEstGain = this.getEstimatedGain(cancelTime);
     const curParamGain = (this.voiceGain && this.voiceGain.gain && typeof this.voiceGain.gain.value === 'number') ? this.voiceGain.gain.value : 0;
-    const isStealing = this.isActive || (curEstGain > 0.0005) || (curParamGain > 0.0005);
+    const isStealing = this.isActive || (curEstGain > 0.0001) || (curParamGain > 0.0001);
 
     // When stealing an active voice, give a fast 5ms micro-ramp down to silence
     // before re-tuning oscillators to eliminate phase-jump clicks.
@@ -459,6 +463,35 @@ export class FeltPianoVoice {
         this.voiceGain.gain.setValueAtTime(safeCurGain, cancelTime);
       }
       this.voiceGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
+
+      if (this.oscMixer && this.oscMixer.gain) {
+        let mHeld = false;
+        if (typeof this.oscMixer.gain.cancelAndHoldAtTime === 'function') {
+          try {
+            this.oscMixer.gain.cancelAndHoldAtTime(cancelTime);
+            mHeld = true;
+          } catch (e) {
+            mHeld = false;
+          }
+        }
+        if (!mHeld && typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
+          this.oscMixer.gain.cancelScheduledValues(cancelTime);
+        }
+        if (typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
+          this.oscMixer.gain.linearRampToValueAtTime(0.0, noteStartTime);
+        }
+      }
+    } else {
+      if (this.oscMixer && this.oscMixer.gain) {
+        if (typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
+          this.oscMixer.gain.cancelScheduledValues(cancelTime);
+        }
+        if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
+          this.oscMixer.gain.setValueAtTime(0.0, cancelTime);
+        } else {
+          this.oscMixer.gain.value = 0.0;
+        }
+      }
     }
 
     // Pitch setting and per-voice micro-dispersion scheduled at noteStartTime
@@ -613,14 +646,6 @@ export class FeltPianoVoice {
       if (isStealing) {
         this.filter1.frequency.linearRampToValueAtTime(brassStartCutoff, noteStartTime);
         this.filter2.frequency.linearRampToValueAtTime(brassStartCutoff, noteStartTime);
-      } else {
-        if (noteStartTime > cancelTime) {
-          this.filter1.frequency.linearRampToValueAtTime(brassStartCutoff, noteStartTime);
-          this.filter2.frequency.linearRampToValueAtTime(brassStartCutoff, noteStartTime);
-        } else {
-          this.filter1.frequency.setValueAtTime(brassStartCutoff, cancelTime);
-          this.filter2.frequency.setValueAtTime(brassStartCutoff, cancelTime);
-        }
       }
 
       const brassAttackTarget = Math.max(noteStartTime + brassAttackTime, ctx.currentTime + 0.005);
@@ -687,20 +712,31 @@ export class FeltPianoVoice {
       : Math.max(0.005, velocity * (isBass ? 0.28 : isTreble ? 0.26 : 0.24));
 
     if (!isStealing) {
+      let held = false;
       if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
-        this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
-      } else {
-        this.voiceGain.gain.cancelScheduledValues(cancelTime);
+        try {
+          this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
+          held = true;
+        } catch (e) {
+          held = false;
+        }
       }
-      this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
-      if (noteStartTime > cancelTime) {
-        this.voiceGain.gain.setValueAtTime(0.0, noteStartTime);
+      if (!held) {
+        this.voiceGain.gain.cancelScheduledValues(cancelTime);
+        this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
+      } else {
+        if (this.voiceGain.gain.value <= 0 && typeof this.voiceGain.gain.setValueAtTime === 'function') {
+          this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
+        }
       }
     }
     // When stealing, the voice gain has already smoothly ramped down to 0.0001 at noteStartTime.
     // Ramping directly to peakGain from noteStartTime prevents redundant setValueAtTime collisions.
     const attackTarget = Math.max(noteStartTime + attackTime, ctx.currentTime + 0.005);
     this.voiceGain.gain.linearRampToValueAtTime(peakGain, attackTarget);
+    if (this.oscMixer && this.oscMixer.gain && typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
+      this.oscMixer.gain.linearRampToValueAtTime(1.0, attackTarget);
+    }
     this._currentVoiceGain = peakGain;
     this._lastAttackTime = attackTime;
     this._lastPeakGain = peakGain;
@@ -718,6 +754,12 @@ export class FeltPianoVoice {
         const decayEndTarget = Math.max(noteStartTime + attackTime + noteLifetime + releaseTime, sustainTarget + 0.2);
         this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
         this._lastDecayEndTarget = decayEndTarget;
+        if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
+          this.voiceGain.gain.linearRampToValueAtTime(0.0, decayEndTarget + 0.005);
+        }
+        if (this.oscMixer && this.oscMixer.gain && typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
+          this.oscMixer.gain.linearRampToValueAtTime(0.0, decayEndTarget + 0.005);
+        }
       }
     } else {
       // Long acoustic string decay
@@ -731,6 +773,12 @@ export class FeltPianoVoice {
         const decayEndTarget = Math.max(noteStartTime + attackTime + stringDecay + releaseTime, sustainTarget + 0.1);
         this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
         this._lastDecayEndTarget = decayEndTarget;
+        if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
+          this.voiceGain.gain.linearRampToValueAtTime(0.0, decayEndTarget + 0.005);
+        }
+        if (this.oscMixer && this.oscMixer.gain && typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
+          this.oscMixer.gain.linearRampToValueAtTime(0.0, decayEndTarget + 0.005);
+        }
       }
     }
 
@@ -744,6 +792,12 @@ export class FeltPianoVoice {
       this._decayTimer = setTimeout(() => {
         if (this.startTime === noteStartTime && !this.isHold) {
           this.isActive = false;
+          if (this.oscMixer && this.oscMixer.gain) {
+            this.oscMixer.gain.value = 0.0;
+            if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
+              this.oscMixer.gain.setValueAtTime(0.0, this.ctx.currentTime);
+            }
+          }
           if (this.synth) {
             this.synth._updatePolyphonicHeadroom();
           }
@@ -795,6 +849,9 @@ export class FeltPianoVoice {
     if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
       this.voiceGain.gain.linearRampToValueAtTime(0.0, releaseTarget + 0.005);
     }
+    if (this.oscMixer && this.oscMixer.gain && typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
+      this.oscMixer.gain.linearRampToValueAtTime(0.0, releaseTarget + 0.005);
+    }
     this._currentVoiceGain = 0.0001;
     if (isCS80 && this.currentFreq) {
       const curCutoff1 = Math.max(20, Math.min(20000, this.filter1.frequency.value || 800));
@@ -816,6 +873,12 @@ export class FeltPianoVoice {
     this._releaseTimer = setTimeout(() => {
       if (this.startTime === releaseStartTime && !this.isHold) {
         this.isActive = false;
+        if (this.oscMixer && this.oscMixer.gain) {
+          this.oscMixer.gain.value = 0.0;
+          if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
+            this.oscMixer.gain.setValueAtTime(0.0, this.ctx.currentTime);
+          }
+        }
         if (this.synth) {
           this.synth._updatePolyphonicHeadroom();
         }

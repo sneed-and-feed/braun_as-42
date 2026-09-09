@@ -1244,28 +1244,47 @@ export class AmbientApp {
     } else {
       if (this.engine.ctx) {
         try {
-          if (this.engine.masterGain && this.engine.masterGain.gain) {
+          if (typeof this.engine.powerOff === 'function') {
+            await this.engine.powerOff();
+          } else {
             const now = this.engine.ctx.currentTime;
-            if (typeof this.engine.masterGain.gain.cancelScheduledValues === 'function') {
-              this.engine.masterGain.gain.cancelScheduledValues(now);
-            }
-            if (typeof this.engine.masterGain.gain.linearRampToValueAtTime === 'function') {
-              const cur = (typeof this.engine.masterGain.gain.value === 'number') ? this.engine.masterGain.gain.value : this.engine.masterVolume;
-              if (typeof this.engine.masterGain.gain.setValueAtTime === 'function') {
-                this.engine.masterGain.gain.setValueAtTime(cur, now);
+            const busses = [this.engine.masterGain, this.engine.droneBus, this.engine.pianoBus].filter(b => b && b.gain);
+            busses.forEach(bus => {
+              let held = false;
+              if (typeof bus.gain.cancelAndHoldAtTime === 'function') {
+                try {
+                  bus.gain.cancelAndHoldAtTime(now);
+                  held = true;
+                } catch (e) {
+                  held = false;
+                }
               }
-              this.engine.masterGain.gain.linearRampToValueAtTime(0.0, now + 0.025);
-            } else if (typeof this.engine.masterGain.gain.setTargetAtTime === 'function') {
-              this.engine.masterGain.gain.setTargetAtTime(0.0, now, 0.006);
-            } else if (typeof this.engine.masterGain.gain.setValueAtTime === 'function') {
-              this.engine.masterGain.gain.setValueAtTime(0.0, now);
-            }
-            await new Promise(r => setTimeout(r, 30));
-            if (typeof this.engine.masterGain.gain.setValueAtTime === 'function') {
-              this.engine.masterGain.gain.setValueAtTime(0.0, this.engine.ctx.currentTime);
-            }
+              if (!held) {
+                if (typeof bus.gain.cancelScheduledValues === 'function') {
+                  bus.gain.cancelScheduledValues(now);
+                }
+                const cur = (typeof bus.gain.value === 'number' && isFinite(bus.gain.value)) ? bus.gain.value : 1.0;
+                if (typeof bus.gain.setValueAtTime === 'function') {
+                  bus.gain.setValueAtTime(cur, now);
+                }
+              }
+              if (typeof bus.gain.linearRampToValueAtTime === 'function') {
+                bus.gain.linearRampToValueAtTime(0.0, now + 0.035);
+              } else if (typeof bus.gain.setTargetAtTime === 'function') {
+                bus.gain.setTargetAtTime(0.0, now, 0.010);
+              } else if (typeof bus.gain.setValueAtTime === 'function') {
+                bus.gain.setValueAtTime(0.0, now + 0.035);
+              }
+            });
+            await new Promise(r => setTimeout(r, 50));
+            const endT = this.engine.ctx.currentTime;
+            busses.forEach(bus => {
+              if (typeof bus.gain.setValueAtTime === 'function') {
+                bus.gain.setValueAtTime(0.0, endT);
+              }
+            });
+            await this.engine.ctx.suspend();
           }
-          await this.engine.ctx.suspend();
         } catch (e) {
           console.warn('AudioContext suspend error:', e);
         }
