@@ -87,6 +87,29 @@ export class SolarDroneVoice {
     this.oscAGain.gain.setValueAtTime(0.5, ctx.currentTime);
     this.oscBGain.gain.setValueAtTime(0.5, ctx.currentTime);
 
+    // Dynamic wavefolder bypass routing gains:
+    // When an oscillator is set to SQR / square, it routes directly to the resonant filter
+    // (filter1) rather than folding past the peak in makeWavefoldCurve, which cancels the
+    // fundamental and transforms the square wave into a thin, buzzing needle-spike whine.
+    // Non-square waves (saw, warm, tri, sine) continue through the wavefolder shaper.
+    this.oscAShaperGain = ctx.createGain();
+    this.oscADirectGain = ctx.createGain();
+    this.oscBShaperGain = ctx.createGain();
+    this.oscBDirectGain = ctx.createGain();
+
+    const isSqA = (this.waveA === 'square' || this.waveA === 'sqr');
+    const isSqB = (this.waveB === 'square' || this.waveB === 'sqr');
+    this.oscAShaperGain.gain.value = isSqA ? 0.0 : 1.0;
+    this.oscADirectGain.gain.value = isSqA ? 1.0 : 0.0;
+    this.oscBShaperGain.gain.value = isSqB ? 0.0 : 1.0;
+    this.oscBDirectGain.gain.value = isSqB ? 1.0 : 0.0;
+    if (typeof this.oscAShaperGain.gain.setValueAtTime === 'function') {
+      this.oscAShaperGain.gain.setValueAtTime(isSqA ? 0.0 : 1.0, ctx.currentTime);
+      this.oscADirectGain.gain.setValueAtTime(isSqA ? 1.0 : 0.0, ctx.currentTime);
+      this.oscBShaperGain.gain.setValueAtTime(isSqB ? 0.0 : 1.0, ctx.currentTime);
+      this.oscBDirectGain.gain.setValueAtTime(isSqB ? 1.0 : 0.0, ctx.currentTime);
+    }
+
     this._applyWaveform(this.oscA, this.waveA);
     this._applyWaveform(this.oscB, this.waveB);
 
@@ -99,8 +122,16 @@ export class SolarDroneVoice {
     this.oscMixer = ctx.createGain();
     this.oscA.connect(this.oscAGain);
     this.oscB.connect(this.oscBGain);
-    this.oscAGain.connect(this.oscMixer);
-    this.oscBGain.connect(this.oscMixer);
+
+    this.oscAGain.connect(this.oscAShaperGain);
+    this.oscAGain.connect(this.oscADirectGain);
+    this.oscAShaperGain.connect(this.oscMixer);
+    this.oscADirectGain.connect(this.filter1);
+
+    this.oscBGain.connect(this.oscBShaperGain);
+    this.oscBGain.connect(this.oscBDirectGain);
+    this.oscBShaperGain.connect(this.oscMixer);
+    this.oscBDirectGain.connect(this.filter1);
 
     // Signal Flow: OscMixer -> Shaper -> Filter1 -> Filter2 -> VoiceGain -> Panner -> Destination
     this.oscMixer.connect(this.shaper);
@@ -230,6 +261,7 @@ export class SolarDroneVoice {
       : raw;
     this.waveA = norm;
     if (this.oscA) this._applyWaveform(this.oscA, norm);
+    this._updateWaveformRouting();
   }
 
   setWaveB(type) {
@@ -241,6 +273,7 @@ export class SolarDroneVoice {
       : raw;
     this.waveB = norm;
     if (this.oscB) this._applyWaveform(this.oscB, norm);
+    this._updateWaveformRouting();
   }
 
   setWaveformA(type) {
@@ -249,6 +282,36 @@ export class SolarDroneVoice {
 
   setWaveformB(type) {
     return this.setWaveB(type);
+  }
+
+  /**
+   * Route square waves directly to filter1 bypassing the wavefolder shaper.
+   * A wavefolder folds instantaneous rails inward past the peak, canceling the square
+   * fundamental and producing an impulse-train whine. Direct routing preserves 100%
+   * of the warm, rich fundamental energy and odd harmonic hollow character.
+   */
+  _updateWaveformRouting() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const isSqA = (this.waveA === 'square' || this.waveA === 'sqr');
+    const isSqB = (this.waveB === 'square' || this.waveB === 'sqr');
+
+    if (this.oscAShaperGain && this.oscADirectGain) {
+      this.oscAShaperGain.gain.value = isSqA ? 0.0 : 1.0;
+      this.oscADirectGain.gain.value = isSqA ? 1.0 : 0.0;
+      if (typeof this.oscAShaperGain.gain.setTargetAtTime === 'function') {
+        this.oscAShaperGain.gain.setTargetAtTime(isSqA ? 0.0 : 1.0, now, 0.02);
+        this.oscADirectGain.gain.setTargetAtTime(isSqA ? 1.0 : 0.0, now, 0.02);
+      }
+    }
+    if (this.oscBShaperGain && this.oscBDirectGain) {
+      this.oscBShaperGain.gain.value = isSqB ? 0.0 : 1.0;
+      this.oscBDirectGain.gain.value = isSqB ? 1.0 : 0.0;
+      if (typeof this.oscBShaperGain.gain.setTargetAtTime === 'function') {
+        this.oscBShaperGain.gain.setTargetAtTime(isSqB ? 0.0 : 1.0, now, 0.02);
+        this.oscBDirectGain.gain.setTargetAtTime(isSqB ? 1.0 : 0.0, now, 0.02);
+      }
+    }
   }
 
   /**

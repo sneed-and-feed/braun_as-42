@@ -307,7 +307,12 @@ export class FeltPianoVoice {
       return Math.max(0.0001, startG * Math.pow(0.0001 / startG, frac));
     }
     const t = now - (this.startTime || now);
-    if (t <= 0) return 0.0001;
+    if (t <= 0) {
+      // If voice was just triggered/stolen and noteStartTime is in the future (within declick ramp),
+      // it is sounding/transitioning into peakGain. Do NOT report 0.0001, which causes subsequent
+      // notes in rapid chord cluster bursts to falsely treat it as dead silent and pile onto it!
+      return this._lastPeakGain || 0.25;
+    }
     const attackTime = this._lastAttackTime || 0.008;
     const peakGain = this._lastPeakGain || 0.25;
     const sustainLevel = this._lastSustainLevel || (peakGain * 0.5);
@@ -474,8 +479,16 @@ export class FeltPianoVoice {
             mHeld = false;
           }
         }
-        if (!mHeld && typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
-          this.oscMixer.gain.cancelScheduledValues(cancelTime);
+        if (!mHeld) {
+          const curMixer = (typeof this.oscMixer.gain.value === 'number' && isFinite(this.oscMixer.gain.value))
+            ? Math.max(0.0, Math.min(1.0, this.oscMixer.gain.value))
+            : 1.0;
+          if (typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
+            this.oscMixer.gain.cancelScheduledValues(cancelTime);
+          }
+          if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
+            this.oscMixer.gain.setValueAtTime(curMixer, cancelTime);
+          }
         }
         if (typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
           this.oscMixer.gain.linearRampToValueAtTime(0.0, noteStartTime);
@@ -513,9 +526,41 @@ export class FeltPianoVoice {
       }
     }
 
-    // Pitch setting and per-voice micro-dispersion scheduled at noteStartTime
-    this.osc1.frequency.cancelScheduledValues(cancelTime);
-    this.osc2.frequency.cancelScheduledValues(cancelTime);
+    // Pitch setting and per-voice micro-dispersion scheduled at noteStartTime.
+    // During the 5ms declick ramp, retain current frequency smoothly to avoid mid-waveform pitch-jump clicks
+    if (isStealing && noteStartTime > cancelTime) {
+      const curFreq1 = (typeof this.osc1.frequency.value === 'number' && isFinite(this.osc1.frequency.value) && this.osc1.frequency.value > 0)
+        ? this.osc1.frequency.value
+        : (this.currentFreq || freq);
+      const curFreq2 = (typeof this.osc2.frequency.value === 'number' && isFinite(this.osc2.frequency.value) && this.osc2.frequency.value > 0)
+        ? this.osc2.frequency.value
+        : (this.currentFreq || freq);
+      let fHeld = false;
+      if (typeof this.osc1.frequency.cancelAndHoldAtTime === 'function') {
+        try {
+          this.osc1.frequency.cancelAndHoldAtTime(cancelTime);
+          this.osc2.frequency.cancelAndHoldAtTime(cancelTime);
+          fHeld = true;
+        } catch (e) {
+          fHeld = false;
+        }
+      }
+      if (!fHeld) {
+        if (typeof this.osc1.frequency.cancelScheduledValues === 'function') {
+          this.osc1.frequency.cancelScheduledValues(cancelTime);
+          this.osc2.frequency.cancelScheduledValues(cancelTime);
+        }
+        if (typeof this.osc1.frequency.setValueAtTime === 'function') {
+          this.osc1.frequency.setValueAtTime(curFreq1, cancelTime);
+          this.osc2.frequency.setValueAtTime(curFreq2, cancelTime);
+        }
+      }
+    } else {
+      if (typeof this.osc1.frequency.cancelScheduledValues === 'function') {
+        this.osc1.frequency.cancelScheduledValues(cancelTime);
+        this.osc2.frequency.cancelScheduledValues(cancelTime);
+      }
+    }
     this.osc1.frequency.setValueAtTime(freq, noteStartTime);
     this.osc2.frequency.setValueAtTime(freq, noteStartTime);
 
@@ -625,7 +670,9 @@ export class FeltPianoVoice {
         ? hammerThump * 0.30
         : hammerThump;
 
-      const targetHammerGain = Math.max(0.0001, velocity * effectiveHammerThump * hammerThumpGainMult);
+      // Scale hammer thump down for chord clusters so multiple simultaneous noise bursts don't constructively peak
+      const chordHammerScale = this.isChord ? 0.55 : 1.0;
+      const targetHammerGain = Math.max(0.0001, velocity * effectiveHammerThump * hammerThumpGainMult * chordHammerScale);
       // Smooth micro-attack to peak, then exponential decay down to silence with future-guaranteed targets
       const hammerAttackTime = (this.currentWaveform === 'sine') ? 0.0065 : 0.0050; // 5-6.5ms smooth micro-fade eliminates high-velocity transient impulse pop
       const hammerAttackTarget = Math.max(noteStartTime + hammerAttackTime, ctx.currentTime + 0.004);
@@ -1148,8 +1195,14 @@ export class FeltPianoSynthesizer {
         if (v.isChord && !best.isChord) return best;
         if (!v.isChord && best.isChord) return v;
 
-        // Priority 3: Compare current gain or elapsed time among similar status voices
+        // Priority 3: Protect voices triggered or stolen in the last 60ms from being immediately restolen during cluster bursts
         const now = this.ctx.currentTime;
+        const vRecent = (v.startTime !== undefined && isFinite(v.startTime) && (v.startTime >= now - 0.060));
+        const bestRecent = (best.startTime !== undefined && isFinite(best.startTime) && (best.startTime >= now - 0.060));
+        if (vRecent && !bestRecent) return best;
+        if (!vRecent && bestRecent) return v;
+
+        // Priority 4: Compare current gain or elapsed time among similar status voices
         const vGain = typeof v.getEstimatedGain === 'function' ? v.getEstimatedGain(now) : (v.voiceGain ? v.voiceGain.gain.value : 0);
         const bestGain = typeof best.getEstimatedGain === 'function' ? best.getEstimatedGain(now) : (best.voiceGain ? best.voiceGain.gain.value : 0);
         if (vGain < bestGain && Math.abs(vGain - bestGain) >= 0.01) return v;
@@ -1157,6 +1210,11 @@ export class FeltPianoSynthesizer {
         if (v.startTime < best.startTime) return v;
         return best;
       }, this.voices[0]);
+
+      const stolenIdx = this.voices.indexOf(voice);
+      if (stolenIdx !== -1) {
+        this.voiceIndex = (stolenIdx + 1) % this.voices.length;
+      }
     }
 
     const hold = Boolean(isHold || duration === 20.0 || duration === Infinity || (typeof duration === 'number' && !isFinite(duration)));
