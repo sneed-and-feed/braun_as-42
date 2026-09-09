@@ -435,7 +435,41 @@ describe('Synthesizer Patch Export & Load Management', () => {
     }
   });
 
-  it('verifies continuous knob dragging does not cancel or restart wow/flutter LFOs when scale is unchanged', () => {
+  it('loadPatch preserves custom vectorPad coordinates across animated knob transitions without clobbering', async () => {
+    const ctx = createFullMockCtx();
+    const origCtx = globalThis.AudioContext;
+    const origDoc = globalThis.document;
+
+    globalThis.AudioContext = class { constructor() { return ctx; } };
+    globalThis.document = createMockAppDOM();
+
+    try {
+      const app = new AmbientApp();
+
+      const customPatch = {
+        format: 'BRAUN_AS42_PATCH',
+        version: 1,
+        knobs: {
+          feltTone: 85,
+          reverbShimmer: 85
+        },
+        vectorPad: { x: 0.20, y: 0.30 }
+      };
+
+      app.loadPatch(customPatch, { animate: true, duration: 40 });
+
+      // Wait for knob animations and safety release timer to settle
+      await new Promise(resolve => setTimeout(resolve, 120));
+
+      assert.strictEqual(app.vectorPad.x, 0.20, 'VectorPad X must not be clobbered by feltTone knob animation onChange callback');
+      assert.strictEqual(app.vectorPad.y, 0.30, 'VectorPad Y must not be clobbered by reverbShimmer knob animation onChange callback');
+    } finally {
+      globalThis.AudioContext = origCtx;
+      globalThis.document = origDoc;
+    }
+  });
+
+  it('verifies continuous knob dragging does not cancel or restart wow/flutter LFOs when scale is unchanged or crosses threshold', () => {
     let cancelLfoCount = 0;
     const createMockParam = (v = 0) => ({
       value: v,
@@ -463,6 +497,13 @@ describe('Synthesizer Patch Export & Load Management', () => {
 
     assert.strictEqual(cancelLfoCount, 0, 'Rapid knob dragging above headroom threshold must never cancel or glitch wow/flutter LFOs');
     assert.strictEqual(delay.delayTimeL, 0.90);
+
+    // Also simulate dragging down to and through the 15ms threshold
+    for (let i = 90; i >= 15; i--) {
+      delay.setTime(i / 1000);
+    }
+    assert.strictEqual(cancelLfoCount, 0, 'Rapid knob dragging through headroom threshold must never cancel or glitch wow/flutter LFOs');
+    assert.strictEqual(delay.delayTimeL, 0.015);
   });
 
   it('verifies top bar contains export and load patch buttons in braun-utility-group next to reset and record', () => {

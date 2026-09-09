@@ -903,7 +903,7 @@ export class AmbientApp {
       },
       vectorPad: {
         x: this.vectorPad ? this.vectorPad.x : 0.5,
-        y: this.vectorPad ? this.vectorPad.y : 0.0
+        y: this.vectorPad ? this.vectorPad.y : 0.5
       }
     };
 
@@ -946,6 +946,12 @@ export class AmbientApp {
    */
   loadPatch(patch, { animate = true, duration = 350 } = {}) {
     if (!patch || typeof patch !== 'object') return false;
+
+    this._isApplyingPreset = true;
+    if (this._presetTimer) {
+      clearTimeout(this._presetTimer);
+      this._presetTimer = null;
+    }
 
     // 1. Root, Scale, and Tuning
     if (this.engine) {
@@ -1093,6 +1099,17 @@ export class AmbientApp {
       } else {
         this.vectorPad.setCoordinates(patch.vectorPad.x, patch.vectorPad.y, false);
       }
+    }
+
+    // Release applying preset flag once animation finishes so vector pad isn't clobbered
+    const releaseDelay = (animate && duration > 0) ? (duration + 50) : 0;
+    if (releaseDelay > 0) {
+      this._presetTimer = setTimeout(() => {
+        this._isApplyingPreset = false;
+        this._presetTimer = null;
+      }, releaseDelay);
+    } else {
+      this._isApplyingPreset = false;
     }
 
     return true;

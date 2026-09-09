@@ -206,16 +206,18 @@ export class TapeDelay {
     const now = this.ctx.currentTime;
 
     if (this.wowGainL && this.wowGainL.gain) {
-      if (typeof this.wowGainL.gain.cancelAndHoldAtTime === 'function') {
-        this.wowGainL.gain.cancelAndHoldAtTime(now);
-        this.wowGainR.gain.cancelAndHoldAtTime(now);
-        this.flutterGainL.gain.cancelAndHoldAtTime(now);
-        this.flutterGainR.gain.cancelAndHoldAtTime(now);
-      } else if (typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
-        this.wowGainL.gain.cancelScheduledValues(now);
-        this.wowGainR.gain.cancelScheduledValues(now);
-        this.flutterGainL.gain.cancelScheduledValues(now);
-        this.flutterGainR.gain.cancelScheduledValues(now);
+      if (force) {
+        if (typeof this.wowGainL.gain.cancelAndHoldAtTime === 'function') {
+          this.wowGainL.gain.cancelAndHoldAtTime(now);
+          this.wowGainR.gain.cancelAndHoldAtTime(now);
+          this.flutterGainL.gain.cancelAndHoldAtTime(now);
+          this.flutterGainR.gain.cancelAndHoldAtTime(now);
+        } else if (typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
+          this.wowGainL.gain.cancelScheduledValues(now);
+          this.wowGainR.gain.cancelScheduledValues(now);
+          this.flutterGainL.gain.cancelScheduledValues(now);
+          this.flutterGainR.gain.cancelScheduledValues(now);
+        }
       }
       if (typeof this.wowGainL.gain.setTargetAtTime === 'function') {
         this.wowGainL.gain.setTargetAtTime(effWow, now, 0.05);
