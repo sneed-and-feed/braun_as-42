@@ -23,17 +23,22 @@ export class SolarDroneVoice {
 
     this.baseMidi = voiceId === 1 ? 36 : 43; // C2 (Voice 1) and G2 (Voice 2)
     this.baseFreq = midiToFrequency(this.baseMidi, 440);
+    this.rootFreq = this.baseFreq;
+    this.currentFreq = this.baseFreq;
     this.detuneCents = voiceId === 1 ? 2.5 : -3.2; // Initial subtle microtonal beating
+    this._currentDetune = this.detuneCents;
     this.subHertzBeat = 0.35; // Sub-hertz beating frequency offset in Hz
     this.waveA = 'saw';
     this.waveB = 'warm';
     this.drive = 1.6;
     this.fold = 0.45;
     this.cutoff = 680;
+    this._currentCutoff = this.cutoff;
     this.resonance = 3.5;
     this.lfoRate = 0.12;
     this.lfoDepth = 180;
     this.volume = 0.55;
+    this._currentGain = 0.0;
     this.pan = voiceId === 1 ? -0.45 : 0.45;
     this.isActive = false;
 
@@ -45,6 +50,7 @@ export class SolarDroneVoice {
 
     // Master Voice Gain
     this.voiceGain = ctx.createGain();
+    this.voiceGain.gain.value = 0.0;
     this.voiceGain.gain.setValueAtTime(0.0, ctx.currentTime);
 
     // Stereo Panner
@@ -156,28 +162,43 @@ export class SolarDroneVoice {
    * @param {number} [timeConstant=0.025] - Slew time constant in seconds (20-30ms)
    */
   setFrequency(freq, timeConstant = 0.025) {
-    this.baseFreq = Math.max(20, Math.min(2000, freq));
+    const targetFreq = Math.max(20, Math.min(2000, freq));
     const now = this.ctx.currentTime;
     const tau = Math.max(0.015, Math.min(0.05, timeConstant));
+    const prevA = (this.oscA.frequency.value !== undefined && this.oscA.frequency.value !== null && isFinite(this.oscA.frequency.value) && this.oscA.frequency.value > 0)
+      ? this.oscA.frequency.value
+      : (this.currentFreq || this.baseFreq);
+    const prevB = (this.oscB.frequency.value !== undefined && this.oscB.frequency.value !== null && isFinite(this.oscB.frequency.value) && this.oscB.frequency.value > 0)
+      ? this.oscB.frequency.value
+      : (prevA + this.subHertzBeat);
+
+    this.currentFreq = targetFreq;
+    this.baseFreq = targetFreq;
+
+    let held = false;
     if (typeof this.oscA.frequency.cancelAndHoldAtTime === 'function') {
-      this.oscA.frequency.cancelAndHoldAtTime(now);
-      this.oscB.frequency.cancelAndHoldAtTime(now);
-    } else if (typeof this.oscA.frequency.cancelScheduledValues === 'function') {
+      try {
+        this.oscA.frequency.cancelAndHoldAtTime(now);
+        this.oscB.frequency.cancelAndHoldAtTime(now);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.oscA.frequency.cancelScheduledValues === 'function') {
       this.oscA.frequency.cancelScheduledValues(now);
       this.oscB.frequency.cancelScheduledValues(now);
-      const curA = (this.oscA.frequency.value !== undefined && this.oscA.frequency.value !== null) ? this.oscA.frequency.value : this.baseFreq;
-      const curB = (this.oscB.frequency.value !== undefined && this.oscB.frequency.value !== null) ? this.oscB.frequency.value : (this.baseFreq + this.subHertzBeat);
       if (typeof this.oscA.frequency.setValueAtTime === 'function') {
-        this.oscA.frequency.setValueAtTime(curA, now);
-        this.oscB.frequency.setValueAtTime(curB, now);
+        this.oscA.frequency.setValueAtTime(prevA, now);
+        this.oscB.frequency.setValueAtTime(prevB, now);
       }
     }
     if (typeof this.oscA.frequency.setTargetAtTime === 'function') {
-      this.oscA.frequency.setTargetAtTime(this.baseFreq, now, tau);
-      this.oscB.frequency.setTargetAtTime(this.baseFreq + this.subHertzBeat, now, tau);
+      this.oscA.frequency.setTargetAtTime(targetFreq, now, tau);
+      this.oscB.frequency.setTargetAtTime(targetFreq + this.subHertzBeat, now, tau);
     } else {
-      this.oscA.frequency.value = this.baseFreq;
-      this.oscB.frequency.value = this.baseFreq + this.subHertzBeat;
+      this.oscA.frequency.value = targetFreq;
+      this.oscB.frequency.value = targetFreq + this.subHertzBeat;
     }
   }
 
@@ -185,16 +206,27 @@ export class SolarDroneVoice {
    * Set microtonal detune in cents (-50 to +50 cents) with smooth slewing
    */
   setDetuneCents(cents, timeConstant = 0.025) {
+    const prevDetune = (this.oscB.detune.value !== undefined && this.oscB.detune.value !== null && isFinite(this.oscB.detune.value))
+      ? this.oscB.detune.value
+      : (this._currentDetune ?? this.detuneCents);
     this.detuneCents = cents;
+    this._currentDetune = cents;
     const now = this.ctx.currentTime;
     const tau = Math.max(0.015, Math.min(0.05, timeConstant));
+
+    let held = false;
     if (typeof this.oscB.detune.cancelAndHoldAtTime === 'function') {
-      this.oscB.detune.cancelAndHoldAtTime(now);
-    } else if (typeof this.oscB.detune.cancelScheduledValues === 'function') {
+      try {
+        this.oscB.detune.cancelAndHoldAtTime(now);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.oscB.detune.cancelScheduledValues === 'function') {
       this.oscB.detune.cancelScheduledValues(now);
-      const curDetune = (this.oscB.detune.value !== undefined && this.oscB.detune.value !== null) ? this.oscB.detune.value : cents;
       if (typeof this.oscB.detune.setValueAtTime === 'function') {
-        this.oscB.detune.setValueAtTime(curDetune, now);
+        this.oscB.detune.setValueAtTime(prevDetune, now);
       }
     }
     if (typeof this.oscB.detune.setTargetAtTime === 'function') {
@@ -205,47 +237,91 @@ export class SolarDroneVoice {
   }
 
   /**
-   * Set continuous acoustic beating frequency offset in Hz (0.0 to 8.0 Hz)
+   * Alias for setDetuneCents for voicing consistency
+   */
+  setDetune(cents, timeConstant = 0.025) {
+    return this.setDetuneCents(cents, timeConstant);
+  }
+
+  /**
+   * Set continuous acoustic beating frequency offset in Hz (-15.0 to +15.0 Hz)
    * This allows exact dial-in of slow throbbing acoustic interference!
    */
   setBeatingHz(hz, timeConstant = 0.025) {
     this.subHertzBeat = Math.max(-15.0, Math.min(15.0, hz));
     const now = this.ctx.currentTime;
     const tau = Math.max(0.015, Math.min(0.05, timeConstant));
+    const currentBase = this.currentFreq || this.baseFreq;
+    const targetFreq = currentBase + this.subHertzBeat;
+    const prevB = (this.oscB.frequency.value !== undefined && this.oscB.frequency.value !== null && isFinite(this.oscB.frequency.value))
+      ? this.oscB.frequency.value
+      : targetFreq;
+
+    let held = false;
     if (typeof this.oscB.frequency.cancelAndHoldAtTime === 'function') {
-      this.oscB.frequency.cancelAndHoldAtTime(now);
-    } else if (typeof this.oscB.frequency.cancelScheduledValues === 'function') {
+      try {
+        this.oscB.frequency.cancelAndHoldAtTime(now);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.oscB.frequency.cancelScheduledValues === 'function') {
       this.oscB.frequency.cancelScheduledValues(now);
-      const curB = (this.oscB.frequency.value !== undefined && this.oscB.frequency.value !== null) ? this.oscB.frequency.value : (this.baseFreq + this.subHertzBeat);
       if (typeof this.oscB.frequency.setValueAtTime === 'function') {
-        this.oscB.frequency.setValueAtTime(curB, now);
+        this.oscB.frequency.setValueAtTime(prevB, now);
       }
     }
     if (typeof this.oscB.frequency.setTargetAtTime === 'function') {
-      this.oscB.frequency.setTargetAtTime(this.baseFreq + this.subHertzBeat, now, tau);
+      this.oscB.frequency.setTargetAtTime(targetFreq, now, tau);
     } else {
-      this.oscB.frequency.value = this.baseFreq + this.subHertzBeat;
+      this.oscB.frequency.value = targetFreq;
     }
   }
 
   /**
-   * Set quick-snap tuning directly on voice with smooth pitch slewing
+   * Set quick-snap tuning directly on voice with smooth pitch and filter slewing
    */
   setSnap(snapKey, rootFreq = null, timeConstant = 0.025) {
-    if (rootFreq) this.baseFreq = rootFreq;
-    let freq = this.baseFreq;
+    if (rootFreq) {
+      this.rootFreq = rootFreq;
+    }
+    const root = this.rootFreq || this.baseFreq;
+    let freq = root;
+    let cutoffTarget = this.cutoff;
+
     if (this.voiceId === 1) {
-      if (snapKey === 'sub-bass') freq = this.baseFreq * 0.5;
-      else if (snapKey === 'deep-tonic') freq = this.baseFreq;
-      else if (snapKey === 'warm-root') freq = this.baseFreq * 2.0;
-      else if (snapKey === 'octave-up') freq = this.baseFreq * 4.0;
+      if (snapKey === 'sub-bass') {
+        freq = root * 0.5;
+        cutoffTarget = Math.max(120, this.cutoff * 0.75);
+      } else if (snapKey === 'deep-tonic') {
+        freq = root;
+        cutoffTarget = this.cutoff;
+      } else if (snapKey === 'warm-root') {
+        freq = root * 2.0;
+        cutoffTarget = Math.min(2200, this.cutoff * 1.15);
+      } else if (snapKey === 'octave-up') {
+        freq = root * 4.0;
+        cutoffTarget = Math.min(3600, this.cutoff * 1.35);
+      }
     } else {
-      if (snapKey === 'perfect-5th') freq = this.baseFreq * 1.5;
-      else if (snapKey === 'sus-4th') freq = this.baseFreq * (4 / 3);
-      else if (snapKey === 'major-9th') freq = this.baseFreq * (9 / 8);
-      else if (snapKey === 'beating-unison') freq = this.baseFreq;
+      if (snapKey === 'perfect-5th') {
+        freq = root * 1.5;
+        cutoffTarget = this.cutoff;
+      } else if (snapKey === 'sus-4th') {
+        freq = root * (4 / 3);
+        cutoffTarget = this.cutoff;
+      } else if (snapKey === 'major-9th') {
+        freq = root * (9 / 8);
+        cutoffTarget = this.cutoff;
+      } else if (snapKey === 'beating-unison') {
+        freq = root;
+        cutoffTarget = this.cutoff;
+        this.setBeatingHz(0.35, timeConstant);
+      }
     }
     this.setFrequency(freq, timeConstant);
+    this.setCutoff(cutoffTarget, timeConstant);
     return freq;
   }
 
@@ -253,7 +329,8 @@ export class SolarDroneVoice {
    * Set harmonic frequency ratio relative to base fundamental with smooth slewing
    */
   setHarmonyRatio(ratio, timeConstant = 0.025) {
-    const targetFreq = this.baseFreq * ratio;
+    const root = this.rootFreq || this.baseFreq;
+    const targetFreq = root * ratio;
     this.setFrequency(targetFreq, timeConstant);
     return targetFreq;
   }
@@ -273,30 +350,45 @@ export class SolarDroneVoice {
   }
 
   /**
-   * Set filter cutoff in Hz
+   * Set filter cutoff in Hz with smooth slewing
+   * @param {number} hz - Filter cutoff frequency in Hz
+   * @param {number} [timeConstant=0.025] - Slew time constant in seconds
    */
-  setCutoff(hz) {
-    this.cutoff = Math.max(40, Math.min(14000, hz));
+  setCutoff(hz, timeConstant = 0.025) {
+    const targetHz = Math.max(40, Math.min(14000, hz));
+    const prevCutoff = (this.filter1.frequency.value !== undefined && this.filter1.frequency.value !== null && isFinite(this.filter1.frequency.value))
+      ? this.filter1.frequency.value
+      : (this._currentCutoff || this.cutoff);
+    this.cutoff = targetHz;
+    this._currentCutoff = targetHz;
     const now = this.ctx.currentTime;
+    const tau = Math.max(0.015, Math.min(0.05, timeConstant));
     this._updateLfoModulation(now);
+
+    let held = false;
     if (typeof this.filter1.frequency.cancelAndHoldAtTime === 'function') {
-      this.filter1.frequency.cancelAndHoldAtTime(now);
-      this.filter2.frequency.cancelAndHoldAtTime(now);
-    } else if (typeof this.filter1.frequency.cancelScheduledValues === 'function') {
+      try {
+        this.filter1.frequency.cancelAndHoldAtTime(now);
+        this.filter2.frequency.cancelAndHoldAtTime(now);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.filter1.frequency.cancelScheduledValues === 'function') {
       this.filter1.frequency.cancelScheduledValues(now);
       this.filter2.frequency.cancelScheduledValues(now);
-      const curCutoff = (this.filter1.frequency.value !== undefined && this.filter1.frequency.value !== null) ? this.filter1.frequency.value : this.cutoff;
       if (typeof this.filter1.frequency.setValueAtTime === 'function') {
-        this.filter1.frequency.setValueAtTime(curCutoff, now);
-        this.filter2.frequency.setValueAtTime(curCutoff, now);
+        this.filter1.frequency.setValueAtTime(prevCutoff, now);
+        this.filter2.frequency.setValueAtTime(prevCutoff, now);
       }
     }
     if (typeof this.filter1.frequency.setTargetAtTime === 'function') {
-      this.filter1.frequency.setTargetAtTime(this.cutoff, now, 0.025);
-      this.filter2.frequency.setTargetAtTime(this.cutoff, now, 0.025);
+      this.filter1.frequency.setTargetAtTime(targetHz, now, tau);
+      this.filter2.frequency.setTargetAtTime(targetHz, now, tau);
     } else {
-      this.filter1.frequency.value = this.cutoff;
-      this.filter2.frequency.value = this.cutoff;
+      this.filter1.frequency.value = targetHz;
+      this.filter2.frequency.value = targetHz;
     }
   }
 
@@ -374,24 +466,34 @@ export class SolarDroneVoice {
   }
 
   /**
-   * Set volume
+   * Set volume with smooth slewing and gain tracking
    */
   setVolume(v) {
     this.volume = Math.max(0, Math.min(1.0, v));
     if (this.isActive && this.voiceGain && this.voiceGain.gain) {
       const now = this.ctx.currentTime;
+      const prevGain = (this._currentGain !== undefined) ? this._currentGain : this.volume;
+      this._currentGain = this.volume;
+      let held = false;
       if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
-        this.voiceGain.gain.cancelAndHoldAtTime(now);
-      } else if (typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
-        this.voiceGain.gain.cancelScheduledValues(now);
-        const curGain = (this.voiceGain.gain.value !== undefined && this.voiceGain.gain.value !== null)
-          ? this.voiceGain.gain.value
-          : this.volume;
-        if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
-          this.voiceGain.gain.setValueAtTime(curGain, now);
+        try {
+          this.voiceGain.gain.cancelAndHoldAtTime(now);
+          held = true;
+        } catch (e) {
+          held = false;
         }
       }
-      this.voiceGain.gain.setTargetAtTime(this.volume, now, 0.04);
+      if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
+        this.voiceGain.gain.cancelScheduledValues(now);
+        if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+          this.voiceGain.gain.setValueAtTime(prevGain, now);
+        }
+      }
+      if (typeof this.voiceGain.gain.setTargetAtTime === 'function') {
+        this.voiceGain.gain.setTargetAtTime(this.volume, now, 0.04);
+      } else {
+        this.voiceGain.gain.value = this.volume;
+      }
     }
   }
 
@@ -399,21 +501,32 @@ export class SolarDroneVoice {
    * Toggle or set active state with soft clickless crossfade
    */
   setActive(active) {
-    this.isActive = active;
+    this.isActive = Boolean(active);
     const now = this.ctx.currentTime;
     const targetGain = this.isActive ? this.volume : 0.0001;
+    const prevGain = (this._currentGain !== undefined) ? this._currentGain : (this.isActive ? 0.0001 : this.volume);
+    this._currentGain = targetGain;
+
+    let held = false;
     if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
-      this.voiceGain.gain.cancelAndHoldAtTime(now);
-    } else if (typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
-      this.voiceGain.gain.cancelScheduledValues(now);
-      const curGain = (this.voiceGain.gain.value !== undefined && this.voiceGain.gain.value !== null)
-        ? this.voiceGain.gain.value
-        : (this.isActive ? 0.0001 : this.volume);
-      if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
-        this.voiceGain.gain.setValueAtTime(curGain, now);
+      try {
+        this.voiceGain.gain.cancelAndHoldAtTime(now);
+        held = true;
+      } catch (e) {
+        held = false;
       }
     }
-    this.voiceGain.gain.setTargetAtTime(targetGain, now, 0.06);
+    if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
+      this.voiceGain.gain.cancelScheduledValues(now);
+      if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+        this.voiceGain.gain.setValueAtTime(prevGain, now);
+      }
+    }
+    if (typeof this.voiceGain.gain.setTargetAtTime === 'function') {
+      this.voiceGain.gain.setTargetAtTime(targetGain, now, 0.06);
+    } else {
+      this.voiceGain.gain.value = targetGain;
+    }
     return this.isActive;
   }
 }

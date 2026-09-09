@@ -353,6 +353,13 @@ export class AudioEngine {
     this.drone1Freq = midiToFrequency(midi, this.a4);
     if (this.drone1) {
       this.drone1.setFrequency(this.drone1Freq, 0.025);
+      const baseCutoff = this.droneParams[1].cutoff || 650;
+      const targetCutoff = snapKey === 'sub-bass' ? Math.max(120, baseCutoff * 0.75) :
+                           snapKey === 'octave-up' ? Math.min(3600, baseCutoff * 1.35) :
+                           snapKey === 'warm-root' ? Math.min(2200, baseCutoff * 1.15) : baseCutoff;
+      if (typeof this.drone1.setCutoff === 'function') {
+        this.drone1.setCutoff(targetCutoff, 0.025);
+      }
     }
     return this.drone1Freq;
   }
@@ -376,6 +383,10 @@ export class AudioEngine {
     this.drone2Freq = freq;
     if (this.drone2) {
       this.drone2.setFrequency(freq, 0.025);
+      const baseCutoff = this.droneParams[2].cutoff || 850;
+      if (typeof this.drone2.setCutoff === 'function') {
+        this.drone2.setCutoff(baseCutoff, 0.025);
+      }
     }
     return this.drone2Freq;
   }

@@ -8,12 +8,12 @@
 import { makeSoftClipCurve } from './wavefolder.js';
 
 export const TIMBRE_TRIM = {
-  felt: 1.48,     // +3.4 dB boost compensates for steep 24dB damping filter roll-off
-  sine: 1.58,     // +4.0 dB boost compensates for pure fundamental lacking harmonic overtones
-  saw: 1.12,      // Natural rich harmonic spectrum
-  square: 1.02,   // Sits balanced with hollow square overtones
-  cs80: 0.88,     // Calibrated trim tames soaring brass horns so it balances smoothly
-  vangelis: 0.88
+  felt: 1.55,     // Boosted to sit firmly above the ambient drone underbed
+  sine: 1.65,     // Pure chime bell presence balanced with drone bed
+  saw: 1.10,      // Harmonic saw presence
+  square: 1.00,   // Balanced square presence
+  cs80: 0.85,     // Calibrated trim tames soaring brass horns so it balances smoothly
+  vangelis: 0.85
 };
 
 export class FeltPianoVoice {
@@ -440,12 +440,17 @@ export class FeltPianoVoice {
     const noteStartTime = isStealing ? Math.max(now + declickRampTime, ctx.currentTime + declickRampTime) : Math.max(now, ctx.currentTime);
 
     if (isStealing) {
+      let held = false;
       if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
-        this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
-      } else {
-        const safeCurGain = (curParamGain > 0.001)
-          ? curParamGain
-          : curEstGain;
+        try {
+          this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
+          held = true;
+        } catch (e) {
+          held = false;
+        }
+      }
+      if (!held) {
+        const safeCurGain = Math.min(1.0, Math.max(0.0001, curEstGain > 0.0001 ? curEstGain : ((curParamGain > 0.001 && curParamGain <= 0.6) ? curParamGain : 0.0001)));
         this.voiceGain.gain.cancelScheduledValues(cancelTime);
         this.voiceGain.gain.setValueAtTime(safeCurGain, cancelTime);
       }
@@ -470,9 +475,16 @@ export class FeltPianoVoice {
     this.osc2.detune.setValueAtTime(detune2, noteStartTime);
 
     // Apply soundboard body formant smoothly without step jump
+    let bodyHeld = false;
     if (typeof this.bodyFilter.frequency.cancelAndHoldAtTime === 'function') {
-      this.bodyFilter.frequency.cancelAndHoldAtTime(cancelTime);
-    } else if (typeof this.bodyFilter.frequency.cancelScheduledValues === 'function') {
+      try {
+        this.bodyFilter.frequency.cancelAndHoldAtTime(cancelTime);
+        bodyHeld = true;
+      } catch (e) {
+        bodyHeld = false;
+      }
+    }
+    if (!bodyHeld && typeof this.bodyFilter.frequency.cancelScheduledValues === 'function') {
       this.bodyFilter.frequency.cancelScheduledValues(cancelTime);
     }
     if (typeof this.bodyFilter.frequency.setTargetAtTime === 'function') {
@@ -485,10 +497,10 @@ export class FeltPianoVoice {
     const baseDecay = Math.max(1.2, Math.min(10.0, 7.5 * Math.pow(220 / Math.max(60, freq), 0.45))) * decayMultiplier * registerDecayMult;
 
     // --- Hammer Transient Impulse ---
-    // Clean up any previously running hammer buffer source without hard-cutting mid-buffer
+    // Clean up any previously running hammer buffer source at silence without cutting off mid-buffer
     if (this.currentHammerSource) {
       try {
-        this.currentHammerSource.stop(Math.max(noteStartTime + 0.001, cancelTime + 0.005));
+        this.currentHammerSource.stop(noteStartTime);
       } catch (e) {}
       this.currentHammerSource = null;
     }
@@ -496,17 +508,31 @@ export class FeltPianoVoice {
     // Smoothly de-click hammer gain if voice was stolen, avoiding abrupt step drop
     const curHammerGain = this.hammerGain.gain.value || 0;
     if (isStealing || curHammerGain > 0.001) {
+      let hHeld = false;
       if (typeof this.hammerGain.gain.cancelAndHoldAtTime === 'function') {
-        this.hammerGain.gain.cancelAndHoldAtTime(cancelTime);
-      } else {
+        try {
+          this.hammerGain.gain.cancelAndHoldAtTime(cancelTime);
+          hHeld = true;
+        } catch (e) {
+          hHeld = false;
+        }
+      }
+      if (!hHeld) {
         this.hammerGain.gain.cancelScheduledValues(cancelTime);
         this.hammerGain.gain.setValueAtTime(curHammerGain, cancelTime);
       }
       this.hammerGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
     } else {
+      let hHeld = false;
       if (typeof this.hammerGain.gain.cancelAndHoldAtTime === 'function') {
-        this.hammerGain.gain.cancelAndHoldAtTime(cancelTime);
-      } else {
+        try {
+          this.hammerGain.gain.cancelAndHoldAtTime(cancelTime);
+          hHeld = true;
+        } catch (e) {
+          hHeld = false;
+        }
+      }
+      if (!hHeld) {
         this.hammerGain.gain.cancelScheduledValues(cancelTime);
         this.hammerGain.gain.setValueAtTime(0.0, cancelTime);
       }
@@ -518,9 +544,16 @@ export class FeltPianoVoice {
       noiseSource.buffer = this.hammerBuffer;
       noiseSource.connect(this.hammerGain);
 
+      let hfHeld = false;
       if (typeof this.hammerFilter.frequency.cancelAndHoldAtTime === 'function') {
-        this.hammerFilter.frequency.cancelAndHoldAtTime(cancelTime);
-      } else if (typeof this.hammerFilter.frequency.cancelScheduledValues === 'function') {
+        try {
+          this.hammerFilter.frequency.cancelAndHoldAtTime(cancelTime);
+          hfHeld = true;
+        } catch (e) {
+          hfHeld = false;
+        }
+      }
+      if (!hfHeld && typeof this.hammerFilter.frequency.cancelScheduledValues === 'function') {
         this.hammerFilter.frequency.cancelScheduledValues(cancelTime);
       }
       if (typeof this.hammerFilter.frequency.setTargetAtTime === 'function') {
@@ -539,8 +572,10 @@ export class FeltPianoVoice {
       const hammerAttackTime = (this.currentWaveform === 'sine') ? 0.0065 : 0.0050; // 5-6.5ms smooth micro-fade eliminates high-velocity transient impulse pop
       const hammerAttackTarget = Math.max(noteStartTime + hammerAttackTime, ctx.currentTime + 0.004);
       const hammerDecayTarget = Math.max(noteStartTime + thumpDuration, hammerAttackTarget + 0.006);
-      // Anchor hammerGain at noteStartTime so ramp starts from zero right as noise buffer starts
-      this.hammerGain.gain.setValueAtTime(0.0001, noteStartTime);
+      // Anchor hammerGain at noteStartTime so ramp starts from zero right as noise buffer starts (only when not already ramped to 0.0001)
+      if (!isStealing) {
+        this.hammerGain.gain.setValueAtTime(0.0001, noteStartTime);
+      }
       this.hammerGain.gain.linearRampToValueAtTime(targetHammerGain, hammerAttackTarget);
       this.hammerGain.gain.exponentialRampToValueAtTime(0.0001, hammerDecayTarget);
       this.hammerGain.gain.linearRampToValueAtTime(0.0, hammerDecayTarget + 0.003);
@@ -722,15 +757,25 @@ export class FeltPianoVoice {
     }
     const now = this.ctx.currentTime;
     const cancelTime = Math.max(now, this.ctx.currentTime);
-    const curGain = (this.voiceGain.gain.value && this.voiceGain.gain.value > 0.001)
-      ? this.voiceGain.gain.value
-      : this.getEstimatedGain(cancelTime);
+    const estGain = this.getEstimatedGain(cancelTime);
+    const curGain = (estGain > 0.0001 && estGain <= 1.0)
+      ? estGain
+      : ((this.voiceGain.gain.value && this.voiceGain.gain.value > 0.001 && this.voiceGain.gain.value <= 1.0)
+        ? this.voiceGain.gain.value
+        : 0.0001);
     this._isReleased = true;
     this._releaseTime = cancelTime;
     this._releaseStartGain = curGain;
+    let held = false;
     if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
-      this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
-    } else {
+      try {
+        this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held) {
       this.voiceGain.gain.cancelScheduledValues(cancelTime);
       this.voiceGain.gain.setValueAtTime(curGain, cancelTime);
     }
@@ -908,29 +953,37 @@ export class FeltPianoSynthesizer {
       return;
     }
 
-    const elapsed = Math.max(0, now - (this._headroomStartTime || now));
+    const cancelTime = Math.max(now, this.ctx.currentTime);
+    const elapsed = Math.max(0, cancelTime - (this._headroomStartTime || cancelTime));
     const curGain = this._lastHeadroomTarget !== undefined
       ? this._lastHeadroomTarget + ((this._headroomStartGain ?? this._lastHeadroomTarget) - this._lastHeadroomTarget) * Math.exp(-elapsed / tau)
       : ((this.output.gain.value !== undefined && this.output.gain.value !== null) ? this.output.gain.value : targetGain);
 
+    let held = false;
     if (typeof this.output.gain.cancelAndHoldAtTime === 'function') {
-      this.output.gain.cancelAndHoldAtTime(now);
-    } else if (typeof this.output.gain.cancelScheduledValues === 'function') {
-      this.output.gain.cancelScheduledValues(now);
+      try {
+        this.output.gain.cancelAndHoldAtTime(cancelTime);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.output.gain.cancelScheduledValues === 'function') {
+      this.output.gain.cancelScheduledValues(cancelTime);
       if (typeof this.output.gain.setValueAtTime === 'function') {
-        this.output.gain.setValueAtTime(curGain, now);
+        this.output.gain.setValueAtTime(curGain, cancelTime);
       }
     }
     this._headroomStartGain = curGain;
-    this._headroomStartTime = now;
+    this._headroomStartTime = cancelTime;
     this._lastHeadroomTarget = targetGain;
     this._currentHeadroomGain = targetGain;
 
     if (typeof this.output.gain.setTargetAtTime === 'function') {
       // 0.075s (75ms) smooth polyphonic headroom transition prevents envelope ducking pops on active chords
-      this.output.gain.setTargetAtTime(targetGain, Math.max(now, this.ctx.currentTime), tau);
+      this.output.gain.setTargetAtTime(targetGain, Math.max(cancelTime, this.ctx.currentTime), tau);
     } else if (typeof this.output.gain.linearRampToValueAtTime === 'function') {
-      this.output.gain.linearRampToValueAtTime(targetGain, now + tau);
+      this.output.gain.linearRampToValueAtTime(targetGain, cancelTime + tau);
     } else {
       this.output.gain.value = targetGain;
     }

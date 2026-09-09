@@ -215,6 +215,30 @@ describe('Rapid Note Re-Triggering & Voice Stealing De-Clicking', () => {
     // Verify linear ramp down to 0.0001 before new note start
     const declickRamps = events.filter(e => e.type === 'linearRampToValueAtTime' && Math.abs(e.v - 0.0001) < 0.00001);
     assert.ok(declickRamps.length >= 1, 'Stolen voice must ramp down to near-zero before retriggering');
+
+    // Verify hammerGain does not have duplicate setValueAtTime collision at noteStartTime when stealing
+    const hammerEvents = stolenVoice.hammerGain.gain.events;
+    const noteStartTime = 3.005;
+    const duplicateSet = hammerEvents.filter(e => e.type === 'setValueAtTime' && Math.abs(e.t - noteStartTime) < 1e-4);
+    assert.strictEqual(duplicateSet.length, 0, 'hammerGain must not schedule duplicate setValueAtTime collision at noteStartTime when stealing');
+  });
+
+  it('safely de-clicks voice when stolen mid-attack without jumping to 1.0', () => {
+    const ctx = createDSPMockCtx();
+    const synth = new FeltPianoSynthesizer(ctx);
+
+    ctx.currentTime = 1.0;
+    synth.playNote(440, 0.8);
+    const voice = synth.voices.find(v => v.isActive);
+
+    // Voice is mid-attack at 1.003s (attack takes ~8ms)
+    ctx.currentTime = 1.003;
+    synth.playNote(440, 0.9);
+
+    const gainEvents = voice.voiceGain.gain.events;
+    // Ensure no event set gain to 1.0
+    const jumpTo1 = gainEvents.find(e => e.type === 'setValueAtTime' && e.t >= 1.003 && e.v >= 1.0);
+    assert.strictEqual(jumpTo1, undefined, 'Gain must not jump to 1.0 when interrupted mid-attack');
   });
 
   it('stabilizes polyphonic headroom calculation and eliminates gain jitter on steady chords', () => {
@@ -307,6 +331,67 @@ describe('Drone Frequency Slewing & Voicing Crackle Prevention', () => {
     const events = engine.drone1.oscA.frequency.events;
     const snapSlew = events.find(e => e.type === 'setTargetAtTime' && e.tau === 0.025);
     assert.ok(snapSlew, 'Drone 1 snap note change must use smooth slewing with tau = 0.025');
+
+    // filter1 in drone1 should also have smooth cutoff slew
+    const filterEvents = engine.drone1.filter1.frequency.events;
+    const cutoffSlew = filterEvents.find(e => e.type === 'setTargetAtTime' && e.tau === 0.025);
+    assert.ok(cutoffSlew, 'Drone 1 filter cutoff must slew smoothly during snap note changes');
+  });
+
+  it('preserves fundamental rootFreq across multiple setSnap calls without compounding octave multiplication', () => {
+    const ctx = createDSPMockCtx();
+    const drone = new SolarDroneVoice(ctx, ctx.destination, null, 1);
+    const initialRoot = drone.rootFreq;
+    assert.ok(initialRoot > 0);
+
+    // Snap to warm-root (2x root)
+    const freq1 = drone.setSnap('warm-root');
+    assert.strictEqual(freq1, initialRoot * 2.0);
+
+    // Calling warm-root again must NOT double again to 4x!
+    const freq2 = drone.setSnap('warm-root');
+    assert.strictEqual(freq2, initialRoot * 2.0, 'Subsequent setSnap call must calculate from rootFreq without compounding');
+
+    // Calling sub-bass must go to 0.5x root, NOT 0.5 * 2x!
+    const freqSub = drone.setSnap('sub-bass');
+    assert.strictEqual(freqSub, initialRoot * 0.5, 'sub-bass must be 0.5x rootFreq');
+
+    // Calling deep-tonic restores exact root
+    const freqTonic = drone.setSnap('deep-tonic');
+    assert.strictEqual(freqTonic, initialRoot, 'deep-tonic must restore initial rootFreq');
+  });
+
+  it('supports setDetune alias and setHarmonyRatio relative to root frequency', () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 8.0;
+    const drone = new SolarDroneVoice(ctx, ctx.destination, null, 2);
+    const initialRoot = drone.rootFreq;
+
+    // setDetune alias
+    drone.setDetune(18, 0.025);
+    assert.strictEqual(drone.detuneCents, 18);
+    const detuneEvent = drone.oscB.detune.events.find(e => e.type === 'setTargetAtTime' && e.v === 18);
+    assert.ok(detuneEvent, 'setDetune must schedule smooth setTargetAtTime');
+
+    // setHarmonyRatio
+    const targetFreq = drone.setHarmonyRatio(1.5, 0.025);
+    assert.strictEqual(targetFreq, initialRoot * 1.5);
+    // Calling again should not multiply by 1.5 * 1.5
+    const targetFreq2 = drone.setHarmonyRatio(1.5, 0.025);
+    assert.strictEqual(targetFreq2, initialRoot * 1.5, 'setHarmonyRatio must calculate from rootFreq');
+  });
+
+  it('slews filter cutoff smoothly with timeConstant and tracks previous cutoff', () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 12.0;
+    const drone = new SolarDroneVoice(ctx, ctx.destination, null, 1);
+
+    drone.setCutoff(420, 0.025);
+    assert.strictEqual(drone.cutoff, 420);
+
+    const fEvents = drone.filter1.frequency.events;
+    const slew = fEvents.find(e => e.type === 'setTargetAtTime' && e.v === 420 && e.tau === 0.025);
+    assert.ok(slew, 'setCutoff must schedule setTargetAtTime with tau = 0.025');
   });
 });
 
