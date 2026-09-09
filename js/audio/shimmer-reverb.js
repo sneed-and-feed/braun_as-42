@@ -395,7 +395,11 @@ export class ShimmerReverb {
   }
 
   setDecay(seconds) {
-    this.decayTime = Math.max(0.5, Math.min(25.0, seconds));
+    const s = Math.max(0.5, Math.min(25.0, seconds));
+    if (Math.abs(this.decayTime - s) < 0.01 && this._hasInitialBuffer) {
+      return;
+    }
+    this.decayTime = s;
     this._scheduleImpulseRegeneration();
   }
 

@@ -308,7 +308,11 @@ export class AudioEngine {
         this.ctx = new AudioContextClass({ latencyHint: 'interactive' });
       }
       if (this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
-        this.ctx.resume().catch(e => console.warn('AudioContext resume deferred:', e));
+        try {
+          await this.ctx.resume();
+        } catch (e) {
+          console.warn('AudioContext resume deferred:', e);
+        }
       }
 
     // Generate band-limited wavetables
@@ -514,7 +518,16 @@ export class AudioEngine {
 
     // Update Drone 1 & 2 root notes smoothly according to active snap presets
     this.applyDrone1Snap();
-    this.applyDrone2Snap();
+    if (this.droneParams[2] && this.droneParams[2].active) {
+      this.applyDrone2Snap();
+    } else {
+      const f1 = this.drone1Freq || (this.drone1 ? this.drone1.baseFreq : midiToFrequency(36 + this.rootPitchClass, this.a4));
+      const snap2 = this.droneSnap[2] || 'perfect-5th';
+      if (snap2 === 'perfect-5th') this.drone2Freq = f1 * 1.5;
+      else if (snap2 === 'sus-4th') this.drone2Freq = f1 * (4 / 3);
+      else if (snap2 === 'major-9th') this.drone2Freq = f1 * (9 / 8);
+      else if (snap2 === 'beating-unison') this.drone2Freq = f1;
+    }
   }
 
   /**
@@ -527,7 +540,16 @@ export class AudioEngine {
     this.droneSnap[voiceId] = snapKey;
     if (voiceId === 1) {
       this.applyDrone1Snap();
-      this.applyDrone2Snap();
+      if (this.droneParams[2] && this.droneParams[2].active) {
+        this.applyDrone2Snap();
+      } else {
+        const f1 = this.drone1Freq || (this.drone1 ? this.drone1.baseFreq : midiToFrequency(36 + this.rootPitchClass, this.a4));
+        const snap2 = this.droneSnap[2] || 'perfect-5th';
+        if (snap2 === 'perfect-5th') this.drone2Freq = f1 * 1.5;
+        else if (snap2 === 'sus-4th') this.drone2Freq = f1 * (4 / 3);
+        else if (snap2 === 'major-9th') this.drone2Freq = f1 * (9 / 8);
+        else if (snap2 === 'beating-unison') this.drone2Freq = f1;
+      }
       return this.drone1Freq;
     } else {
       return this.applyDrone2Snap();
@@ -544,8 +566,16 @@ export class AudioEngine {
     else if (snapKey === 'octave-up') midi = 60 + root; // C4 (Octave Up)
 
     this.drone1Midi = midi;
-    this.drone1Freq = midiToFrequency(midi, this.a4);
+    const newFreq = midiToFrequency(midi, this.a4);
+    const oldFreq = this.drone1Freq;
+    this.drone1Freq = newFreq;
+
     if (this.drone1) {
+      if (this.isInitialized && this.drone1.isActive && Math.abs(newFreq - (oldFreq || newFreq)) >= 1.0) {
+        if (typeof this.drone1.declickTransition === 'function') {
+          this.drone1.declickTransition(0.025);
+        }
+      }
       this.drone1.setFrequency(this.drone1Freq, 0.025);
       const baseCutoff = this.droneParams[1].cutoff || 650;
       const targetCutoff = snapKey === 'sub-bass' ? Math.max(120, baseCutoff * 0.75) :
@@ -598,7 +628,11 @@ export class AudioEngine {
   }
 
   setTapeDrive(drive) {
-    this.tapeDrive = Math.max(0, Math.min(1.0, drive));
+    const d = Math.max(0, Math.min(1.0, drive));
+    if (this.masterTapeSaturator && Math.abs(this.tapeDrive - d) < 0.005 && this.masterTapeSaturator.curve) {
+      return;
+    }
+    this.tapeDrive = d;
     if (this.ctx && this.masterTapeSaturator) {
       this.masterTapeSaturator.curve = makeTapeSaturationCurve(2048, this.tapeDrive);
     }
@@ -643,6 +677,12 @@ export class AudioEngine {
   setDroneActive(id, active) {
     const voiceId = Number(id) === 2 ? 2 : 1;
     this.droneParams[voiceId].active = active;
+    if (voiceId === 1 && active) {
+      this.applyDrone1Snap();
+    }
+    if (voiceId === 2 && active) {
+      this.applyDrone2Snap();
+    }
     const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) {
       return drone.setActive(active);
@@ -759,8 +799,12 @@ export class AudioEngine {
   }
 
   setReverbDecay(decay) {
-    this.reverbParams.decay = decay;
-    if (this.shimmerReverb) this.shimmerReverb.setDecay(decay);
+    const d = Math.max(0.5, Math.min(25.0, decay));
+    if (Math.abs(this.reverbParams.decay - d) < 0.01 && this.shimmerReverb && this.shimmerReverb._hasInitialBuffer) {
+      return;
+    }
+    this.reverbParams.decay = d;
+    if (this.shimmerReverb) this.shimmerReverb.setDecay(d);
   }
 
   setReverbDiffusion(diffusion) {

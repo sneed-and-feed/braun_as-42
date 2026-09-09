@@ -39,6 +39,7 @@ export class SolarDroneVoice {
     this.lfoDepth = 180;
     this.volume = 0.55;
     this._currentGain = 0.0;
+    this._lastDeclickTime = -1;
     this.pan = voiceId === 1 ? -0.45 : 0.45;
     this.isActive = false;
 
@@ -334,6 +335,51 @@ export class SolarDroneVoice {
   }
 
   /**
+   * Micro-gain declick crossfade (15–30 ms) during pitch jumps/frequency slewing
+   * Dips output gain to near-silence for ~12ms and ramps back up to volume by ~25-30ms,
+   * preventing pitch-slew transients from blasting into tape delay and shimmer reverb.
+   * @param {number} [crossfadeTime=0.025] - Total crossfade duration in seconds
+   */
+  declickTransition(crossfadeTime = 0.025) {
+    if (!this.isActive || !this.voiceGain || !this.voiceGain.gain) return;
+    const now = this.ctx.currentTime;
+    if (this._lastDeclickTime !== undefined && Math.abs(now - this._lastDeclickTime) < 0.005) {
+      return;
+    }
+    this._lastDeclickTime = now;
+
+    const curVol = (typeof this._currentGain === 'number' && isFinite(this._currentGain)) ? this._currentGain : this.volume;
+    if (curVol <= 0.001) return;
+
+    let held = false;
+    if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
+      try {
+        this.voiceGain.gain.cancelAndHoldAtTime(now);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
+      this.voiceGain.gain.cancelScheduledValues(now);
+      if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+        this.voiceGain.gain.setValueAtTime(curVol, now);
+      }
+    }
+
+    const dipGain = Math.max(0.0001, curVol * 0.02);
+    const halfTime = Math.max(0.008, Math.min(0.015, crossfadeTime * 0.45));
+    const fullTime = Math.max(0.018, Math.min(0.035, crossfadeTime));
+
+    if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
+      this.voiceGain.gain.linearRampToValueAtTime(dipGain, now + halfTime);
+      this.voiceGain.gain.linearRampToValueAtTime(curVol, now + fullTime);
+    } else if (typeof this.voiceGain.gain.setTargetAtTime === 'function') {
+      this.voiceGain.gain.setTargetAtTime(curVol, now, 0.025);
+    }
+  }
+
+  /**
    * Set root pitch with smooth 20-30ms exponential frequency slewing to prevent phase cracking
    * @param {number} freq - Base frequency in Hz
    * @param {number} [timeConstant=0.025] - Slew time constant in seconds (20-30ms)
@@ -348,6 +394,11 @@ export class SolarDroneVoice {
     const prevB = (this.oscB.frequency.value !== undefined && this.oscB.frequency.value !== null && isFinite(this.oscB.frequency.value) && this.oscB.frequency.value > 0)
       ? this.oscB.frequency.value
       : (prevA + this.subHertzBeat);
+
+    // Smooth micro-gain declick crossfade during pitch jumps/frequency slewing when voice is active
+    if (this.isActive && Math.abs(targetFreq - prevA) >= 2.0) {
+      this.declickTransition(tau);
+    }
 
     this.currentFreq = targetFreq;
     this.baseFreq = targetFreq;

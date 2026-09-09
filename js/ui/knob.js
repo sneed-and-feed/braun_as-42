@@ -281,8 +281,9 @@ export class BraunKnob {
    * @param {number} [duration=300] - Duration in ms
    * @param {Function} [onComplete=null]
    * @param {boolean} [triggerOnChangeDuring=false] - Whether to fire onChange during animation frames
+   * @param {boolean} [triggerOnChangeAtEnd=true] - Whether to fire onChange upon animation completion
    */
-  animateTo(targetVal, duration = 300, onComplete = null, triggerOnChangeDuring = false) {
+  animateTo(targetVal, duration = 300, onComplete = null, triggerOnChangeDuring = false, triggerOnChangeAtEnd = true) {
     if (this._animFrameId) {
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animFrameId);
       else clearTimeout(this._animFrameId);
@@ -294,7 +295,7 @@ export class BraunKnob {
 
     // Set immediately if duration is zero or difference is negligible
     if (duration <= 0 || Math.abs(startNorm - targetNorm) < 1e-4) {
-      this.setValue(targetVal, true);
+      this.setValue(targetVal, triggerOnChangeAtEnd);
       if (onComplete) onComplete();
       return;
     }
@@ -319,7 +320,7 @@ export class BraunKnob {
           this._animFrameId = setTimeout(() => step(Date.now()), 16);
         }
       } else {
-        this.setValue(targetVal, true);
+        this.setValue(targetVal, triggerOnChangeAtEnd);
         this._animFrameId = null;
         if (onComplete) onComplete();
       }

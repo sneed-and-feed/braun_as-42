@@ -10,10 +10,13 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FeltPianoVoice, FeltPianoSynthesizer } from '../js/audio/felt-piano.js';
+import { FeltPianoVoice, FeltPianoSynthesizer, TIMBRE_TRIM } from '../js/audio/felt-piano.js';
 import { CHORD_VOICINGS, getChordFrequencies, frequencyToMidi, midiToFrequency } from '../js/generative/scales.js';
 import { AudioEngine } from '../js/audio/engine.js';
+import { SolarDroneVoice } from '../js/audio/drone-voice.js';
 import { BraunPlaySurface } from '../js/ui/keyboard.js';
+import { BraunKnob } from '../js/ui/knob.js';
+import { PRESETS } from '../js/app.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -622,5 +625,187 @@ describe('Click-and-Hold Single Strike Verification', () => {
     }
   });
 });
+
+describe('Vangelis CS-80 Preset Rebalance & Sub-Bass Stability', () => {
+  it('rebalances Vangelis CS-80 preset to tame drone bed aggression and elevate soaring CS-80 brass lead', () => {
+    const p = PRESETS.VANGELIS;
+    assert.ok(p, 'VANGELIS preset must exist');
+
+    // Felt level elevated to 88%
+    assert.strictEqual(p.knobs.feltLevel, 88);
+
+    // Drone levels lowered from 55% to 42% / 38%
+    assert.ok(p.knobs.drone1Vol <= 45, `drone1Vol (${p.knobs.drone1Vol}) must be <= 45`);
+    assert.ok(p.knobs.drone2Vol <= 40, `drone2Vol (${p.knobs.drone2Vol}) must be <= 40`);
+
+    // Drone cutoffs tamed from 1200/1450 down to 600/750
+    assert.ok(p.knobs.drone1Cutoff <= 800, `drone1Cutoff (${p.knobs.drone1Cutoff}) must be <= 800`);
+    assert.ok(p.knobs.drone2Cutoff <= 900, `drone2Cutoff (${p.knobs.drone2Cutoff}) must be <= 900`);
+
+    // Resonance tamed from 4.5/4.8 down to 2.6/2.8
+    assert.ok(p.knobs.drone1Res <= 3.0, `drone1Res (${p.knobs.drone1Res}) must be <= 3.0`);
+    assert.ok(p.knobs.drone2Res <= 3.0, `drone2Res (${p.knobs.drone2Res}) must be <= 3.0`);
+
+    // Wavefold drive tamed from 60/65
+    assert.ok(p.knobs.drone1Fold <= 40, `drone1Fold (${p.knobs.drone1Fold}) must be <= 40`);
+    assert.ok(p.knobs.drone2Fold <= 40, `drone2Fold (${p.knobs.drone2Fold}) must be <= 40`);
+
+    // Reverb wet mix is balanced at 50% and NOT turned up to 100%
+    assert.strictEqual(p.knobs.reverbWet, 50, 'reverbWet must be 50%, not pushed to 100%');
+
+    // TIMBRE_TRIM for CS-80 is calibrated to 0.90
+    assert.strictEqual(TIMBRE_TRIM.cs80, 0.90);
+    assert.strictEqual(TIMBRE_TRIM.vangelis, 0.90);
+
+    // Calculated lead-to-drone ratio: lead brass must sit at least +8 dB above Drone 1 bed
+    const leadBusGain = 0.38 * (p.knobs.feltLevel / 100) * TIMBRE_TRIM.cs80;
+    const drone1BusLevel = 0.22 * (p.knobs.drone1Vol / 100);
+    const separationDb = 20 * Math.log10(leadBusGain / drone1BusLevel);
+    assert.ok(separationDb >= 8.0, `Lead CS-80 voice (${separationDb.toFixed(2)} dB) must hold strong separation over Drone 1 bed`);
+  });
+
+  it('preserves rich audible sub-bass cutoff spectrum without crushing to inaudibility', async () => {
+    const ctx = createDSPMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    // Default drone1 cutoff is 650 Hz
+    assert.strictEqual(engine.droneParams[1].cutoff, 650);
+
+    // Switch Drone 1 to sub-bass snap
+    engine.setDroneSnap(1, 'sub-bass');
+    assert.strictEqual(engine.droneSnap[1], 'sub-bass');
+
+    // Sub-bass cutoff must maintain audible upper harmonics (>= 400 Hz for base 650 Hz), not crushed down to 80-125 Hz
+    const filterEvents = engine.drone1.filter1.frequency.events;
+    const lastCutoff = filterEvents[filterEvents.length - 1];
+    assert.ok(lastCutoff.v >= 400, `Sub-bass cutoff (${lastCutoff.v} Hz) must remain audible (>= 400 Hz)`);
+  });
+
+  it('executes smooth micro-gain declick crossfade during octave jumps and frequency slewing on active drone voice', () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 10.0;
+    const drone = new SolarDroneVoice(ctx, ctx.destination, null, 1);
+    drone.setActive(true);
+    drone.setVolume(0.55);
+
+    // Clear event history
+    drone.voiceGain.gain.events = [];
+
+    // Trigger octave jump down into sub-bass (65.41 Hz -> 32.70 Hz)
+    drone.setFrequency(32.70, 0.025);
+
+    // Verify declick crossfade ramps occurred on voiceGain
+    const gainEvents = drone.voiceGain.gain.events;
+    const linearRamps = gainEvents.filter(e => e.type === 'linearRampToValueAtTime');
+    assert.ok(linearRamps.length >= 2, 'Must schedule down and up linear ramps for declick crossfade');
+
+    // Down ramp reaches dipGain <= 0.02 within ~16ms
+    assert.ok(linearRamps[0].v <= 0.02, `Down ramp must dip gain to near-silence, got ${linearRamps[0].v}`);
+    assert.ok(linearRamps[0].t > 10.0 && linearRamps[0].t <= 10.016, 'Down ramp completes within 16ms');
+
+    // Up ramp returns smoothly to full operating volume (0.55) by ~25-36ms
+    assert.strictEqual(linearRamps[1].v, 0.55, 'Up ramp returns to full operating volume');
+    assert.ok(linearRamps[1].t >= 10.020 && linearRamps[1].t <= 10.036, 'Up ramp completes by ~25-36ms');
+  });
+
+  it('isolates inactive Drone 2 from frequency slewing when Drone 1 snap changes while keeping ratio synchronized', async () => {
+    const ctx = createDSPMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    // Drone 2 is inactive by default
+    assert.strictEqual(engine.droneParams[2].active, false);
+    engine.drone2.oscA.frequency.events = [];
+
+    // Switch Drone 1 snap to sub-bass
+    engine.setDroneSnap(1, 'sub-bass');
+
+    // Inactive Drone 2 must NOT have received setTargetAtTime frequency slewing events
+    const drone2FreqEvents = engine.drone2.oscA.frequency.events.filter(e => e.type === 'setTargetAtTime');
+    assert.strictEqual(drone2FreqEvents.length, 0, 'Inactive Drone 2 must not slew frequency when Drone 1 changes snap');
+
+    // But engine.drone2Freq must remain mathematically synchronized (1.5x)
+    assert.ok(Math.abs(engine.drone2Freq - (engine.drone1Freq * 1.5)) < 1e-4, 'drone2Freq ratio must stay synchronized');
+
+    // When Drone 2 is subsequently activated, applyDrone2Snap synchronizes its frequency immediately
+    engine.setDroneActive(2, true);
+    const activatedSlew = engine.drone2.oscA.frequency.events.find(e => e.type === 'setTargetAtTime');
+    assert.ok(activatedSlew, 'Drone 2 must update frequency upon activation');
+    assert.ok(Math.abs(activatedSlew.v - engine.drone2Freq) < 1e-4);
+  });
+
+  it('pre-configures snap frequency and cutoff before opening voice gain when snap button is clicked on inactive drone', async () => {
+    const ctx = createDSPMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+    // Drone 1 starts inactive
+    assert.strictEqual(engine.droneParams[1].active, false);
+
+    let snapRunBeforeActive = false;
+    const origApply = engine.applyDrone1Snap.bind(engine);
+    engine.applyDrone1Snap = () => {
+      snapRunBeforeActive = !engine.drone1.isActive;
+      return origApply();
+    };
+    engine.setDroneActive(1, true);
+    assert.strictEqual(snapRunBeforeActive, true, 'Snap tuning and cutoff must run before drone voice gain opens');
+  });
+
+  it('guards setTapeDrive and setReverbDecay against redundant curve/buffer regenerations', async () => {
+    const ctx = createDSPMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    const origCurve = engine.masterTapeSaturator.curve;
+    engine.setTapeDrive(engine.tapeDrive);
+    assert.strictEqual(engine.masterTapeSaturator.curve, origCurve, 'setTapeDrive must not rebuild curve if drive is unchanged');
+
+    let regenScheduled = false;
+    engine.shimmerReverb._scheduleImpulseRegeneration = () => { regenScheduled = true; };
+    engine.setReverbDecay(engine.reverbParams.decay);
+    assert.strictEqual(regenScheduled, false, 'setReverbDecay must not reschedule impulse regeneration if decay is unchanged');
+  });
+
+  it('supports triggerOnChangeAtEnd in BraunKnob.animateTo to suppress redundant onChange storms', () => {
+    let changeFired = false;
+    const fakeKnob = {
+      value: 50,
+      toNormalized: (v) => v / 100,
+      fromNormalized: (n) => n * 100,
+      setValue: (val, trigger) => {
+        fakeKnob.value = val;
+        if (trigger) changeFired = true;
+      }
+    };
+    fakeKnob.animateTo = BraunKnob.prototype.animateTo.bind(fakeKnob);
+
+    // Call animateTo with duration 0 and triggerOnChangeAtEnd = false
+    fakeKnob.animateTo(80, 0, null, false, false);
+    assert.strictEqual(fakeKnob.value, 80);
+    assert.strictEqual(changeFired, false, 'onChange must not be triggered when triggerOnChangeAtEnd is false');
+
+    // Call animateTo with duration 0 and triggerOnChangeAtEnd = true
+    fakeKnob.animateTo(90, 0, null, false, true);
+    assert.strictEqual(fakeKnob.value, 90);
+    assert.strictEqual(changeFired, true, 'onChange must be triggered when triggerOnChangeAtEnd is true');
+  });
+
+  it('awaits ctx.resume() on AudioEngine.init when AudioContext starts suspended to prevent cold start buffer underruns', async () => {
+    let resumeResolved = false;
+    const ctx = createDSPMockCtx();
+    ctx.state = 'suspended';
+    ctx.resume = async () => {
+      await new Promise(r => setTimeout(r, 20));
+      ctx.state = 'running';
+      resumeResolved = true;
+    };
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+    assert.strictEqual(resumeResolved, true, 'AudioEngine.init must await ctx.resume before completing');
+    assert.strictEqual(ctx.state, 'running', 'AudioContext must be running after init');
+  });
+});
+
 
 
