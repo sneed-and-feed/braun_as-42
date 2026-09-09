@@ -352,7 +352,7 @@ export class AudioEngine {
     this.drone1Midi = midi;
     this.drone1Freq = midiToFrequency(midi, this.a4);
     if (this.drone1) {
-      this.drone1.setFrequency(this.drone1Freq);
+      this.drone1.setFrequency(this.drone1Freq, 0.025);
     }
     return this.drone1Freq;
   }
@@ -375,7 +375,7 @@ export class AudioEngine {
 
     this.drone2Freq = freq;
     if (this.drone2) {
-      this.drone2.setFrequency(freq);
+      this.drone2.setFrequency(freq, 0.025);
     }
     return this.drone2Freq;
   }
@@ -574,8 +574,9 @@ export class AudioEngine {
     this.recorderNode = this.ctx.createScriptProcessor(4096, 2, 2);
     this.recorderNode.onaudioprocess = (e) => {
       if (!this.isRecording) return;
+      const numChannels = e.inputBuffer.numberOfChannels;
       const inputL = e.inputBuffer.getChannelData(0);
-      const inputR = e.inputBuffer.getChannelData(1);
+      const inputR = numChannels > 1 ? e.inputBuffer.getChannelData(1) : inputL;
       this.recordedBuffersL.push(new Float32Array(inputL));
       this.recordedBuffersR.push(new Float32Array(inputR));
       this.recordingLength += inputL.length;
@@ -662,16 +663,21 @@ export class AudioEngine {
     writeString(36, 'data');
     view.setUint32(40, dataSize, true);
 
-    // Write interleaved 16-bit PCM samples with soft clipping
+    // Write interleaved 16-bit PCM samples with soft clipping and NaN protection
     let offset = 44;
     for (let i = 0; i < left.length; i++) {
+      let l = left[i];
+      let r = right[i];
+      if (isNaN(l) || !isFinite(l)) l = 0;
+      if (isNaN(r) || !isFinite(r)) r = 0;
+
       // Left channel
-      let sL = Math.max(-1, Math.min(1, left[i]));
+      let sL = Math.max(-1, Math.min(1, l));
       view.setInt16(offset, sL < 0 ? sL * 0x8000 : sL * 0x7FFF, true);
       offset += 2;
 
       // Right channel
-      let sR = Math.max(-1, Math.min(1, right[i]));
+      let sR = Math.max(-1, Math.min(1, r));
       view.setInt16(offset, sR < 0 ? sR * 0x8000 : sR * 0x7FFF, true);
       offset += 2;
     }
