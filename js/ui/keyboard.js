@@ -815,13 +815,13 @@ export class BraunPlaySurface {
           keyEl._isHeld = true;
           keyEl.classList.add('is-active');
           keyEl.classList.add('is-pressed');
-          const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0, true);
           const keyIdentifier = e.code || e.key;
           const existing = this.activeHeldKeys.get(keyIdentifier);
           if (existing && existing.voiceOrPromise) {
             if (typeof existing.voiceOrPromise.release === 'function') existing.voiceOrPromise.release();
             else if (existing.voiceOrPromise && typeof existing.voiceOrPromise.then === 'function') existing.voiceOrPromise.then(v => v?.release?.());
           }
+          const voiceOrPromise = this.playNote(freq, midi, 0.65, 20.0, true);
           this.activeHeldKeys.set(keyIdentifier, { keyEl, voiceOrPromise, code: e.code, key: e.key });
         }
         return;
@@ -835,12 +835,12 @@ export class BraunPlaySurface {
           const voicingId = btn.getAttribute('data-chord');
           btn._isHeld = true;
           btn.classList.add('is-active');
-          const session = this.startChord(voicingId, true);
           const chordIdentifier = e.code || e.key;
           const existingChord = this.activeHeldChords.get(chordIdentifier);
           if (existingChord && existingChord.session) {
             this.stopChordSession(existingChord.session);
           }
+          const session = this.startChord(voicingId, true);
           this.activeHeldChords.set(chordIdentifier, { btn, session, code: e.code, key: e.key });
         }
         return;

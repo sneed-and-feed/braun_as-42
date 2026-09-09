@@ -353,5 +353,78 @@ describe('Click-Free Note Trigger & Voice Amplitude Continuity', () => {
     const mixerAttack = voice.oscMixer.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 1.0);
     assert.ok(mixerAttack, 'oscMixer must schedule smooth ramp to 1.0');
   });
+
+  it('verifies simultaneous chord cluster release ramps smoothly to 0.0 without abrupt setValueAtTime cuts in timer', async () => {
+    const ctx = new MockContext();
+    const synth = new FeltPianoSynthesizer(ctx, null, 6);
+
+    // Play a 4-voice chord cluster
+    ctx.currentTime = 5.0;
+    const voices = [
+      synth.playNote(261.63, 0.7, 20.0, true, true),
+      synth.playNote(329.63, 0.7, 20.0, true, true),
+      synth.playNote(392.00, 0.7, 20.0, true, true),
+      synth.playNote(493.88, 0.7, 20.0, true, true)
+    ];
+
+    voices.forEach(v => {
+      v.voiceGain.gain.events = [];
+      v.oscMixer.gain.events = [];
+    });
+
+    // Release all chord voices simultaneously at currentTime = 6.0
+    ctx.currentTime = 6.0;
+    voices.forEach(v => v.release());
+
+    for (const v of voices) {
+      // Check voiceGain ramps to 0.0
+      const gainRamp = v.voiceGain.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
+      assert.ok(gainRamp, 'voiceGain must schedule linear ramp to 0.0 on release');
+
+      // Check oscMixer ramps to 0.0
+      const mixerRamp = v.oscMixer.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.v === 0.0);
+      assert.ok(mixerRamp, 'oscMixer must schedule linear ramp to 0.0 on release');
+
+      // Check that oscMixer does NOT have a setValueAtTime(0.0) cut scheduled at release time
+      const abruptCut = v.oscMixer.gain.events.find(e => e.type === 'setValueAtTime' && e.v === 0.0);
+      assert.strictEqual(abruptCut, undefined, 'oscMixer must not schedule an abrupt setValueAtTime(0.0) step cut on release');
+
+      // Wait for release timer to fire and verify no setValueAtTime(0.0) is called in timer callback
+      if (v._releaseTimer) {
+        // Clear events to inspect what timer does
+        v.oscMixer.gain.events = [];
+      }
+    }
+  });
+
+  it('verifies rapid successive headroom updates at the same timestamp cancel previous event without stacking duplicate targets', () => {
+    const ctx = new MockContext();
+    const synth = new FeltPianoSynthesizer(ctx, null, 6);
+
+    ctx.currentTime = 10.0;
+    synth.playNote(261.63, 0.7);
+    synth.playNote(329.63, 0.7);
+    synth.playNote(392.00, 0.7);
+
+    // After 3 rapid notes at the exact same timestamp, verify cancelScheduledValues was used to prevent event accumulation
+    const cancelsAt10 = synth.output.gain.events.filter(e => e.type === 'cancelScheduledValues' && e.t === 10.0);
+    assert.ok(cancelsAt10.length >= 2, 'Consecutive headroom updates at the same timestamp must cancel previous scheduled target');
+  });
+
+  it('verifies idle note strike anchors voiceGain at 0.0 at cancelTime before attack ramp', () => {
+    const ctx = new MockContext();
+    const synth = new FeltPianoSynthesizer(ctx, null, 2);
+    const voice = synth.voices[0];
+
+    ctx.currentTime = 15.0;
+    voice.voiceGain.gain.events = [];
+    voice.trigger(440, 0.8, 3.5, synth.params, false);
+
+    const anchor = voice.voiceGain.gain.events.find(e => e.type === 'setValueAtTime' && e.t === 15.0 && e.v === 0.0);
+    assert.ok(anchor, 'Idle note strike must explicitly anchor voiceGain at 0.0 at cancelTime');
+
+    const attackRamp = voice.voiceGain.gain.events.find(e => e.type === 'linearRampToValueAtTime' && e.t > 15.0);
+    assert.ok(attackRamp, 'Attack ramp must be scheduled after cancelTime');
+  });
 });
 

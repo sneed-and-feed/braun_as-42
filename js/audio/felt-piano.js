@@ -588,8 +588,10 @@ export class FeltPianoVoice {
           hHeld = false;
         }
       }
-      if (!hHeld) {
+      if (!hHeld && typeof this.hammerGain.gain.cancelScheduledValues === 'function') {
         this.hammerGain.gain.cancelScheduledValues(cancelTime);
+      }
+      if (typeof this.hammerGain.gain.setValueAtTime === 'function' && (!this.hammerBuffer || hammerThump <= 0.01)) {
         this.hammerGain.gain.setValueAtTime(0.0, cancelTime);
       }
     }
@@ -740,29 +742,11 @@ export class FeltPianoVoice {
           held = false;
         }
       }
-      if (!held) {
+      if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
         this.voiceGain.gain.cancelScheduledValues(cancelTime);
-        const curG = (this.voiceGain && this.voiceGain.gain && typeof this.voiceGain.gain.value === 'number' && isFinite(this.voiceGain.gain.value))
-          ? this.voiceGain.gain.value
-          : 0.0;
-        if (curG <= 0.0001) {
-          if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
-            this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
-          } else {
-            this.voiceGain.gain.value = 0.0;
-          }
-        } else {
-          if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
-            this.voiceGain.gain.setValueAtTime(curG, cancelTime);
-          }
-          if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
-            this.voiceGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
-          }
-        }
-      } else {
-        if (this.voiceGain.gain.value <= 0 && typeof this.voiceGain.gain.setValueAtTime === 'function') {
-          this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
-        }
+      }
+      if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+        this.voiceGain.gain.setValueAtTime(0.0, cancelTime);
       }
     }
     // When stealing, the voice gain has already smoothly ramped down to 0.0001 at noteStartTime.
@@ -822,22 +806,18 @@ export class FeltPianoVoice {
 
     // Mark inactive when done and update polyphonic headroom (only when not continuously held)
     if (!hold) {
-      const noteTotalDuration = isCS80 ? (Math.max(duration || 3.5, 3.5) * decayMultiplier) : Math.max(baseDecay, (duration || 3.5) * decayMultiplier);
-      const totalLifetime = (noteTotalDuration + releaseTime + (isStealing ? declickRampTime : 0)) * 1000;
+      const finalRampEnd = this._lastDecayEndTarget ? (this._lastDecayEndTarget + 0.005) : (noteStartTime + 5.0);
+      const decayLifetimeMs = Math.max(500, Math.ceil((finalRampEnd + 0.15 - cancelTime) * 1000));
       this._decayTimer = setTimeout(() => {
         if (this.startTime === noteStartTime && !this.isHold) {
           this.isActive = false;
-          if (this.oscMixer && this.oscMixer.gain) {
-            this.oscMixer.gain.value = 0.0;
-            if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
-              this.oscMixer.gain.setValueAtTime(0.0, this.ctx.currentTime);
-            }
-          }
+          this._isReleased = false;
           if (this.synth) {
             this.synth._updatePolyphonicHeadroom();
           }
         }
-      }, totalLifetime);
+        this._decayTimer = null;
+      }, decayLifetimeMs);
     }
   }
 
@@ -873,9 +853,12 @@ export class FeltPianoVoice {
         held = false;
       }
     }
-    if (!held) {
+    if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
       this.voiceGain.gain.cancelScheduledValues(cancelTime);
-      this.voiceGain.gain.setValueAtTime(curGain, cancelTime);
+    }
+    const safeCurGain = Math.max(0.0002, curGain);
+    if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+      this.voiceGain.gain.setValueAtTime(safeCurGain, cancelTime);
     }
     const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
     const relDuration = isCS80 ? 0.65 : 0.40;
@@ -884,8 +867,29 @@ export class FeltPianoVoice {
     if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
       this.voiceGain.gain.linearRampToValueAtTime(0.0, releaseTarget + 0.005);
     }
-    if (this.oscMixer && this.oscMixer.gain && typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
-      this.oscMixer.gain.linearRampToValueAtTime(0.0, releaseTarget + 0.005);
+
+    if (this.oscMixer && this.oscMixer.gain) {
+      let mHeld = false;
+      if (typeof this.oscMixer.gain.cancelAndHoldAtTime === 'function') {
+        try {
+          this.oscMixer.gain.cancelAndHoldAtTime(cancelTime);
+          mHeld = true;
+        } catch (e) {
+          mHeld = false;
+        }
+      }
+      if (!mHeld && typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
+        this.oscMixer.gain.cancelScheduledValues(cancelTime);
+      }
+      const curMixer = (typeof this.oscMixer.gain.value === 'number' && isFinite(this.oscMixer.gain.value))
+        ? Math.max(0.0, Math.min(1.0, this.oscMixer.gain.value))
+        : 1.0;
+      if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
+        this.oscMixer.gain.setValueAtTime(curMixer, cancelTime);
+      }
+      if (typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
+        this.oscMixer.gain.linearRampToValueAtTime(0.0, releaseTarget + 0.005);
+      }
     }
     this._currentVoiceGain = 0.0001;
     if (isCS80 && this.currentFreq) {
@@ -905,21 +909,17 @@ export class FeltPianoVoice {
     }
 
     const releaseStartTime = this.startTime;
+    const releaseLifetimeMs = Math.max(100, Math.ceil((releaseTarget + 0.15 - cancelTime) * 1000));
     this._releaseTimer = setTimeout(() => {
       if (this.startTime === releaseStartTime && !this.isHold) {
         this.isActive = false;
-        if (this.oscMixer && this.oscMixer.gain) {
-          this.oscMixer.gain.value = 0.0;
-          if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
-            this.oscMixer.gain.setValueAtTime(0.0, this.ctx.currentTime);
-          }
-        }
+        this._isReleased = false;
         if (this.synth) {
           this.synth._updatePolyphonicHeadroom();
         }
       }
       this._releaseTimer = null;
-    }, Math.round((relDuration + 0.05) * 1000));
+    }, releaseLifetimeMs);
   }
 }
 
@@ -1066,19 +1066,29 @@ export class FeltPianoSynthesizer {
       ? this._lastHeadroomTarget + ((this._headroomStartGain ?? this._lastHeadroomTarget) - this._lastHeadroomTarget) * Math.exp(-elapsed / tau)
       : ((this.output.gain.value !== undefined && this.output.gain.value !== null) ? this.output.gain.value : targetGain);
 
-    let held = false;
-    if (typeof this.output.gain.cancelAndHoldAtTime === 'function') {
-      try {
-        this.output.gain.cancelAndHoldAtTime(cancelTime);
-        held = true;
-      } catch (e) {
-        held = false;
+    // If rescheduling at the exact same audio timestamp, cancel scheduled values to replace previous target without stacking
+    if (this._headroomStartTime !== undefined && Math.abs(cancelTime - this._headroomStartTime) < 1e-4) {
+      if (typeof this.output.gain.cancelScheduledValues === 'function') {
+        this.output.gain.cancelScheduledValues(cancelTime);
       }
-    }
-    if (!held && typeof this.output.gain.cancelScheduledValues === 'function') {
-      this.output.gain.cancelScheduledValues(cancelTime);
       if (typeof this.output.gain.setValueAtTime === 'function') {
         this.output.gain.setValueAtTime(curGain, cancelTime);
+      }
+    } else {
+      let held = false;
+      if (typeof this.output.gain.cancelAndHoldAtTime === 'function') {
+        try {
+          this.output.gain.cancelAndHoldAtTime(cancelTime);
+          held = true;
+        } catch (e) {
+          held = false;
+        }
+      }
+      if (!held && typeof this.output.gain.cancelScheduledValues === 'function') {
+        this.output.gain.cancelScheduledValues(cancelTime);
+        if (typeof this.output.gain.setValueAtTime === 'function') {
+          this.output.gain.setValueAtTime(curGain, cancelTime);
+        }
       }
     }
     this._headroomStartGain = curGain;
