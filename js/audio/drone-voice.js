@@ -34,11 +34,14 @@ export class SolarDroneVoice {
     this.fold = 0.45;
     this.cutoff = 680;
     this._currentCutoff = this.cutoff;
+    this._baseCutoff = 680;
     this.resonance = 3.5;
+    this._baseResonance = 3.5;
     this.lfoRate = 0.12;
     this.lfoDepth = 180;
     this.volume = 0.55;
     this._currentGain = 0.0;
+    this._lastDeclickTime = -1;
     this.pan = voiceId === 1 ? -0.45 : 0.45;
     this.isActive = false;
 
@@ -334,6 +337,51 @@ export class SolarDroneVoice {
   }
 
   /**
+   * Micro-gain declick crossfade (15–30 ms) during pitch jumps/frequency slewing
+   * Dips output gain to near-silence for ~12ms and ramps back up to volume by ~25-30ms,
+   * preventing pitch-slew transients from blasting into tape delay and shimmer reverb.
+   * @param {number} [crossfadeTime=0.025] - Total crossfade duration in seconds
+   */
+  declickTransition(crossfadeTime = 0.025) {
+    if (!this.isActive || !this.voiceGain || !this.voiceGain.gain) return;
+    const now = this.ctx.currentTime;
+    if (this._lastDeclickTime !== undefined && Math.abs(now - this._lastDeclickTime) < 0.005) {
+      return;
+    }
+    this._lastDeclickTime = now;
+
+    const curVol = (typeof this._currentGain === 'number' && isFinite(this._currentGain)) ? this._currentGain : this.volume;
+    if (curVol <= 0.001) return;
+
+    let held = false;
+    if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
+      try {
+        this.voiceGain.gain.cancelAndHoldAtTime(now);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
+      this.voiceGain.gain.cancelScheduledValues(now);
+      if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+        this.voiceGain.gain.setValueAtTime(curVol, now);
+      }
+    }
+
+    const dipGain = Math.max(0.0001, curVol * 0.02);
+    const halfTime = Math.max(0.008, Math.min(0.015, crossfadeTime * 0.45));
+    const fullTime = Math.max(0.018, Math.min(0.035, crossfadeTime));
+
+    if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
+      this.voiceGain.gain.linearRampToValueAtTime(dipGain, now + halfTime);
+      this.voiceGain.gain.linearRampToValueAtTime(curVol, now + fullTime);
+    } else if (typeof this.voiceGain.gain.setTargetAtTime === 'function') {
+      this.voiceGain.gain.setTargetAtTime(curVol, now, 0.025);
+    }
+  }
+
+  /**
    * Set root pitch with smooth 20-30ms exponential frequency slewing to prevent phase cracking
    * @param {number} freq - Base frequency in Hz
    * @param {number} [timeConstant=0.025] - Slew time constant in seconds (20-30ms)
@@ -348,6 +396,11 @@ export class SolarDroneVoice {
     const prevB = (this.oscB.frequency.value !== undefined && this.oscB.frequency.value !== null && isFinite(this.oscB.frequency.value) && this.oscB.frequency.value > 0)
       ? this.oscB.frequency.value
       : (prevA + this.subHertzBeat);
+
+    // Smooth micro-gain declick crossfade during pitch jumps/frequency slewing when voice is active
+    if (this.isActive && Math.abs(targetFreq - prevA) >= 2.0) {
+      this.declickTransition(tau);
+    }
 
     this.currentFreq = targetFreq;
     this.baseFreq = targetFreq;
@@ -465,40 +518,52 @@ export class SolarDroneVoice {
     }
     const root = this.rootFreq || this.baseFreq;
     let freq = root;
-    let cutoffTarget = this.cutoff;
+    if (this._baseCutoff === undefined) {
+      this._baseCutoff = this.cutoff;
+    }
+    if (this._baseResonance === undefined) {
+      this._baseResonance = this.resonance;
+    }
+    const baseCutoff = this._baseCutoff;
+    const baseRes = this._baseResonance;
+    let cutoffTarget = baseCutoff;
 
     if (this.voiceId === 1) {
       if (snapKey === 'sub-bass') {
         freq = root * 0.5;
-        cutoffTarget = Math.max(120, this.cutoff * 0.75);
+        cutoffTarget = Math.min(125, Math.max(80, baseCutoff * 0.18));
+        this.setResonance(Math.min(1.6, baseRes), false);
       } else if (snapKey === 'deep-tonic') {
         freq = root;
-        cutoffTarget = this.cutoff;
+        cutoffTarget = baseCutoff;
+        this.setResonance(baseRes, false);
       } else if (snapKey === 'warm-root') {
         freq = root * 2.0;
-        cutoffTarget = Math.min(2200, this.cutoff * 1.15);
+        cutoffTarget = Math.min(2200, baseCutoff * 1.15);
+        this.setResonance(baseRes, false);
       } else if (snapKey === 'octave-up') {
         freq = root * 4.0;
-        cutoffTarget = Math.min(3600, this.cutoff * 1.35);
+        cutoffTarget = Math.min(3600, baseCutoff * 1.35);
+        this.setResonance(baseRes, false);
       }
     } else {
       if (snapKey === 'perfect-5th') {
         freq = root * 1.5;
-        cutoffTarget = this.cutoff;
+        cutoffTarget = baseCutoff;
       } else if (snapKey === 'sus-4th') {
         freq = root * (4 / 3);
-        cutoffTarget = this.cutoff;
+        cutoffTarget = baseCutoff;
       } else if (snapKey === 'major-9th') {
         freq = root * (9 / 8);
-        cutoffTarget = this.cutoff;
+        cutoffTarget = baseCutoff;
       } else if (snapKey === 'beating-unison') {
         freq = root;
-        cutoffTarget = this.cutoff;
+        cutoffTarget = baseCutoff;
         this.setBeatingHz(0.35, timeConstant);
       }
     }
     this.setFrequency(freq, timeConstant);
-    this.setCutoff(cutoffTarget, timeConstant);
+    this.setCutoff(cutoffTarget, timeConstant, false);
     return freq;
   }
 
@@ -530,14 +595,18 @@ export class SolarDroneVoice {
    * Set filter cutoff in Hz with smooth slewing
    * @param {number} hz - Filter cutoff frequency in Hz
    * @param {number} [timeConstant=0.025] - Slew time constant in seconds
+   * @param {boolean} [isBase=true] - Whether this updates the voice's base cutoff
    */
-  setCutoff(hz, timeConstant = 0.025) {
+  setCutoff(hz, timeConstant = 0.025, isBase = true) {
     const targetHz = Math.max(40, Math.min(14000, hz));
     const prevCutoff = (this.filter1.frequency.value !== undefined && this.filter1.frequency.value !== null && isFinite(this.filter1.frequency.value))
       ? this.filter1.frequency.value
       : (this._currentCutoff || this.cutoff);
     this.cutoff = targetHz;
     this._currentCutoff = targetHz;
+    if (isBase) {
+      this._baseCutoff = targetHz;
+    }
     const now = this.ctx.currentTime;
     const tau = Math.max(0.015, Math.min(0.05, timeConstant));
     this._updateLfoModulation(now);
@@ -596,9 +665,14 @@ export class SolarDroneVoice {
 
   /**
    * Set filter resonance
+   * @param {number} q - Filter Q factor
+   * @param {boolean} [isBase=true] - Whether this updates the voice's base resonance
    */
-  setResonance(q) {
+  setResonance(q, isBase = true) {
     this.resonance = Math.max(0.5, Math.min(12.0, q));
+    if (isBase) {
+      this._baseResonance = this.resonance;
+    }
     const qSqrt = Math.sqrt(this.resonance);
     const now = this.ctx.currentTime;
     if (typeof this.filter1.Q.cancelAndHoldAtTime === 'function') {

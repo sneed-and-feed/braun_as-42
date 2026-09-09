@@ -143,21 +143,21 @@ export const PRESETS = {
       feltHammer: 20,
       feltSymp: 30,
       feltDecay: 1.8,
-      feltLevel: 82,
+      feltLevel: 88,
       drone1Beat: 0.85,
       drone1Detune: 4.5,
-      drone1Fold: 60,
-      drone1Cutoff: 1200,
-      drone1Res: 4.5,
+      drone1Fold: 32,
+      drone1Cutoff: 600,
+      drone1Res: 2.6,
       drone1Lfo: 0.25,
-      drone1Vol: 55,
+      drone1Vol: 42,
       drone2Beat: 1.20,
       drone2Detune: -5.0,
-      drone2Fold: 65,
-      drone2Cutoff: 1450,
-      drone2Res: 4.8,
+      drone2Fold: 36,
+      drone2Cutoff: 750,
+      drone2Res: 2.8,
       drone2Lfo: 0.30,
-      drone2Vol: 55,
+      drone2Vol: 38,
       delayTime: 380,
       delayFeedback: 52,
       delayWow: 40,
@@ -1718,6 +1718,14 @@ export class AmbientApp {
         if (!this.isPowerOn) {
           await this.startAudio();
         }
+        snapBtns.forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+        const snapKey = btn.getAttribute('data-snap');
+        this.engine.setDroneSnap(id, snapKey);
+        if (id === 2 && snapKey === 'beating-unison') {
+          const beatKnob = this.knobs[`${prefix}Beat`];
+          if (beatKnob) beatKnob.setValue(0.35, false);
+        }
         // Auto-activate drone voice so user immediately hears the snapped note
         if (!this.engine.droneParams[id].active) {
           this.engine.setDroneActive(id, true);
@@ -1726,14 +1734,6 @@ export class AmbientApp {
             const textEl = activeBtn.querySelector('.braun-status-text');
             if (textEl) textEl.textContent = `DRONE ${id} ON`;
           }
-        }
-        snapBtns.forEach(b => b.classList.remove('is-active'));
-        btn.classList.add('is-active');
-        const snapKey = btn.getAttribute('data-snap');
-        this.engine.setDroneSnap(id, snapKey);
-        if (id === 2 && snapKey === 'beating-unison') {
-          const beatKnob = this.knobs[`${prefix}Beat`];
-          if (beatKnob) beatKnob.setValue(0.35, false);
         }
       });
     });

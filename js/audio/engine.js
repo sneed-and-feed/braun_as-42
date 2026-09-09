@@ -514,7 +514,16 @@ export class AudioEngine {
 
     // Update Drone 1 & 2 root notes smoothly according to active snap presets
     this.applyDrone1Snap();
-    this.applyDrone2Snap();
+    if (this.droneParams[2] && this.droneParams[2].active) {
+      this.applyDrone2Snap();
+    } else {
+      const f1 = this.drone1Freq || (this.drone1 ? this.drone1.baseFreq : midiToFrequency(36 + this.rootPitchClass, this.a4));
+      const snap2 = this.droneSnap[2] || 'perfect-5th';
+      if (snap2 === 'perfect-5th') this.drone2Freq = f1 * 1.5;
+      else if (snap2 === 'sus-4th') this.drone2Freq = f1 * (4 / 3);
+      else if (snap2 === 'major-9th') this.drone2Freq = f1 * (9 / 8);
+      else if (snap2 === 'beating-unison') this.drone2Freq = f1;
+    }
   }
 
   /**
@@ -527,7 +536,16 @@ export class AudioEngine {
     this.droneSnap[voiceId] = snapKey;
     if (voiceId === 1) {
       this.applyDrone1Snap();
-      this.applyDrone2Snap();
+      if (this.droneParams[2] && this.droneParams[2].active) {
+        this.applyDrone2Snap();
+      } else {
+        const f1 = this.drone1Freq || (this.drone1 ? this.drone1.baseFreq : midiToFrequency(36 + this.rootPitchClass, this.a4));
+        const snap2 = this.droneSnap[2] || 'perfect-5th';
+        if (snap2 === 'perfect-5th') this.drone2Freq = f1 * 1.5;
+        else if (snap2 === 'sus-4th') this.drone2Freq = f1 * (4 / 3);
+        else if (snap2 === 'major-9th') this.drone2Freq = f1 * (9 / 8);
+        else if (snap2 === 'beating-unison') this.drone2Freq = f1;
+      }
       return this.drone1Freq;
     } else {
       return this.applyDrone2Snap();
@@ -544,15 +562,28 @@ export class AudioEngine {
     else if (snapKey === 'octave-up') midi = 60 + root; // C4 (Octave Up)
 
     this.drone1Midi = midi;
-    this.drone1Freq = midiToFrequency(midi, this.a4);
+    const newFreq = midiToFrequency(midi, this.a4);
+    const oldFreq = this.drone1Freq;
+    this.drone1Freq = newFreq;
+
     if (this.drone1) {
+      if (this.isInitialized && this.drone1.isActive && Math.abs(newFreq - (oldFreq || newFreq)) >= 1.0) {
+        if (typeof this.drone1.declickTransition === 'function') {
+          this.drone1.declickTransition(0.025);
+        }
+      }
       this.drone1.setFrequency(this.drone1Freq, 0.025);
       const baseCutoff = this.droneParams[1].cutoff || 650;
-      const targetCutoff = snapKey === 'sub-bass' ? Math.max(120, baseCutoff * 0.75) :
+      const targetCutoff = snapKey === 'sub-bass' ? Math.min(125, Math.max(80, baseCutoff * 0.18)) :
                            snapKey === 'octave-up' ? Math.min(3600, baseCutoff * 1.35) :
                            snapKey === 'warm-root' ? Math.min(2200, baseCutoff * 1.15) : baseCutoff;
       if (typeof this.drone1.setCutoff === 'function') {
-        this.drone1.setCutoff(targetCutoff, 0.025);
+        this.drone1.setCutoff(targetCutoff, 0.025, false);
+      }
+      const baseRes = this.droneParams[1].res || 3.5;
+      const targetRes = snapKey === 'sub-bass' ? Math.min(1.6, baseRes) : baseRes;
+      if (typeof this.drone1.setResonance === 'function') {
+        this.drone1.setResonance(targetRes, false);
       }
     }
     return this.drone1Freq;
@@ -577,9 +608,9 @@ export class AudioEngine {
     this.drone2Freq = freq;
     if (this.drone2) {
       this.drone2.setFrequency(freq, 0.025);
-      const baseCutoff = this.droneParams[2].cutoff || 850;
       if (typeof this.drone2.setCutoff === 'function') {
-        this.drone2.setCutoff(baseCutoff, 0.025);
+        const baseCutoff = this.droneParams[2].cutoff || 850;
+        this.drone2.setCutoff(baseCutoff, 0.025, false);
       }
     }
     return this.drone2Freq;
@@ -643,6 +674,12 @@ export class AudioEngine {
   setDroneActive(id, active) {
     const voiceId = Number(id) === 2 ? 2 : 1;
     this.droneParams[voiceId].active = active;
+    if (voiceId === 1 && active) {
+      this.applyDrone1Snap();
+    }
+    if (voiceId === 2 && active) {
+      this.applyDrone2Snap();
+    }
     const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) {
       return drone.setActive(active);
@@ -709,14 +746,29 @@ export class AudioEngine {
     const voiceId = Number(id) === 2 ? 2 : 1;
     this.droneParams[voiceId].cutoff = hz;
     const drone = voiceId === 1 ? this.drone1 : this.drone2;
-    if (drone) drone.setCutoff(hz);
+    if (drone) {
+      if (voiceId === 1 && this.droneSnap[1] === 'sub-bass') {
+        const targetCutoff = Math.min(125, Math.max(80, hz * 0.18));
+        drone.setCutoff(targetCutoff, 0.025, false);
+        drone._baseCutoff = hz;
+      } else {
+        drone.setCutoff(hz, 0.025, true);
+      }
+    }
   }
 
   setDroneResonance(id, q) {
     const voiceId = Number(id) === 2 ? 2 : 1;
     this.droneParams[voiceId].res = q;
     const drone = voiceId === 1 ? this.drone1 : this.drone2;
-    if (drone) drone.setResonance(q);
+    if (drone) {
+      if (voiceId === 1 && this.droneSnap[1] === 'sub-bass') {
+        drone.setResonance(Math.min(1.6, q), false);
+        drone._baseResonance = q;
+      } else {
+        drone.setResonance(q, true);
+      }
+    }
   }
 
   setDroneLfo(id, hz) {
