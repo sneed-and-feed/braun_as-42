@@ -42,6 +42,9 @@ export class SolarDroneVoice {
     this._lastDeclickTime = -1;
     this.pan = voiceId === 1 ? -0.45 : 0.45;
     this.isActive = false;
+    this.isSubBass = false;
+    this.subBassGainTrim = 1.0;
+    this._shaperNeedsUpdate = false;
 
     this._buildGraph();
   }
@@ -335,9 +338,36 @@ export class SolarDroneVoice {
   }
 
   /**
-   * Micro-gain declick crossfade (15–30 ms) during pitch jumps/frequency slewing
-   * Dips output gain to near-silence for ~12ms and ramps back up to volume by ~25-30ms,
+   * Enable or disable dedicated sub-bass mode on Voice 1.
+   * When enabled:
+   * - Bypasses makeWavefoldCurve and routes through soft-saturation curve (tanh/makeSoftClipCurve)
+   *   to preserve 100% of the 32.7 Hz fundamental and generate warm 2nd/3rd harmonics without negative peak inversion
+   * - Applies +4.6 dB gain compensation (1.70x) to counteract equal-loudness contour low-end roll-off
+   * @param {boolean} isSubBass
+   */
+  setSubBass(isSubBass) {
+    const sub = Boolean(isSubBass);
+    this.isSubBass = sub;
+    this.subBassGainTrim = sub ? 1.70 : 1.0;
+    this._shaperNeedsUpdate = true;
+    this.setWavefold(this.drive, this.fold);
+    if (this.isActive && this.voiceGain && this.voiceGain.gain) {
+      const now = this.ctx.currentTime;
+      const targetGain = this.volume * this.subBassGainTrim;
+      this._currentGain = targetGain;
+      if (typeof this.voiceGain.gain.setTargetAtTime === 'function') {
+        this.voiceGain.gain.setTargetAtTime(targetGain, now, 0.04);
+      } else {
+        this.voiceGain.gain.value = targetGain;
+      }
+    }
+  }
+
+  /**
+   * Micro-gain declick crossfade during pitch jumps/frequency slewing
+   * Dips output gain to near-silence during frequency transition and ramps back up to volume,
    * preventing pitch-slew transients from blasting into tape delay and shimmer reverb.
+   * Supports extended crossfade windows (65-75ms, ~2 full cycles of 32.7 Hz) for sub-bass transitions.
    * @param {number} [crossfadeTime=0.025] - Total crossfade duration in seconds
    */
   declickTransition(crossfadeTime = 0.025) {
@@ -348,7 +378,8 @@ export class SolarDroneVoice {
     }
     this._lastDeclickTime = now;
 
-    const curVol = (typeof this._currentGain === 'number' && isFinite(this._currentGain)) ? this._currentGain : this.volume;
+    const baseVol = this.volume * (this.subBassGainTrim || 1.0);
+    const curVol = (typeof this._currentGain === 'number' && isFinite(this._currentGain)) ? this._currentGain : baseVol;
     if (curVol <= 0.001) return;
 
     let held = false;
@@ -368,8 +399,8 @@ export class SolarDroneVoice {
     }
 
     const dipGain = Math.max(0.0001, curVol * 0.02);
-    const halfTime = Math.max(0.008, Math.min(0.015, crossfadeTime * 0.45));
-    const fullTime = Math.max(0.018, Math.min(0.035, crossfadeTime));
+    const halfTime = Math.max(0.008, Math.min(0.035, crossfadeTime * 0.45));
+    const fullTime = Math.max(0.018, Math.min(0.075, crossfadeTime));
 
     if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
       this.voiceGain.gain.linearRampToValueAtTime(dipGain, now + halfTime);
@@ -521,7 +552,7 @@ export class SolarDroneVoice {
     if (this.voiceId === 1) {
       if (snapKey === 'sub-bass') {
         freq = root * 0.5;
-        cutoffTarget = Math.max(120, this.cutoff * 0.75);
+        cutoffTarget = 140;
       } else if (snapKey === 'deep-tonic') {
         freq = root;
         cutoffTarget = this.cutoff;
@@ -550,6 +581,15 @@ export class SolarDroneVoice {
     }
     this.setFrequency(freq, timeConstant);
     this.setCutoff(cutoffTarget, timeConstant);
+    if (this.voiceId === 1) {
+      this.setSubBass(snapKey === 'sub-bass');
+      if (snapKey === 'sub-bass') {
+        this.setBeatingHz(0.0, timeConstant);
+        this.setDetuneCents(0.0, timeConstant);
+        this.setResonance(0.5);
+        this.setLfo(this.lfoRate, 12);
+      }
+    }
     return freq;
   }
 
@@ -569,12 +609,17 @@ export class SolarDroneVoice {
   setWavefold(drive, fold) {
     const d = Math.max(0.5, Math.min(4.0, drive));
     const f = Math.max(0.0, Math.min(1.0, fold));
-    if (this.shaper && this.shaper.curve && Math.abs(this.drive - d) < 0.005 && Math.abs(this.fold - f) < 0.005) {
+    if (this.shaper && this.shaper.curve && Math.abs(this.drive - d) < 0.005 && Math.abs(this.fold - f) < 0.005 && !this._shaperNeedsUpdate) {
       return;
     }
     this.drive = d;
     this.fold = f;
-    this.shaper.curve = makeWavefoldCurve(2048, this.drive, this.fold);
+    this._shaperNeedsUpdate = false;
+    if (this.isSubBass) {
+      this.shaper.curve = makeSoftClipCurve(2048, 1.25 + f * 0.45);
+    } else {
+      this.shaper.curve = makeWavefoldCurve(2048, this.drive, this.fold);
+    }
   }
 
   /**
@@ -698,10 +743,11 @@ export class SolarDroneVoice {
    */
   setVolume(v) {
     this.volume = Math.max(0, Math.min(1.0, v));
+    const effectiveGain = this.volume * (this.subBassGainTrim || 1.0);
     if (this.isActive && this.voiceGain && this.voiceGain.gain) {
       const now = this.ctx.currentTime;
-      const prevGain = (this._currentGain !== undefined) ? this._currentGain : this.volume;
-      this._currentGain = this.volume;
+      const prevGain = (this._currentGain !== undefined) ? this._currentGain : effectiveGain;
+      this._currentGain = effectiveGain;
       let held = false;
       if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
         try {
@@ -718,9 +764,9 @@ export class SolarDroneVoice {
         }
       }
       if (typeof this.voiceGain.gain.setTargetAtTime === 'function') {
-        this.voiceGain.gain.setTargetAtTime(this.volume, now, 0.04);
+        this.voiceGain.gain.setTargetAtTime(effectiveGain, now, 0.04);
       } else {
-        this.voiceGain.gain.value = this.volume;
+        this.voiceGain.gain.value = effectiveGain;
       }
     }
   }
@@ -731,8 +777,9 @@ export class SolarDroneVoice {
   setActive(active) {
     this.isActive = Boolean(active);
     const now = this.ctx.currentTime;
-    const targetGain = this.isActive ? this.volume : 0.0;
-    const prevGain = (this._currentGain !== undefined) ? this._currentGain : (this.isActive ? 0.0 : this.volume);
+    const effectiveGain = this.volume * (this.subBassGainTrim || 1.0);
+    const targetGain = this.isActive ? effectiveGain : 0.0;
+    const prevGain = (this._currentGain !== undefined) ? this._currentGain : (this.isActive ? 0.0 : effectiveGain);
     this._currentGain = targetGain;
 
     let held = false;

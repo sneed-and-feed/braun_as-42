@@ -664,7 +664,7 @@ describe('Vangelis CS-80 Preset Rebalance & Sub-Bass Stability', () => {
     assert.ok(separationDb >= 8.0, `Lead CS-80 voice (${separationDb.toFixed(2)} dB) must hold strong separation over Drone 1 bed`);
   });
 
-  it('preserves rich audible sub-bass cutoff spectrum without crushing to inaudibility', async () => {
+  it('preserves rich audible sub-bass cutoff spectrum without crushing or nasal wah-wah ringing', async () => {
     const ctx = createDSPMockCtx();
     const engine = new AudioEngine(ctx);
     await engine.init();
@@ -676,10 +676,20 @@ describe('Vangelis CS-80 Preset Rebalance & Sub-Bass Stability', () => {
     engine.setDroneSnap(1, 'sub-bass');
     assert.strictEqual(engine.droneSnap[1], 'sub-bass');
 
-    // Sub-bass cutoff must maintain audible upper harmonics (>= 400 Hz for base 650 Hz), not crushed down to 80-125 Hz
+    // Sub-bass cutoff is optimized to 130-150 Hz with Butterworth Q <= 0.707 and LFO depth <= 15 Hz
     const filterEvents = engine.drone1.filter1.frequency.events;
     const lastCutoff = filterEvents[filterEvents.length - 1];
-    assert.ok(lastCutoff.v >= 400, `Sub-bass cutoff (${lastCutoff.v} Hz) must remain audible (>= 400 Hz)`);
+    assert.ok(lastCutoff.v >= 130 && lastCutoff.v <= 150, `Sub-bass cutoff (${lastCutoff.v} Hz) must be in 130-150 Hz range`);
+    assert.ok(engine.drone1.filter1.Q.value <= 0.71, `Resonance Q (${engine.drone1.filter1.Q.value}) must be <= 0.707 (Butterworth)`);
+    assert.ok(engine.drone1.lfoGain1.gain.value <= 15, `LFO depth (${engine.drone1.lfoGain1.gain.value} Hz) must be clamped <= 15 Hz`);
+
+    // Phase-lock core: subHertzBeat = 0 and detune = 0
+    assert.strictEqual(engine.drone1.subHertzBeat, 0, 'subHertzBeat must be locked to 0 in sub-bass');
+    assert.strictEqual(engine.drone1.detuneCents, 0, 'detuneCents must be locked to 0 in sub-bass');
+
+    // Wavefolder bypass / soft-clipping: isSubBass is true, shaper curve is monotonic soft clip
+    assert.strictEqual(engine.drone1.isSubBass, true, 'isSubBass must be engaged');
+    assert.ok(engine.drone1.subBassGainTrim >= 1.5, `subBassGainTrim (${engine.drone1.subBassGainTrim}) must provide +4 to +6 dB compensation`);
   });
 
   it('executes smooth micro-gain declick crossfade during octave jumps and frequency slewing on active drone voice', () => {
@@ -804,6 +814,68 @@ describe('Vangelis CS-80 Preset Rebalance & Sub-Bass Stability', () => {
     await engine.init();
     assert.strictEqual(resumeResolved, true, 'AudioEngine.init must await ctx.resume before completing');
     assert.strictEqual(ctx.state, 'running', 'AudioContext must be running after init');
+  });
+
+  it('keeps masterGain and droneBus at 0.0 during init and only fades in at the very end of AudioEngine.init', async () => {
+    const ctx = createDSPMockCtx();
+    const engine = new AudioEngine(ctx);
+    let masterGainAtVoiceCreation = -1;
+    let droneBusAtVoiceCreation = -1;
+
+    // Track bus gains during SolarDroneVoice instantiation
+    const origVoice = SolarDroneVoice;
+    engine.init(); // start async init
+    await engine._initPromise;
+
+    // Master gain events should have initial setValueAtTime(0.0) at ctx.currentTime,
+    // and only one setTargetAtTime event scheduled with rampStartTime > 0
+    const masterEvents = engine.masterGain.gain.events;
+    const setTargetEvents = masterEvents.filter(e => e.type === 'setTargetAtTime');
+    assert.strictEqual(setTargetEvents.length, 1, 'masterGain must only have 1 setTargetAtTime fade-in at end of init');
+    assert.ok(setTargetEvents[0].t >= ctx.currentTime + 0.01, 'Fade-in must be scheduled after graph assembly');
+
+    const droneEvents = engine.droneBus.gain.events;
+    const droneTargetEvents = droneEvents.filter(e => e.type === 'setTargetAtTime');
+    assert.strictEqual(droneTargetEvents.length, 1, 'droneBus must only have 1 setTargetAtTime fade-in at end of init');
+  });
+
+  it('guards setReverbDecay with isPreset=true against live convolver buffer regeneration and clears pending timers', async () => {
+    const ctx = createDSPMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    let regenTriggered = false;
+    engine.shimmerReverb.regenerateImpulse = () => { regenTriggered = true; };
+
+    // Set decay with isPreset = true
+    engine.setReverbDecay(4.0, true);
+    assert.strictEqual(engine.shimmerReverb.decayTime, 4.0);
+    assert.strictEqual(engine.shimmerReverb._regenTimer, null, 'Preset change must not leave pending regen timer');
+
+    // Wait past standard debounce window (80ms)
+    await new Promise(r => setTimeout(r, 90));
+    assert.strictEqual(regenTriggered, false, 'Preset change must not trigger convolver buffer regeneration');
+  });
+
+  it('supports extended 65-75ms declick crossfade window for sub-bass 32.7 Hz wave cycles', () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 10.0;
+    const drone = new SolarDroneVoice(ctx, ctx.destination, null, 1);
+    drone.setActive(true);
+    drone.setVolume(0.55);
+
+    drone.voiceGain.gain.events = [];
+    // Trigger extended 68ms declick transition (~2 full cycles of 32.7 Hz)
+    drone.declickTransition(0.068);
+
+    const gainEvents = drone.voiceGain.gain.events;
+    const linearRamps = gainEvents.filter(e => e.type === 'linearRampToValueAtTime');
+    assert.strictEqual(linearRamps.length, 2);
+
+    // Down ramp reaches dipGain at ~30ms (between 25ms and 35ms)
+    assert.ok(linearRamps[0].t >= 10.025 && linearRamps[0].t <= 10.035, `Down ramp time (${linearRamps[0].t}) should be ~30ms`);
+    // Up ramp returns to full operating volume at ~68ms
+    assert.ok(linearRamps[1].t >= 10.060 && linearRamps[1].t <= 10.075, `Up ramp time (${linearRamps[1].t}) should be ~68ms`);
   });
 });
 

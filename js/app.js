@@ -824,7 +824,7 @@ export class AmbientApp {
       if (preset.knobs.delayWow !== undefined) this.engine.setDelayWow(preset.knobs.delayWow / 100);
       if (preset.knobs.delayTone !== undefined) this.engine.setDelayTone(preset.knobs.delayTone);
       if (preset.knobs.delayWet !== undefined) this.engine.setDelayWet(preset.knobs.delayWet / 100);
-      if (preset.knobs.reverbDecay !== undefined) this.engine.setReverbDecay(preset.knobs.reverbDecay);
+      if (preset.knobs.reverbDecay !== undefined) this.engine.setReverbDecay(preset.knobs.reverbDecay, true);
       if (preset.knobs.reverbDamping !== undefined) this.engine.setReverbDamping(preset.knobs.reverbDamping / 100);
       if (preset.knobs.reverbShimmer !== undefined) this.engine.setReverbShimmer(preset.knobs.reverbShimmer / 100);
       if (preset.knobs.reverbWet !== undefined) this.engine.setReverbWet(preset.knobs.reverbWet / 100);
@@ -1138,7 +1138,7 @@ export class AmbientApp {
         if (k.delayWow !== undefined) this.engine.setDelayWow(k.delayWow / 100);
         if (k.delayTone !== undefined) this.engine.setDelayTone(k.delayTone);
         if (k.delayWet !== undefined) this.engine.setDelayWet(k.delayWet / 100);
-        if (k.reverbDecay !== undefined) this.engine.setReverbDecay(k.reverbDecay);
+        if (k.reverbDecay !== undefined) this.engine.setReverbDecay(k.reverbDecay, true);
         if (k.reverbDamping !== undefined) this.engine.setReverbDamping(k.reverbDamping / 100);
         if (k.reverbShimmer !== undefined) this.engine.setReverbShimmer(k.reverbShimmer / 100);
         if (k.reverbWet !== undefined) this.engine.setReverbWet(k.reverbWet / 100);

@@ -394,17 +394,41 @@ export class ShimmerReverb {
     }, 60);
   }
 
-  setDecay(seconds) {
+  _updateDecayParameters(seconds) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Modulate perceived RT60 decay dynamically via feedback recirculation
+    // Base shimmerFeedback: 0.2 + shimmerAmount * 0.45, scaled with RT60
+    const decayScale = Math.min(1.35, Math.max(0.70, seconds / 8.5));
+    if (this.shimmerFeedback && this.shimmerFeedback.gain) {
+      const targetFeedback = Math.min(0.75, (0.2 + this.shimmerAmount * 0.45) * decayScale);
+      if (typeof this.shimmerFeedback.gain.setTargetAtTime === 'function') {
+        this.shimmerFeedback.gain.setTargetAtTime(targetFeedback, now, 0.03);
+      } else {
+        this.shimmerFeedback.gain.value = targetFeedback;
+      }
+    }
+  }
+
+  setDecay(seconds, skipRegen = false) {
     const s = Math.max(0.5, Math.min(25.0, seconds));
     if (Math.abs(this.decayTime - s) < 0.01 && this._hasInitialBuffer) {
       return;
     }
     this.decayTime = s;
+    this._updateDecayParameters(s);
+    if (skipRegen) {
+      if (this._regenTimer) {
+        clearTimeout(this._regenTimer);
+        this._regenTimer = null;
+      }
+      return;
+    }
     this._scheduleImpulseRegeneration();
   }
 
-  setDiffusion(seconds) {
-    this.setDecay(seconds);
+  setDiffusion(seconds, skipRegen = false) {
+    this.setDecay(seconds, skipRegen);
   }
 
   setDamping(damping) {

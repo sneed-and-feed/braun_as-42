@@ -388,11 +388,6 @@ export class AudioEngine {
     // --- Master Bus & Limiter ---
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(0.0, this.ctx.currentTime);
-    if (typeof this.masterGain.gain.setTargetAtTime === 'function') {
-      this.masterGain.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime + 0.005, 0.025);
-    } else {
-      this.masterGain.gain.value = this.masterVolume;
-    }
 
     // Analog Soft Limiter (prevents digital clipping, transparent unity gain below knee)
     this.masterLimiter = this.ctx.createWaveShaper();
@@ -522,11 +517,6 @@ export class AudioEngine {
     // Elta Solar 42n Microtonal Drone Voices (Voice 1 & Voice 2)
     this.droneBus = this.ctx.createGain();
     this.droneBus.gain.setValueAtTime(0.0, this.ctx.currentTime);
-    if (typeof this.droneBus.gain.setTargetAtTime === 'function') {
-      this.droneBus.gain.setTargetAtTime(this.droneBusGain, this.ctx.currentTime + 0.005, 0.025);
-    } else {
-      this.droneBus.gain.value = this.droneBusGain;
-    }
 
     this.drone1 = new SolarDroneVoice(this.ctx, this.droneBus, this.wavetables, 1);
     this.drone2 = new SolarDroneVoice(this.ctx, this.droneBus, this.wavetables, 2);
@@ -552,6 +542,26 @@ export class AudioEngine {
     this.droneBus.connect(this.masterGain);
     this.droneBus.connect(this.tapeDelay.input);
     this.droneBus.connect(this.shimmerReverb.input);
+
+    // Fade in master gain and drone bus only after all nodes, wavetables,
+    // felt voices, drone voices, and convolver buffers are fully instantiated and connected
+    const initEndNow = this.ctx.currentTime;
+    const rampStartTime = initEndNow + 0.02;
+    const rampTau = 0.04;
+    if (this.masterGain && this.masterGain.gain) {
+      if (typeof this.masterGain.gain.setTargetAtTime === 'function') {
+        this.masterGain.gain.setTargetAtTime(this.masterVolume, rampStartTime, rampTau);
+      } else {
+        this.masterGain.gain.value = this.masterVolume;
+      }
+    }
+    if (this.droneBus && this.droneBus.gain) {
+      if (typeof this.droneBus.gain.setTargetAtTime === 'function') {
+        this.droneBus.gain.setTargetAtTime(this.droneBusGain, rampStartTime, rampTau);
+      } else {
+        this.droneBus.gain.value = this.droneBusGain;
+      }
+    }
 
     this.isInitialized = true;
     })();
@@ -640,16 +650,46 @@ export class AudioEngine {
     if (this.drone1) {
       if (this.isInitialized && this.drone1.isActive && Math.abs(newFreq - (oldFreq || newFreq)) >= 1.0) {
         if (typeof this.drone1.declickTransition === 'function') {
-          this.drone1.declickTransition(0.025);
+          const declickDuration = snapKey === 'sub-bass' ? 0.068 : 0.025;
+          this.drone1.declickTransition(declickDuration);
         }
       }
       this.drone1.setFrequency(this.drone1Freq, 0.025);
-      const baseCutoff = this.droneParams[1].cutoff || 650;
-      const targetCutoff = snapKey === 'sub-bass' ? Math.max(120, baseCutoff * 0.75) :
-                           snapKey === 'octave-up' ? Math.min(3600, baseCutoff * 1.35) :
-                           snapKey === 'warm-root' ? Math.min(2200, baseCutoff * 1.15) : baseCutoff;
-      if (typeof this.drone1.setCutoff === 'function') {
-        this.drone1.setCutoff(targetCutoff, 0.025);
+      if (snapKey === 'sub-bass') {
+        if (typeof this.drone1.setSubBass === 'function') {
+          this.drone1.setSubBass(true);
+        }
+        // Phase-lock core: lock subHertzBeat = 0 and detune = 0 to eliminate cyclical phase cancellation
+        this.drone1.setBeatingHz(0.0, 0.025);
+        this.drone1.setDetuneCents(0.0, 0.025);
+        // Filter optimization: 130-150 Hz Butterworth lowpass (Q <= 0.707) and clamp LFO depth <= 15 Hz
+        if (typeof this.drone1.setCutoff === 'function') {
+          this.drone1.setCutoff(140, 0.025);
+        }
+        if (typeof this.drone1.setResonance === 'function') {
+          this.drone1.setResonance(0.5); // sqrt(0.5) = 0.707 Butterworth (no resonant bump)
+        }
+        if (typeof this.drone1.setLfo === 'function') {
+          this.drone1.setLfo(this.droneParams[1].lfo, 12);
+        }
+      } else {
+        if (typeof this.drone1.setSubBass === 'function') {
+          this.drone1.setSubBass(false);
+        }
+        this.drone1.setBeatingHz(this.droneParams[1].beat, 0.025);
+        this.drone1.setDetuneCents(this.droneParams[1].detune, 0.025);
+        const baseCutoff = this.droneParams[1].cutoff || 650;
+        const targetCutoff = snapKey === 'octave-up' ? Math.min(3600, baseCutoff * 1.35) :
+                             snapKey === 'warm-root' ? Math.min(2200, baseCutoff * 1.15) : baseCutoff;
+        if (typeof this.drone1.setCutoff === 'function') {
+          this.drone1.setCutoff(targetCutoff, 0.025);
+        }
+        if (typeof this.drone1.setResonance === 'function') {
+          this.drone1.setResonance(this.droneParams[1].res || 3.5);
+        }
+        if (typeof this.drone1.setLfo === 'function') {
+          this.drone1.setLfo(this.droneParams[1].lfo, 180);
+        }
       }
     }
     return this.drone1Freq;
@@ -865,17 +905,17 @@ export class AudioEngine {
     if (this.tapeDelay) this.tapeDelay.setWet(wet);
   }
 
-  setReverbDecay(decay) {
+  setReverbDecay(decay, isPreset = false) {
     const d = Math.max(0.5, Math.min(25.0, decay));
     if (Math.abs(this.reverbParams.decay - d) < 0.01 && this.shimmerReverb && this.shimmerReverb._hasInitialBuffer) {
       return;
     }
     this.reverbParams.decay = d;
-    if (this.shimmerReverb) this.shimmerReverb.setDecay(d);
+    if (this.shimmerReverb) this.shimmerReverb.setDecay(d, isPreset);
   }
 
-  setReverbDiffusion(diffusion) {
-    this.setReverbDecay(diffusion);
+  setReverbDiffusion(diffusion, isPreset = false) {
+    this.setReverbDecay(diffusion, isPreset);
   }
 
   setReverbDamping(damping) {
