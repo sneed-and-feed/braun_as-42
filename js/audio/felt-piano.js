@@ -163,12 +163,14 @@ export class FeltPianoVoice {
    * Set voice waveform: 'felt' | 'sine' | 'saw' | 'square' | 'cs80' | 'vangelis'
    */
   setWaveform(type) {
+    if (this.currentWaveform === type) return;
     this.currentWaveform = type;
     const raw = (typeof type === 'string') ? type.trim().toLowerCase() : type;
     const isCS80 = (raw === 'cs80' || raw === 'vangelis');
     const isSquare = (raw === 'square' || raw === 'sqr');
     const isSaw = (raw === 'saw' || raw === 'sawtooth');
     const isSine = (raw === 'sine' || raw === 'sin');
+    const now = this.ctx.currentTime;
 
     if (isCS80) {
       if (this.wavetables && this.wavetables.saw) {
@@ -178,17 +180,6 @@ export class FeltPianoVoice {
         this.osc1.type = 'sawtooth';
         this.osc2.type = 'sawtooth';
       }
-      // CS-80 resonant filter Q: singing brass horn resonance
-      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
-        this.filter1.Q.setValueAtTime(1.85, this.ctx.currentTime);
-      }
-      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
-        this.filter2.Q.setValueAtTime(1.45, this.ctx.currentTime);
-      }
-      // CS-80 subtle slow chorus depth (4.5 cents analog pitch drift)
-      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
-        this.chorusGain.gain.setValueAtTime(4.5, this.ctx.currentTime);
-      }
     } else if (isSaw) {
       if (this.wavetables && this.wavetables.saw) {
         this.osc1.setPeriodicWave(this.wavetables.saw);
@@ -196,15 +187,6 @@ export class FeltPianoVoice {
       } else {
         this.osc1.type = 'sawtooth';
         this.osc2.type = 'sawtooth';
-      }
-      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
-        this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
-      }
-      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
-        this.filter2.Q.setValueAtTime(0.707, this.ctx.currentTime);
-      }
-      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
-        this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
       }
     } else if (isSquare) {
       if (this.wavetables && this.wavetables.square) {
@@ -216,29 +198,11 @@ export class FeltPianoVoice {
         if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
         if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
       }
-      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
-        this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
-      }
-      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
-        this.filter2.Q.setValueAtTime(0.707, this.ctx.currentTime);
-      }
-      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
-        this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
-      }
     } else if (type === 'sine') {
       this.osc1.type = 'sine';
       this.osc2.type = 'sine';
       if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
       if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
-      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
-        this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
-      }
-      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
-        this.filter2.Q.setValueAtTime(0.707, this.ctx.currentTime);
-      }
-      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
-        this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
-      }
     } else { // 'felt' / 'triangle' default
       this.osc1.type = 'sine';
       if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
@@ -248,18 +212,34 @@ export class FeltPianoVoice {
         this.osc2.type = 'triangle';
         if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
       }
-      if (this.filter1 && this.filter1.Q && typeof this.filter1.Q.setValueAtTime === 'function') {
-        this.filter1.Q.setValueAtTime(0.707, this.ctx.currentTime);
+    }
+
+    // Smooth filter Q and chorus transitions (prevents biquad numerical impulse pops)
+    const targetQ1 = isCS80 ? 1.85 : 0.707;
+    const targetQ2 = isCS80 ? 1.45 : 0.707;
+    if (this.filter1 && this.filter1.Q) {
+      if (typeof this.filter1.Q.setTargetAtTime === 'function') {
+        this.filter1.Q.setTargetAtTime(targetQ1, now, 0.025);
+      } else {
+        this.filter1.Q.setValueAtTime(targetQ1, now);
       }
-      if (this.filter2 && this.filter2.Q && typeof this.filter2.Q.setValueAtTime === 'function') {
-        this.filter2.Q.setValueAtTime(0.707, this.ctx.currentTime);
+    }
+    if (this.filter2 && this.filter2.Q) {
+      if (typeof this.filter2.Q.setTargetAtTime === 'function') {
+        this.filter2.Q.setTargetAtTime(targetQ2, now, 0.025);
+      } else {
+        this.filter2.Q.setValueAtTime(targetQ2, now);
       }
-      if (this.chorusGain && this.chorusGain.gain && typeof this.chorusGain.gain.setValueAtTime === 'function') {
-        this.chorusGain.gain.setValueAtTime(0, this.ctx.currentTime);
+    }
+    const targetChorus = isCS80 ? 4.5 : 0;
+    if (this.chorusGain && this.chorusGain.gain) {
+      if (typeof this.chorusGain.gain.setTargetAtTime === 'function') {
+        this.chorusGain.gain.setTargetAtTime(targetChorus, now, 0.025);
+      } else {
+        this.chorusGain.gain.setValueAtTime(targetChorus, now);
       }
     }
 
-    const now = this.ctx.currentTime;
     if (this.osc1 && this.osc1.detune && typeof this.osc1.detune.setValueAtTime === 'function') {
       const detune1 = isCS80 ? (this.dispersionOffset - 5.5) : this.dispersionOffset;
       const detune2 = isCS80 ? (this.dispersionOffset + 6.5) : (this.dispersionOffset + this.overtoneSpread);
@@ -295,6 +275,10 @@ export class FeltPianoVoice {
         this.timbreTrim.gain.value = trim;
       }
     }
+  }
+
+  setTimbre(type) {
+    return this.setWaveform(type);
   }
 
   /**
@@ -1265,12 +1249,62 @@ export class FeltPianoSynthesizer {
   }
 
   /**
-   * Set core waveform across all voices: 'felt' | 'sine' | 'saw' | 'square'
+   * Set core waveform across all voices: 'felt' | 'sine' | 'saw' | 'square' | 'cs80'
    */
   setWaveform(type) {
+    if (this.currentWaveform === type) return;
     this.currentWaveform = type;
+    const now = this.ctx.currentTime;
+
+    // If voices are currently sounding / active, execute a master micro-gain crossfade
+    // on synthesizer output to guarantee click-free, pop-free timbre morphing into the effects loop
+    const hasActive = this.voices.some(v => v.isActive && v.getEstimatedGain(now) > 0.001);
+    if (hasActive && this.output && this.output.gain) {
+      this.declickTransition(0.032);
+    }
+
     for (const voice of this.voices) {
       voice.setWaveform(type);
+    }
+  }
+
+  setTimbre(type) {
+    return this.setWaveform(type);
+  }
+
+  declickTransition(crossfadeTime = 0.032) {
+    if (!this.output || !this.output.gain || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const curHeadroom = (typeof this._currentHeadroomGain === 'number' && isFinite(this._currentHeadroomGain))
+      ? this._currentHeadroomGain
+      : (typeof this.output.gain.value === 'number' && isFinite(this.output.gain.value) ? this.output.gain.value : 1.0);
+
+    if (curHeadroom <= 0.001) return;
+
+    if (typeof this.output.gain.cancelAndHoldAtTime === 'function') {
+      try {
+        this.output.gain.cancelAndHoldAtTime(now);
+      } catch (e) {
+        if (typeof this.output.gain.cancelScheduledValues === 'function') {
+          this.output.gain.cancelScheduledValues(now);
+        }
+      }
+    } else if (typeof this.output.gain.cancelScheduledValues === 'function') {
+      this.output.gain.cancelScheduledValues(now);
+    }
+    if (typeof this.output.gain.setValueAtTime === 'function') {
+      this.output.gain.setValueAtTime(curHeadroom, now);
+    }
+
+    const dipGain = Math.max(0.0001, curHeadroom * 0.02);
+    const halfTime = Math.max(0.008, crossfadeTime * 0.42);
+    const fullTime = Math.max(0.020, crossfadeTime);
+
+    if (typeof this.output.gain.linearRampToValueAtTime === 'function') {
+      this.output.gain.linearRampToValueAtTime(dipGain, now + halfTime);
+      this.output.gain.linearRampToValueAtTime(curHeadroom, now + fullTime);
+    } else if (typeof this.output.gain.setTargetAtTime === 'function') {
+      this.output.gain.setTargetAtTime(curHeadroom, now, 0.025);
     }
   }
 

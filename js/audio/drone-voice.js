@@ -403,9 +403,9 @@ export class SolarDroneVoice {
     }
     if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
       this.voiceGain.gain.cancelScheduledValues(now);
-      if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
-        this.voiceGain.gain.setValueAtTime(curVol, now);
-      }
+    }
+    if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+      this.voiceGain.gain.setValueAtTime(curVol, now);
     }
 
     const dipGain = Math.max(0.0001, curVol * 0.02);
@@ -441,8 +441,10 @@ export class SolarDroneVoice {
       : (prevA + this.subHertzBeat);
 
     // Smooth micro-gain declick crossfade during pitch jumps/frequency slewing when voice is active
-    if (this.isActive && Math.abs(targetFreq - prevA) >= 2.0) {
-      this.declickTransition(tau);
+    const prevFreq = (typeof this.currentFreq === 'number' && this.currentFreq > 0) ? this.currentFreq : prevA;
+    if (this.isActive && Math.abs(targetFreq - prevFreq) >= 1.0) {
+      const targetGain = this.volume * (this.subBassGainTrim || 1.0);
+      this.declickTransition(tau, targetGain);
     }
 
     this.currentFreq = targetFreq;
@@ -613,6 +615,10 @@ export class SolarDroneVoice {
         this.setDetuneCents(this._baseDetune ?? 2.5, timeConstant);
         this.setResonance(this._baseResonance ?? 3.5);
         this.setLfo(this.lfoRate, this._baseLfoDepth ?? 180);
+      }
+    } else {
+      if (snapKey !== 'beating-unison') {
+        this.setBeatingHz(this._baseBeating ?? 0.65, timeConstant);
       }
     }
     return freq;

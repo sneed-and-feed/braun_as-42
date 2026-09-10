@@ -1790,9 +1790,12 @@ export class AmbientApp {
         btn.classList.add('is-active');
         const snapKey = btn.getAttribute('data-snap');
         this.engine.setDroneSnap(id, snapKey);
-        if (id === 2 && snapKey === 'beating-unison') {
+        if (id === 2) {
           const beatKnob = this.knobs[`${prefix}Beat`];
-          if (beatKnob) beatKnob.setValue(0.35, false);
+          if (beatKnob) {
+            const beatVal = (snapKey === 'beating-unison') ? 0.35 : (this.engine.droneParams[2].beat || 0.65);
+            beatKnob.setValue(beatVal, false);
+          }
         }
         // Auto-activate drone voice so user immediately hears the snapped note
         if (!this.engine.droneParams[id].active) {

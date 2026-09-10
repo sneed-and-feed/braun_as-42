@@ -235,7 +235,7 @@ export class TapeDelay {
 
   setTime(timeSeconds) {
     const t = Math.max(0.015, Math.min(2.0, timeSeconds));
-    if (Math.abs(this.delayTimeL - t) < 0.001) return;
+    if (Math.abs(this.delayTimeL - t) < 0.0005) return;
     this.delayTimeL = t;
     this.delayTimeR = Math.max(0.015, t * 1.5); // Harmonic 3:2 stereo offset
     const now = this.ctx.currentTime;
@@ -265,6 +265,10 @@ export class TapeDelay {
       this.delayNodeL.delayTime.value = this.delayTimeL;
       this.delayNodeR.delayTime.value = this.delayTimeR;
     }
+  }
+
+  setDelayTime(timeMs) {
+    return this.setTime(timeMs / 1000);
   }
 
   setFeedback(fb) {

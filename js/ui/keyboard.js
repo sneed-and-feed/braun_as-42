@@ -221,6 +221,9 @@ export class BraunPlaySurface {
     }
 
     if (keyEl) {
+      if (typeof keyEl._markPointerReleased === 'function') {
+        keyEl._markPointerReleased();
+      }
       if (keyEl._activePointerIds) {
         keyEl._activePointerIds.delete(pointerId);
       }
@@ -291,6 +294,9 @@ export class BraunPlaySurface {
     }
 
     if (btn) {
+      if (typeof btn._markPointerReleased === 'function') {
+        btn._markPointerReleased();
+      }
       if (btn._activePointerIds) {
         btn._activePointerIds.delete(pointerId);
       }
@@ -404,13 +410,20 @@ export class BraunPlaySurface {
 
       const markPointerHandled = () => {
         handledByPointer = true;
+        if (clearPointerTimer) {
+          clearTimeout(clearPointerTimer);
+          clearPointerTimer = null;
+        }
+      };
+      const markPointerReleased = () => {
         if (clearPointerTimer) clearTimeout(clearPointerTimer);
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
           clearPointerTimer = null;
-        }, 400);
+        }, 500);
       };
       keyEl._markPointerHandled = markPointerHandled;
+      keyEl._markPointerReleased = markPointerReleased;
 
       keyEl.addEventListener('dragstart', (e) => e.preventDefault());
 
@@ -439,12 +452,7 @@ export class BraunPlaySurface {
           }
         } catch (err) {}
         const pointerId = e.pointerId ?? 'mouse';
-        handledByPointer = true;
-        if (clearPointerTimer) clearTimeout(clearPointerTimer);
-        clearPointerTimer = setTimeout(() => {
-          handledByPointer = false;
-          clearPointerTimer = null;
-        }, 400);
+        markPointerHandled();
 
         this._activatePointerKey(pointerId, keyEl, e.clientY, keyEl.getBoundingClientRect ? keyEl.getBoundingClientRect() : null);
       });
@@ -457,12 +465,14 @@ export class BraunPlaySurface {
       });
 
       keyEl.addEventListener('pointerup', (e) => {
+        markPointerReleased();
         const pointerId = e && e.pointerId != null ? e.pointerId : (keyEl._activePointerIds ? Array.from(keyEl._activePointerIds)[0] : 'mouse');
         this._releasePointerKey(pointerId ?? 'mouse');
         if (typeof keyEl.blur === 'function') keyEl.blur();
       });
 
       keyEl.addEventListener('pointercancel', (e) => {
+        markPointerReleased();
         const pointerId = e && e.pointerId != null ? e.pointerId : (keyEl._activePointerIds ? Array.from(keyEl._activePointerIds)[0] : 'mouse');
         this._releasePointerKey(pointerId ?? 'mouse');
         if (typeof keyEl.blur === 'function') keyEl.blur();
@@ -474,12 +484,7 @@ export class BraunPlaySurface {
           return;
         }
         if (e.preventDefault) e.preventDefault();
-        handledByPointer = true;
-        if (clearPointerTimer) clearTimeout(clearPointerTimer);
-        clearPointerTimer = setTimeout(() => {
-          handledByPointer = false;
-          clearPointerTimer = null;
-        }, 400);
+        markPointerHandled();
 
         if (e.changedTouches) {
           for (let i = 0; i < e.changedTouches.length; i++) {
@@ -490,6 +495,7 @@ export class BraunPlaySurface {
       }, { passive: false });
 
       keyEl.addEventListener('touchend', (e) => {
+        markPointerReleased();
         if (e.changedTouches) {
           for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i];
@@ -500,6 +506,7 @@ export class BraunPlaySurface {
       });
 
       keyEl.addEventListener('touchcancel', (e) => {
+        markPointerReleased();
         if (e.changedTouches) {
           for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i];
@@ -512,6 +519,11 @@ export class BraunPlaySurface {
       keyEl.addEventListener('click', (e) => {
         // Single strike on pointerdown: releasing LMB must NOT re-trigger a second strike
         if (handledByPointer) {
+          handledByPointer = false;
+          if (clearPointerTimer) {
+            clearTimeout(clearPointerTimer);
+            clearPointerTimer = null;
+          }
           if (typeof keyEl.blur === 'function') keyEl.blur();
           return;
         }
@@ -650,26 +662,25 @@ export class BraunPlaySurface {
 
       const markChordPointerHandled = () => {
         handledByPointer = true;
-        if (clearPointerTimer) clearTimeout(clearPointerTimer);
-        clearPointerTimer = setTimeout(() => {
-          handledByPointer = false;
-          clearPointerTimer = null;
-        }, 400);
-      };
-      btn._markPointerHandled = markChordPointerHandled;
-
-      btn.addEventListener('pointerdown', (e) => {
-        if (e.button !== undefined && e.button !== 0) return;
-        if (e.preventDefault) e.preventDefault();
-        handledByPointer = true;
         if (clearPointerTimer) {
           clearTimeout(clearPointerTimer);
           clearPointerTimer = null;
         }
+      };
+      const markChordPointerReleased = () => {
+        if (clearPointerTimer) clearTimeout(clearPointerTimer);
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
           clearPointerTimer = null;
-        }, 400);
+        }, 500);
+      };
+      btn._markPointerHandled = markChordPointerHandled;
+      btn._markPointerReleased = markChordPointerReleased;
+
+      btn.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        if (e.preventDefault) e.preventDefault();
+        markChordPointerHandled();
 
         const pointerId = e.pointerId ?? 'mouse';
         try {
@@ -682,6 +693,7 @@ export class BraunPlaySurface {
       });
 
       btn.addEventListener('pointerup', (e) => {
+        markChordPointerReleased();
         const pointerId = e && e.pointerId != null ? e.pointerId : (btn._activePointerIds ? Array.from(btn._activePointerIds)[0] : 'mouse');
         try {
           if (btn.releasePointerCapture && e && e.pointerId != null) {
@@ -693,6 +705,7 @@ export class BraunPlaySurface {
       });
 
       btn.addEventListener('pointercancel', (e) => {
+        markChordPointerReleased();
         const pointerId = e && e.pointerId != null ? e.pointerId : (btn._activePointerIds ? Array.from(btn._activePointerIds)[0] : 'mouse');
         try {
           if (btn.releasePointerCapture && e && e.pointerId != null) {
@@ -709,15 +722,7 @@ export class BraunPlaySurface {
           return;
         }
         if (e.preventDefault) e.preventDefault();
-        handledByPointer = true;
-        if (clearPointerTimer) {
-          clearTimeout(clearPointerTimer);
-          clearPointerTimer = null;
-        }
-        clearPointerTimer = setTimeout(() => {
-          handledByPointer = false;
-          clearPointerTimer = null;
-        }, 400);
+        markChordPointerHandled();
 
         if (e.changedTouches) {
           for (let i = 0; i < e.changedTouches.length; i++) {
@@ -728,6 +733,7 @@ export class BraunPlaySurface {
       }, { passive: false });
 
       btn.addEventListener('touchend', (e) => {
+        markChordPointerReleased();
         if (e.changedTouches) {
           for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i];
@@ -738,6 +744,7 @@ export class BraunPlaySurface {
       });
 
       btn.addEventListener('touchcancel', (e) => {
+        markChordPointerReleased();
         if (e.changedTouches) {
           for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i];
@@ -750,6 +757,7 @@ export class BraunPlaySurface {
       btn.addEventListener('pointerleave', (e) => {
         const pointerId = e.pointerId ?? 'mouse';
         if (e.buttons === 0 && (e.pointerType === 'mouse' || e.pointerType === undefined)) {
+          markChordPointerReleased();
           this._releasePointerChord(pointerId);
           if (typeof btn.blur === 'function') btn.blur();
         }
@@ -758,6 +766,11 @@ export class BraunPlaySurface {
       btn.addEventListener('click', () => {
         // Single strike on pointerdown: releasing LMB must NOT re-trigger a second strike
         if (handledByPointer) {
+          handledByPointer = false;
+          if (clearPointerTimer) {
+            clearTimeout(clearPointerTimer);
+            clearPointerTimer = null;
+          }
           if (typeof btn.blur === 'function') btn.blur();
           return;
         }

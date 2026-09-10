@@ -14,6 +14,7 @@ import { FeltPianoVoice, FeltPianoSynthesizer, TIMBRE_TRIM } from '../js/audio/f
 import { CHORD_VOICINGS, getChordFrequencies, frequencyToMidi, midiToFrequency } from '../js/generative/scales.js';
 import { AudioEngine } from '../js/audio/engine.js';
 import { SolarDroneVoice } from '../js/audio/drone-voice.js';
+import { TapeDelay } from '../js/audio/tape-delay.js';
 import { ShimmerReverb } from '../js/audio/shimmer-reverb.js';
 import { BraunPlaySurface } from '../js/ui/keyboard.js';
 import { BraunKnob } from '../js/ui/knob.js';
@@ -518,6 +519,108 @@ describe('Click-and-Hold Single Strike Verification', () => {
     }
   });
 
+  it('guarantees clicking to strum a chord cluster and holding past 400ms does NOT strum chord again upon release', async () => {
+    let chordNoteStarts = 0;
+    let releasedVoices = 0;
+
+    class MockButtonElement {
+      constructor() {
+        this.listeners = {};
+        this.classList = { add: () => {}, remove: () => {}, contains: () => false };
+      }
+      addEventListener(type, fn) {
+        if (!this.listeners[type]) this.listeners[type] = [];
+        this.listeners[type].push(fn);
+      }
+      dispatchEvent(type, evt = {}) {
+        evt.type = type;
+        (this.listeners[type] || []).forEach(fn => fn(evt));
+      }
+      setAttribute() {}
+      getAttribute(attr) {
+        if (attr === 'data-chord') return 'SUMMERS_DAY';
+        return '';
+      }
+      getBoundingClientRect() {
+        return { top: 0, height: 72, left: 0, width: 80 };
+      }
+      blur() {}
+    }
+
+    const createdButtons = [];
+    const mockStrip = { innerHTML: '', appendChild: () => {} };
+    const mockChords = {
+      innerHTML: '',
+      children: createdButtons,
+      classList: { add: () => {} },
+      appendChild: (el) => { createdButtons.push(el); },
+      querySelectorAll: () => createdButtons
+    };
+
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: () => {
+          chordNoteStarts++;
+          return {
+            release: () => { releasedVoices++; }
+          };
+        }
+      }
+    };
+
+    const origCreateElement = globalThis.document ? globalThis.document.createElement : null;
+    const origGetElementById = globalThis.document ? globalThis.document.getElementById : null;
+    if (typeof globalThis.document === 'undefined') {
+      globalThis.document = {};
+    }
+    globalThis.document.createElement = () => new MockButtonElement();
+    globalThis.document.getElementById = () => null;
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      const chordBtn = createdButtons[0];
+      assert.ok(chordBtn, 'Chord button must exist');
+
+      // 1. User clicks to strum a chord cluster (pointerdown)
+      chordBtn.dispatchEvent('pointerdown', { preventDefault: () => {}, pointerId: 1 });
+
+      // 2. User holds LMB down for 550ms (listening to the strum, exceeding the old 400ms bug threshold)
+      await new Promise(r => setTimeout(r, 550));
+      const startsDuringHold = chordNoteStarts;
+      assert.ok(startsDuringHold >= 1, 'Notes must strum during hold');
+
+      // 3. User releases LMB (pointerup -> click)
+      chordBtn.dispatchEvent('pointerup', { pointerId: 1 });
+      chordBtn.dispatchEvent('click', {});
+
+      // Wait 100ms after release
+      await new Promise(r => setTimeout(r, 100));
+
+      // CRITICAL: Upon release, the chord must NOT be strummed again!
+      assert.strictEqual(
+        chordNoteStarts,
+        startsDuringHold,
+        'Upon release, chord cluster must NOT be strummed again (starts must remain unchanged)'
+      );
+      assert.ok(releasedVoices >= 1, 'Voices must be released upon release of click');
+    } finally {
+      if (origCreateElement) {
+        globalThis.document.createElement = origCreateElement;
+      } else if (globalThis.document) {
+        delete globalThis.document.createElement;
+      }
+      if (origGetElementById) {
+        globalThis.document.getElementById = origGetElementById;
+      } else if (globalThis.document) {
+        delete globalThis.document.getElementById;
+      }
+    }
+  });
+
   it('verifies rapid switching between FELT and CS-80 while voices are sustaining updates detune and gains smoothly', () => {
     const ctx = createDSPMockCtx();
     const synth = new FeltPianoSynthesizer(ctx, null, 4);
@@ -941,6 +1044,91 @@ describe('Vangelis CS-80 Preset Rebalance & Sub-Bass Stability', () => {
     assert.ok(reverb.shimmerFeedback.gain.value > 0.35, 'Feedback gain must scale with 8.5s decay');
   });
 });
+
+describe('Pop-Free Harmony Snaps, Piano Timbre Declicking, & Tape Delay Slew Verification', () => {
+  it('executes smooth declick crossfade on active Drone Voice 2 whenever snap harmony is switched', async () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 5.0;
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    // Activate Drone 2
+    engine.setDroneActive(2, true);
+    assert.strictEqual(engine.drone2.isActive, true);
+
+    // Test transition from default (perfect-5th) to sus-4th
+    engine.drone2.voiceGain.gain.events = [];
+    ctx.currentTime = 6.0;
+    engine.setDroneSnap(2, 'sus-4th');
+
+    const susRamps = engine.drone2.voiceGain.gain.events.filter(e => e.type === 'linearRampToValueAtTime');
+    assert.strictEqual(susRamps.length, 2, 'Must schedule down and up ramps on Drone 2 voiceGain during sus-4th snap');
+    assert.ok(susRamps[0].v <= 0.02, 'Down ramp dips gain to eliminate frequency slew pop');
+    assert.strictEqual(susRamps[1].v, engine.drone2.volume, 'Up ramp returns to full operating volume');
+
+    // Test transition to beating-unison
+    engine.drone2.voiceGain.gain.events = [];
+    ctx.currentTime = 7.0;
+    engine.setDroneSnap(2, 'beating-unison');
+
+    const uniRamps = engine.drone2.voiceGain.gain.events.filter(e => e.type === 'linearRampToValueAtTime');
+    assert.strictEqual(uniRamps.length, 2, 'Must schedule down and up ramps on Drone 2 voiceGain during beating-unison snap');
+    assert.strictEqual(engine.droneParams[2].beat, 0.35, 'Beating unison must calibrate to 0.35 Hz');
+
+    // Test transition back to major-9th (restores base beating)
+    engine.drone2.voiceGain.gain.events = [];
+    ctx.currentTime = 8.0;
+    engine.setDroneSnap(2, 'major-9th');
+
+    const majRamps = engine.drone2.voiceGain.gain.events.filter(e => e.type === 'linearRampToValueAtTime');
+    assert.strictEqual(majRamps.length, 2, 'Must schedule down and up ramps on Drone 2 voiceGain during major-9th snap');
+  });
+
+  it('executes master output declickTransition on FeltPianoSynthesizer when switching timbre while voices are active', () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 2.0;
+    const synth = new FeltPianoSynthesizer(ctx, null, 4);
+
+    // Play a note so a voice is active
+    synth.playNote(261.63, 0.8, 3.0);
+
+    // Clear event log on output gain
+    synth.output.gain.events = [];
+    ctx.currentTime = 2.5;
+
+    // Switch timbre to CS-80 via setTimbre
+    synth.setTimbre('cs80');
+
+    const ramps = synth.output.gain.events.filter(e => e.type === 'linearRampToValueAtTime');
+    assert.strictEqual(ramps.length, 2, 'Must schedule 2 linear ramps for pop-free master crossfade');
+    assert.ok(ramps[0].v <= 0.05, 'Must dip gain to near-silence');
+    assert.ok(ramps[1].v >= 0.25 && ramps[1].v <= 0.45, 'Must restore full operating headroom gain');
+
+    // Check voice filter Q slews smoothly with setTargetAtTime
+    const activeVoice = synth.voices.find(v => v.isActive);
+    assert.ok(activeVoice);
+    const filterQTargets = activeVoice.filter1.Q.events.filter(e => e.type === 'setTargetAtTime');
+    assert.ok(filterQTargets.length > 0, 'Filter Q must slew smoothly without step discontinuities');
+  });
+
+  it('verifies TapeDelay.setDelayTime ms alias matches setTime and maintains tau calibration', () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 1.0;
+    const delay = new TapeDelay(ctx, { delayTimeL: 0.30 });
+
+    delay.setDelayTime(680); // 680 ms = 0.68s
+    assert.strictEqual(delay.delayTimeL, 0.68);
+    assert.strictEqual(delay.delayTimeR, 0.68 * 1.5);
+
+    const lEvents = delay.delayNodeL.delayTime.events;
+    const cancelEv = lEvents.find(e => e.type === 'cancelAndHoldAtTime' || e.type === 'cancelScheduledValues');
+    assert.ok(cancelEv, 'Must cancel scheduled values');
+    const targetEv = lEvents.find(e => e.type === 'setTargetAtTime');
+    assert.ok(targetEv, 'Must schedule setTargetAtTime');
+    assert.ok(targetEv.tau >= 0.05 && targetEv.tau <= 0.08, 'Tau must remain calibrated between 0.05s and 0.08s');
+  });
+});
+
 
 
 

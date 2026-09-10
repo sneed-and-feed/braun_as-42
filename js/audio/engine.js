@@ -700,14 +700,37 @@ export class AudioEngine {
       freq = f1 * (9 / 8); // 9:8 ratio
     } else if (snapKey === 'beating-unison') {
       freq = f1;
-      this.setDroneBeating(2, 0.35); // ~0.35 Hz acoustic beat offset
+      this.droneParams[2].beat = 0.35;
     }
 
+    const oldFreq = this.drone2Freq;
     this.drone2Freq = freq;
+
     if (this.drone2) {
+      const isLow = (freq < 55 || (oldFreq && oldFreq < 55));
+      const declickDuration = isLow ? 0.068 : 0.025;
+      const targetGain = this.drone2.volume * (this.drone2.subBassGainTrim || 1.0);
+
+      const snapChanged = (this._lastAppliedDrone2Snap !== undefined && this._lastAppliedDrone2Snap !== snapKey);
+      this._lastAppliedDrone2Snap = snapKey;
+
+      if (this.drone2.isActive && (Math.abs(freq - (oldFreq || freq)) >= 1.0 || snapChanged)) {
+        if (typeof this.drone2.declickTransition === 'function') {
+          this.drone2.declickTransition(declickDuration, targetGain);
+        }
+      }
+
+      // Maintain acoustic beating: unison uses 0.35 Hz offset; harmonic intervals restore dialed beat
+      const targetBeat = (snapKey === 'beating-unison') ? 0.35 : (this.droneParams[2].beat || 0.65);
+      this.drone2.subHertzBeat = targetBeat;
+      if (!this.drone2.isSubBass && snapKey !== 'beating-unison') {
+        this.drone2._baseBeating = targetBeat;
+      }
+
       this.drone2.setFrequency(freq, 0.025);
+
       const baseCutoff = this.droneParams[2].cutoff || 850;
-      if (typeof this.drone2.setCutoff === 'function') {
+      if (typeof this.drone2.setCutoff === 'function' && Math.abs((this.drone2._currentCutoff ?? this.drone2.cutoff) - baseCutoff) >= 1.0) {
         this.drone2.setCutoff(baseCutoff, 0.025);
       }
     }
@@ -748,8 +771,8 @@ export class AudioEngine {
   }
 
   setFeltSympathetic(sympathetic) {
-    this.feltParams.sympathetic = Math.max(0, Math.min(1.0, sympathetic));
-    if (this.feltPiano) this.feltPiano.setSympathetic(this.feltParams.sympathetic);
+    this.feltParams.sympathetic = sympathetic;
+    if (this.feltPiano) this.feltPiano.setSympathetic(sympathetic);
   }
 
   setFeltDecay(decay) {
@@ -765,6 +788,14 @@ export class AudioEngine {
   setFeltWaveform(wave) {
     this.feltParams.waveform = wave;
     if (this.feltPiano) this.feltPiano.setWaveform(wave);
+  }
+
+  setTimbre(wave) {
+    return this.setFeltWaveform(wave);
+  }
+
+  setFeltTimbre(wave) {
+    return this.setFeltWaveform(wave);
   }
 
   setPoissonHumanize(humanize) {
