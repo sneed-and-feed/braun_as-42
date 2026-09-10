@@ -621,6 +621,190 @@ describe('Click-and-Hold Single Strike Verification', () => {
     }
   });
 
+  it('guarantees repeat pointerdown on same chord button while held does not trigger double attack on release', async () => {
+    let chordNoteStarts = 0;
+    let releasedVoices = 0;
+
+    class MockButtonElement {
+      constructor() {
+        this.listeners = {};
+        this.classList = { add: () => {}, remove: () => {}, contains: () => false };
+      }
+      addEventListener(type, fn) {
+        if (!this.listeners[type]) this.listeners[type] = [];
+        this.listeners[type].push(fn);
+      }
+      dispatchEvent(type, evt = {}) {
+        evt.type = type;
+        (this.listeners[type] || []).forEach(fn => fn(evt));
+      }
+      setAttribute() {}
+      getAttribute(attr) {
+        if (attr === 'data-chord') return 'SUMMERS_DAY';
+        return '';
+      }
+      getBoundingClientRect() {
+        return { top: 0, height: 72, left: 0, width: 80 };
+      }
+      blur() {}
+    }
+
+    const createdButtons = [];
+    const mockStrip = { innerHTML: '', appendChild: () => {} };
+    const mockChords = {
+      innerHTML: '',
+      children: createdButtons,
+      classList: { add: () => {} },
+      appendChild: (el) => { createdButtons.push(el); },
+      querySelectorAll: () => createdButtons
+    };
+
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: () => {
+          chordNoteStarts++;
+          return {
+            release: () => { releasedVoices++; }
+          };
+        }
+      }
+    };
+
+    const origCreateElement = globalThis.document ? globalThis.document.createElement : null;
+    const origGetElementById = globalThis.document ? globalThis.document.getElementById : null;
+    if (typeof globalThis.document === 'undefined') {
+      globalThis.document = {};
+    }
+    globalThis.document.createElement = () => new MockButtonElement();
+    globalThis.document.getElementById = () => null;
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      const chordBtn = createdButtons[0];
+      assert.ok(chordBtn, 'Chord button must exist');
+
+      // 1. User presses LMB down on chord button
+      chordBtn.dispatchEvent('pointerdown', { preventDefault: () => {}, pointerId: 1 });
+      // 2. Re-entrant pointerdown while holding (e.g. bounce, multi-dispatch)
+      chordBtn.dispatchEvent('pointerdown', { preventDefault: () => {}, pointerId: 1 });
+
+      // Hold past 550ms
+      await new Promise(r => setTimeout(r, 550));
+      const startsDuringHold = chordNoteStarts;
+      assert.ok(startsDuringHold >= 1, 'Notes must strum during hold');
+
+      // 3. User releases LMB (pointerup -> click)
+      chordBtn.dispatchEvent('pointerup', { pointerId: 1 });
+      chordBtn.dispatchEvent('click', {});
+
+      await new Promise(r => setTimeout(r, 80));
+
+      assert.strictEqual(
+        chordNoteStarts,
+        startsDuringHold,
+        'Upon release after re-entrant pointerdown, chord cluster must NOT strum again'
+      );
+      assert.ok(releasedVoices >= 1, 'Voices must be released upon pointer release');
+    } finally {
+      if (origCreateElement) {
+        globalThis.document.createElement = origCreateElement;
+      } else if (globalThis.document) {
+        delete globalThis.document.createElement;
+      }
+      if (origGetElementById) {
+        globalThis.document.getElementById = origGetElementById;
+      } else if (globalThis.document) {
+        delete globalThis.document.getElementById;
+      }
+    }
+  });
+
+  it('guarantees accessibility and keyboard-driven click without pointerdown triggers chord strum', async () => {
+    let chordNoteStarts = 0;
+
+    class MockButtonElement {
+      constructor() {
+        this.listeners = {};
+        this.classList = { add: () => {}, remove: () => {}, contains: () => false };
+      }
+      addEventListener(type, fn) {
+        if (!this.listeners[type]) this.listeners[type] = [];
+        this.listeners[type].push(fn);
+      }
+      dispatchEvent(type, evt = {}) {
+        evt.type = type;
+        (this.listeners[type] || []).forEach(fn => fn(evt));
+      }
+      setAttribute() {}
+      getAttribute(attr) {
+        if (attr === 'data-chord') return 'SUMMERS_DAY';
+        return '';
+      }
+      getBoundingClientRect() {
+        return { top: 0, height: 72, left: 0, width: 80 };
+      }
+      blur() {}
+    }
+
+    const createdButtons = [];
+    const mockStrip = { innerHTML: '', appendChild: () => {} };
+    const mockChords = {
+      innerHTML: '',
+      children: createdButtons,
+      classList: { add: () => {} },
+      appendChild: (el) => { createdButtons.push(el); },
+      querySelectorAll: () => createdButtons
+    };
+
+    const mockEngine = {
+      isInitialized: true,
+      currentScaleKey: 'BUDD_PENTATONIC',
+      rootPitchClass: 0,
+      a4: 440,
+      feltPiano: {
+        playNote: () => {
+          chordNoteStarts++;
+          return { release: () => {} };
+        }
+      }
+    };
+
+    const origCreateElement = globalThis.document ? globalThis.document.createElement : null;
+    const origGetElementById = globalThis.document ? globalThis.document.getElementById : null;
+    if (typeof globalThis.document === 'undefined') {
+      globalThis.document = {};
+    }
+    globalThis.document.createElement = () => new MockButtonElement();
+    globalThis.document.getElementById = () => null;
+
+    try {
+      const surface = new BraunPlaySurface(mockStrip, mockChords, mockEngine);
+      const chordBtn = createdButtons[0];
+      assert.ok(chordBtn, 'Chord button must exist');
+
+      // Click directly without pointerdown (e.g. Enter/Space or screen reader click)
+      chordBtn.dispatchEvent('click', { detail: 0 });
+
+      await new Promise(r => setTimeout(r, 60));
+      assert.ok(chordNoteStarts >= 1, 'Keyboard / accessibility click must trigger chord strum');
+    } finally {
+      if (origCreateElement) {
+        globalThis.document.createElement = origCreateElement;
+      } else if (globalThis.document) {
+        delete globalThis.document.createElement;
+      }
+      if (origGetElementById) {
+        globalThis.document.getElementById = origGetElementById;
+      } else if (globalThis.document) {
+        delete globalThis.document.getElementById;
+      }
+    }
+  });
+
   it('verifies rapid switching between FELT and CS-80 while voices are sustaining updates detune and gains smoothly', () => {
     const ctx = createDSPMockCtx();
     const synth = new FeltPianoSynthesizer(ctx, null, 4);
@@ -1082,6 +1266,7 @@ describe('Pop-Free Harmony Snaps, Piano Timbre Declicking, & Tape Delay Slew Ver
 
     const majRamps = engine.drone2.voiceGain.gain.events.filter(e => e.type === 'linearRampToValueAtTime');
     assert.strictEqual(majRamps.length, 2, 'Must schedule down and up ramps on Drone 2 voiceGain during major-9th snap');
+    assert.strictEqual(engine.droneParams[2].beat, 0.65, 'Must restore dialed beating (0.65 Hz) when leaving beating-unison');
   });
 
   it('executes master output declickTransition on FeltPianoSynthesizer when switching timbre while voices are active', () => {
@@ -1126,6 +1311,28 @@ describe('Pop-Free Harmony Snaps, Piano Timbre Declicking, & Tape Delay Slew Ver
     const targetEv = lEvents.find(e => e.type === 'setTargetAtTime');
     assert.ok(targetEv, 'Must schedule setTargetAtTime');
     assert.ok(targetEv.tau >= 0.05 && targetEv.tau <= 0.08, 'Tau must remain calibrated between 0.05s and 0.08s');
+  });
+
+  it('eliminates scratchy potentiometer static by slewing smoothly without repeated cancel calls during continuous live knob dragging', () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 10.0;
+    const delay = new TapeDelay(ctx, { delayTimeL: 0.46 });
+
+    // Simulate rapid live dragging across 20 intermediate steps (5ms apart, small increments)
+    delay.delayNodeL.delayTime.events = [];
+    for (let i = 1; i <= 20; i++) {
+      ctx.currentTime = 10.0 + (i * 0.005);
+      delay.setTime(0.46 + (i * 0.002)); // +2ms per step
+    }
+
+    const events = delay.delayNodeL.delayTime.events;
+    const cancels = events.filter(e => e.type === 'cancelAndHoldAtTime' || e.type === 'cancelScheduledValues');
+    const targetEvents = events.filter(e => e.type === 'setTargetAtTime');
+
+    // Continuous dragging must NOT repeatedly cancel and hold on every single mousemove (which creates scratchy zipper noise)
+    assert.strictEqual(cancels.length, 0, 'Live knob drag must not trigger repeated cancelAndHoldAtTime on small increments');
+    assert.strictEqual(targetEvents.length, 20, 'Each step must schedule continuous smooth exponential slewing');
+    assert.ok(targetEvents.every(e => e.tau >= 0.05 && e.tau <= 0.08), 'All slew events must use calibrated 55ms analog tape tau');
   });
 });
 

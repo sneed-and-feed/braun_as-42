@@ -42,6 +42,7 @@ export class TapeDelay {
     this.delayNodeR = ctx.createDelay(3.5);
     this.delayNodeL.delayTime.setValueAtTime(this.delayTimeL, ctx.currentTime);
     this.delayNodeR.delayTime.setValueAtTime(this.delayTimeR, ctx.currentTime);
+    this._hasSetTime = true;
 
     // Feedback and Cross-Coupling Gains
     this.fbGainLL = ctx.createGain();
@@ -236,6 +237,7 @@ export class TapeDelay {
   setTime(timeSeconds) {
     const t = Math.max(0.015, Math.min(2.0, timeSeconds));
     if (Math.abs(this.delayTimeL - t) < 0.0005) return;
+    const oldL = this.delayTimeL;
     this.delayTimeL = t;
     this.delayTimeR = Math.max(0.015, t * 1.5); // Harmonic 3:2 stereo offset
     const now = this.ctx.currentTime;
@@ -243,24 +245,32 @@ export class TapeDelay {
     // Safety clamp wow and flutter modulation depth against the new delay time (debounced / threshold-checked)
     this._updateWowFlutterHeadroom(false);
 
-    // Clear prior pending target curves to prevent Doppler fluttering / zipper rasp pileup
-    if (typeof this.delayNodeL.delayTime.cancelAndHoldAtTime === 'function') {
-      this.delayNodeL.delayTime.cancelAndHoldAtTime(now);
-      this.delayNodeR.delayTime.cancelAndHoldAtTime(now);
-    } else if (typeof this.delayNodeL.delayTime.cancelScheduledValues === 'function') {
-      const curDelayL = this.delayNodeL.delayTime.value ?? this.delayTimeL;
-      const curDelayR = this.delayNodeR.delayTime.value ?? this.delayTimeR;
-      this.delayNodeL.delayTime.cancelScheduledValues(now);
-      this.delayNodeR.delayTime.cancelScheduledValues(now);
-      if (typeof this.delayNodeL.delayTime.setValueAtTime === 'function') {
-        this.delayNodeL.delayTime.setValueAtTime(curDelayL, now);
-        this.delayNodeR.delayTime.setValueAtTime(curDelayR, now);
+    // Cancel prior pending target curves only for large jumps or initial assignment
+    // to prevent zipper rasp / scratchy potentiometer static from 60+ Hz cancel calls during live dragging
+    const isLargeJump = !this._hasSetTime || Math.abs(t - oldL) >= 0.05;
+    this._hasSetTime = true;
+
+    if (isLargeJump) {
+      if (typeof this.delayNodeL.delayTime.cancelAndHoldAtTime === 'function') {
+        try {
+          this.delayNodeL.delayTime.cancelAndHoldAtTime(now);
+          this.delayNodeR.delayTime.cancelAndHoldAtTime(now);
+        } catch (e) {
+          if (typeof this.delayNodeL.delayTime.cancelScheduledValues === 'function') {
+            this.delayNodeL.delayTime.cancelScheduledValues(now);
+            this.delayNodeR.delayTime.cancelScheduledValues(now);
+          }
+        }
+      } else if (typeof this.delayNodeL.delayTime.cancelScheduledValues === 'function') {
+        this.delayNodeL.delayTime.cancelScheduledValues(now);
+        this.delayNodeR.delayTime.cancelScheduledValues(now);
       }
     }
 
+    const tau = 0.055; // 55ms analog tape slewing (calibrated for Doppler pitch-slew without scratchy zipper noise)
     if (typeof this.delayNodeL.delayTime.setTargetAtTime === 'function') {
-      this.delayNodeL.delayTime.setTargetAtTime(this.delayTimeL, now, 0.065);
-      this.delayNodeR.delayTime.setTargetAtTime(this.delayTimeR, now, 0.065);
+      this.delayNodeL.delayTime.setTargetAtTime(this.delayTimeL, now, tau);
+      this.delayNodeR.delayTime.setTargetAtTime(this.delayTimeR, now, tau);
     } else {
       this.delayNodeL.delayTime.value = this.delayTimeL;
       this.delayNodeR.delayTime.value = this.delayTimeR;
@@ -268,7 +278,8 @@ export class TapeDelay {
   }
 
   setDelayTime(timeMs) {
-    return this.setTime(timeMs / 1000);
+    const sec = (typeof timeMs === 'number' && timeMs > 10) ? timeMs / 1000 : timeMs;
+    return this.setTime(sec);
   }
 
   setFeedback(fb) {

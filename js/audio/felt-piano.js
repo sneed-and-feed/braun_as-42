@@ -1275,25 +1275,31 @@ export class FeltPianoSynthesizer {
   declickTransition(crossfadeTime = 0.032) {
     if (!this.output || !this.output.gain || !this.ctx) return;
     const now = this.ctx.currentTime;
+    if (this._lastDeclickTime !== undefined && Math.abs(now - this._lastDeclickTime) < 0.005) {
+      return;
+    }
+    this._lastDeclickTime = now;
+
     const curHeadroom = (typeof this._currentHeadroomGain === 'number' && isFinite(this._currentHeadroomGain))
       ? this._currentHeadroomGain
       : (typeof this.output.gain.value === 'number' && isFinite(this.output.gain.value) ? this.output.gain.value : 1.0);
 
     if (curHeadroom <= 0.001) return;
 
+    let held = false;
     if (typeof this.output.gain.cancelAndHoldAtTime === 'function') {
       try {
         this.output.gain.cancelAndHoldAtTime(now);
+        held = true;
       } catch (e) {
-        if (typeof this.output.gain.cancelScheduledValues === 'function') {
-          this.output.gain.cancelScheduledValues(now);
-        }
+        held = false;
       }
-    } else if (typeof this.output.gain.cancelScheduledValues === 'function') {
-      this.output.gain.cancelScheduledValues(now);
     }
-    if (typeof this.output.gain.setValueAtTime === 'function') {
-      this.output.gain.setValueAtTime(curHeadroom, now);
+    if (!held && typeof this.output.gain.cancelScheduledValues === 'function') {
+      this.output.gain.cancelScheduledValues(now);
+      if (typeof this.output.gain.setValueAtTime === 'function') {
+        this.output.gain.setValueAtTime(curHeadroom, now);
+      }
     }
 
     const dipGain = Math.max(0.0001, curHeadroom * 0.02);

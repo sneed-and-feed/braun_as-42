@@ -61,6 +61,8 @@ export class AudioEngine {
       1: 'deep-tonic',
       2: 'perfect-5th'
     };
+    this._lastAppliedDrone2Snap = 'perfect-5th';
+    this._dialedDrone2Beat = 0.65;
     this.drone1Midi = 36 + this.rootPitchClass;
     this.drone1Freq = midiToFrequency(this.drone1Midi, this.a4);
     this.drone2Freq = this.drone1Freq * 1.5;
@@ -692,12 +694,19 @@ export class AudioEngine {
     const snapKey = this.droneSnap[2] || 'perfect-5th';
     let freq = f1 * 1.5; // default 3:2 ratio
 
+    if (this._dialedDrone2Beat === undefined) {
+      this._dialedDrone2Beat = this.droneParams[2].beat || 0.65;
+    }
+
     if (snapKey === 'perfect-5th') {
       freq = f1 * 1.5; // 3:2 ratio
+      this.droneParams[2].beat = this._dialedDrone2Beat || 0.65;
     } else if (snapKey === 'sus-4th') {
       freq = f1 * (4 / 3); // 4:3 ratio
+      this.droneParams[2].beat = this._dialedDrone2Beat || 0.65;
     } else if (snapKey === 'major-9th') {
       freq = f1 * (9 / 8); // 9:8 ratio
+      this.droneParams[2].beat = this._dialedDrone2Beat || 0.65;
     } else if (snapKey === 'beating-unison') {
       freq = f1;
       this.droneParams[2].beat = 0.35;
@@ -707,14 +716,14 @@ export class AudioEngine {
     this.drone2Freq = freq;
 
     if (this.drone2) {
-      const isLow = (freq < 55 || (oldFreq && oldFreq < 55));
-      const declickDuration = isLow ? 0.068 : 0.025;
+      const isLow = (freq < 110 || (oldFreq && oldFreq < 110));
+      const declickDuration = isLow ? 0.055 : 0.025;
       const targetGain = this.drone2.volume * (this.drone2.subBassGainTrim || 1.0);
 
       const snapChanged = (this._lastAppliedDrone2Snap !== undefined && this._lastAppliedDrone2Snap !== snapKey);
       this._lastAppliedDrone2Snap = snapKey;
 
-      if (this.drone2.isActive && (Math.abs(freq - (oldFreq || freq)) >= 1.0 || snapChanged)) {
+      if ((this.isInitialized ?? true) && this.drone2.isActive && (Math.abs(freq - (oldFreq || freq)) >= 1.0 || snapChanged)) {
         if (typeof this.drone2.declickTransition === 'function') {
           this.drone2.declickTransition(declickDuration, targetGain);
         }
@@ -857,6 +866,9 @@ export class AudioEngine {
   setDroneBeating(id, hz) {
     const voiceId = Number(id) === 2 ? 2 : 1;
     this.droneParams[voiceId].beat = hz;
+    if (voiceId === 2) {
+      this._dialedDrone2Beat = hz;
+    }
     const drone = voiceId === 1 ? this.drone1 : this.drone2;
     if (drone) drone.setBeatingHz(hz);
   }
@@ -904,8 +916,9 @@ export class AudioEngine {
   }
 
   setDelayTime(sec) {
-    this.delayParams.time = sec;
-    if (this.tapeDelay) this.tapeDelay.setTime(sec);
+    const timeSec = (typeof sec === 'number' && sec > 10) ? sec / 1000 : sec;
+    this.delayParams.time = timeSec;
+    if (this.tapeDelay) this.tapeDelay.setTime(timeSec);
   }
 
   setDelayFeedback(fb) {

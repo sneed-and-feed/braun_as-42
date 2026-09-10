@@ -403,9 +403,9 @@ export class SolarDroneVoice {
     }
     if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
       this.voiceGain.gain.cancelScheduledValues(now);
-    }
-    if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
-      this.voiceGain.gain.setValueAtTime(curVol, now);
+      if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+        this.voiceGain.gain.setValueAtTime(curVol, now);
+      }
     }
 
     const dipGain = Math.max(0.0001, curVol * 0.02);

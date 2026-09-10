@@ -150,16 +150,19 @@ export class BraunPlaySurface {
 
   _activatePointerKey(pointerId, keyEl, clientY, clientRect) {
     if (!keyEl) return null;
-    if (typeof keyEl._markPointerHandled === 'function') {
-      keyEl._markPointerHandled();
-    }
     const current = this.activeTouches.get(pointerId);
     if (current && current.keyEl === keyEl) {
+      if (typeof keyEl._markPointerHandled === 'function') {
+        keyEl._markPointerHandled();
+      }
       return current.voice;
     }
 
     if (current) {
       this._releasePointerKey(pointerId);
+    }
+    if (typeof keyEl._markPointerHandled === 'function') {
+      keyEl._markPointerHandled();
     }
 
     if (!keyEl._activePointerIds) {
@@ -250,10 +253,18 @@ export class BraunPlaySurface {
 
   _activatePointerChord(pointerId, btn, voicingId) {
     if (!btn) return null;
+    const current = this.activeChordTouches.get(pointerId);
+    if (current && current.btn === btn && current.voicingId === voicingId) {
+      if (typeof btn._markPointerHandled === 'function') {
+        btn._markPointerHandled();
+      }
+      return current.session;
+    }
+
+    this._releasePointerChord(pointerId);
     if (typeof btn._markPointerHandled === 'function') {
       btn._markPointerHandled();
     }
-    this._releasePointerChord(pointerId);
 
     if (!btn._activePointerIds) {
       btn._activePointerIds = new Set();
@@ -420,7 +431,7 @@ export class BraunPlaySurface {
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
           clearPointerTimer = null;
-        }, 500);
+        }, 1000);
       };
       keyEl._markPointerHandled = markPointerHandled;
       keyEl._markPointerReleased = markPointerReleased;
@@ -518,7 +529,7 @@ export class BraunPlaySurface {
 
       keyEl.addEventListener('click', (e) => {
         // Single strike on pointerdown: releasing LMB must NOT re-trigger a second strike
-        if (handledByPointer) {
+        if (handledByPointer || (keyEl._activePointerIds && keyEl._activePointerIds.size > 0) || keyEl._isHeld) {
           handledByPointer = false;
           if (clearPointerTimer) {
             clearTimeout(clearPointerTimer);
@@ -672,7 +683,7 @@ export class BraunPlaySurface {
         clearPointerTimer = setTimeout(() => {
           handledByPointer = false;
           clearPointerTimer = null;
-        }, 500);
+        }, 1000);
       };
       btn._markPointerHandled = markChordPointerHandled;
       btn._markPointerReleased = markChordPointerReleased;
@@ -765,7 +776,7 @@ export class BraunPlaySurface {
 
       btn.addEventListener('click', () => {
         // Single strike on pointerdown: releasing LMB must NOT re-trigger a second strike
-        if (handledByPointer) {
+        if (handledByPointer || (btn._activePointerIds && btn._activePointerIds.size > 0) || btn._isHeld) {
           handledByPointer = false;
           if (clearPointerTimer) {
             clearTimeout(clearPointerTimer);
@@ -1196,12 +1207,18 @@ export class BraunPlaySurface {
 
       this.keyElements.forEach(keyEl => {
         keyEl._isHeld = false;
+        if (typeof keyEl._markPointerReleased === 'function') {
+          keyEl._markPointerReleased();
+        }
         keyEl.classList.remove('is-pressed');
         keyEl.classList.remove('is-active');
       });
       if (this.semitoneKeys) {
         this.semitoneKeys.forEach(keyEl => {
           keyEl._isHeld = false;
+          if (typeof keyEl._markPointerReleased === 'function') {
+            keyEl._markPointerReleased();
+          }
           keyEl.classList.remove('is-pressed');
           keyEl.classList.remove('is-active');
         });
@@ -1211,6 +1228,9 @@ export class BraunPlaySurface {
         const chordBtns = this.chordsContainer.querySelectorAll('.braun-chord-macro-btn');
         chordBtns.forEach(btn => {
           btn._isHeld = false;
+          if (typeof btn._markPointerReleased === 'function') {
+            btn._markPointerReleased();
+          }
           btn.classList.remove('is-active');
         });
       }
@@ -1256,6 +1276,9 @@ export class BraunPlaySurface {
         this.keyElements.forEach(keyEl => {
           if (!this._isKeyHeldByKeyboard(keyEl)) {
             keyEl._isHeld = false;
+            if (typeof keyEl._markPointerReleased === 'function') {
+              keyEl._markPointerReleased();
+            }
             if (keyEl._activePointerIds) keyEl._activePointerIds.clear();
             keyEl.classList.remove('is-pressed');
             keyEl.classList.remove('is-active');
@@ -1265,6 +1288,9 @@ export class BraunPlaySurface {
           this.semitoneKeys.forEach(keyEl => {
             if (!this._isKeyHeldByKeyboard(keyEl)) {
               keyEl._isHeld = false;
+              if (typeof keyEl._markPointerReleased === 'function') {
+                keyEl._markPointerReleased();
+              }
               if (keyEl._activePointerIds) keyEl._activePointerIds.clear();
               keyEl.classList.remove('is-pressed');
               keyEl.classList.remove('is-active');
@@ -1277,6 +1303,9 @@ export class BraunPlaySurface {
           chordBtns.forEach(btn => {
             if (!this._isChordHeldByKeyboard(btn)) {
               btn._isHeld = false;
+              if (typeof btn._markPointerReleased === 'function') {
+                btn._markPointerReleased();
+              }
               if (btn._activePointerIds) btn._activePointerIds.clear();
               btn.classList.remove('is-active');
             }
