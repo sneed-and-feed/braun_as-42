@@ -14,6 +14,7 @@ import { FeltPianoVoice, FeltPianoSynthesizer, TIMBRE_TRIM } from '../js/audio/f
 import { CHORD_VOICINGS, getChordFrequencies, frequencyToMidi, midiToFrequency } from '../js/generative/scales.js';
 import { AudioEngine } from '../js/audio/engine.js';
 import { SolarDroneVoice } from '../js/audio/drone-voice.js';
+import { ShimmerReverb } from '../js/audio/shimmer-reverb.js';
 import { BraunPlaySurface } from '../js/ui/keyboard.js';
 import { BraunKnob } from '../js/ui/knob.js';
 import { PRESETS } from '../js/app.js';
@@ -876,6 +877,68 @@ describe('Vangelis CS-80 Preset Rebalance & Sub-Bass Stability', () => {
     assert.ok(linearRamps[0].t >= 10.025 && linearRamps[0].t <= 10.035, `Down ramp time (${linearRamps[0].t}) should be ~30ms`);
     // Up ramp returns to full operating volume at ~68ms
     assert.ok(linearRamps[1].t >= 10.060 && linearRamps[1].t <= 10.075, `Up ramp time (${linearRamps[1].t}) should be ~68ms`);
+  });
+
+  it('prevents conflicting setTargetAtTime from clobbering declick transition ramps during sub-bass snap transition', async () => {
+    const ctx = createDSPMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+    engine.setDroneActive(1, true);
+
+    // Clear event history
+    engine.drone1.voiceGain.gain.events = [];
+    ctx.currentTime = 20.0;
+
+    // Switch active drone 1 to sub-bass snap
+    engine.setDroneSnap(1, 'sub-bass');
+
+    const gainEvents = engine.drone1.voiceGain.gain.events;
+    const linearRamps = gainEvents.filter(e => e.type === 'linearRampToValueAtTime');
+    assert.strictEqual(linearRamps.length, 2, 'Must have exactly 2 linear ramps for declick crossfade');
+
+    // Down ramp dips to <= 0.02
+    assert.ok(linearRamps[0].v <= 0.02, `Down ramp must dip gain to near-silence, got ${linearRamps[0].v}`);
+    // Up ramp returns to compensated target gain (0.55 * 1.70 = 0.935)
+    assert.ok(Math.abs(linearRamps[1].v - (0.55 * 1.70)) < 1e-4, `Up ramp must reach compensated target gain 0.935, got ${linearRamps[1].v}`);
+
+    // Must NOT have a conflicting setTargetAtTime event scheduled at t=20.0 that cancels or corrupts the ramps
+    const conflictingTarget = gainEvents.find(e => e.type === 'setTargetAtTime' && Math.abs(e.t - 20.0) < 0.001);
+    assert.strictEqual(conflictingTarget, undefined, 'Must not schedule conflicting setTargetAtTime at transition start time');
+  });
+
+  it('restores base beating, detune, resonance, and LFO depth when switching from sub-bass back to deep-tonic', () => {
+    const ctx = createDSPMockCtx();
+    const drone = new SolarDroneVoice(ctx, ctx.destination, null, 1);
+    drone.setBeatingHz(0.48);
+    drone.setDetuneCents(3.2);
+    drone.setResonance(4.2);
+    drone.setLfo(0.15, 200);
+
+    // Switch to sub-bass
+    drone.setSnap('sub-bass');
+    assert.strictEqual(drone.subHertzBeat, 0, 'subHertzBeat must be 0 in sub-bass');
+    assert.strictEqual(drone.detuneCents, 0, 'detuneCents must be 0 in sub-bass');
+    assert.strictEqual(drone.resonance, 0.5, 'resonance must be 0.5 in sub-bass');
+    assert.strictEqual(drone.lfoDepth, 12, 'lfoDepth must be 12 in sub-bass');
+
+    // Switch back to deep-tonic
+    drone.setSnap('deep-tonic');
+    assert.strictEqual(drone.subHertzBeat, 0.48, 'subHertzBeat must restore to base value 0.48');
+    assert.strictEqual(drone.detuneCents, 3.2, 'detuneCents must restore to base value 3.2');
+    assert.strictEqual(drone.resonance, 4.2, 'resonance must restore to base value 4.2');
+    assert.strictEqual(drone.lfoDepth, 200, 'lfoDepth must restore to base value 200');
+  });
+
+  it('initializes ShimmerReverb with efficient 3.8s initial impulse buffer while scaling perceived RT60 via feedback recirculation', () => {
+    const ctx = createDSPMockCtx();
+    const reverb = new ShimmerReverb(ctx, { decayTime: 8.5 });
+
+    // Initial convolver buffer is capped to 3.8s * sampleRate to prevent cold start audio underruns
+    assert.strictEqual(reverb.convolverA.buffer.length, Math.floor(3.8 * 48000), 'Initial buffer length must be 3.8s');
+    // While decayTime property reflects dialed 8.5s
+    assert.strictEqual(reverb.decayTime, 8.5);
+    // Feedback recirculation is dynamically updated to scale with 8.5s RT60
+    assert.ok(reverb.shimmerFeedback.gain.value > 0.35, 'Feedback gain must scale with 8.5s decay');
   });
 });
 

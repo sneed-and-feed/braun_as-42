@@ -45,6 +45,11 @@ export class SolarDroneVoice {
     this.isSubBass = false;
     this.subBassGainTrim = 1.0;
     this._shaperNeedsUpdate = false;
+    this._declickingUntil = 0;
+    this._baseBeating = this.subHertzBeat;
+    this._baseDetune = this.detuneCents;
+    this._baseResonance = this.resonance;
+    this._baseLfoDepth = this.lfoDepth;
 
     this._buildGraph();
   }
@@ -355,6 +360,10 @@ export class SolarDroneVoice {
       const now = this.ctx.currentTime;
       const targetGain = this.volume * this.subBassGainTrim;
       this._currentGain = targetGain;
+      // Do not schedule a conflicting setTargetAtTime if declickTransition is active
+      if (this._declickingUntil && now < this._declickingUntil - 0.002) {
+        return;
+      }
       if (typeof this.voiceGain.gain.setTargetAtTime === 'function') {
         this.voiceGain.gain.setTargetAtTime(targetGain, now, 0.04);
       } else {
@@ -369,8 +378,9 @@ export class SolarDroneVoice {
    * preventing pitch-slew transients from blasting into tape delay and shimmer reverb.
    * Supports extended crossfade windows (65-75ms, ~2 full cycles of 32.7 Hz) for sub-bass transitions.
    * @param {number} [crossfadeTime=0.025] - Total crossfade duration in seconds
+   * @param {number} [targetEndGain=null] - Desired gain at end of transition (defaults to operating volume)
    */
-  declickTransition(crossfadeTime = 0.025) {
+  declickTransition(crossfadeTime = 0.025, targetEndGain = null) {
     if (!this.isActive || !this.voiceGain || !this.voiceGain.gain) return;
     const now = this.ctx.currentTime;
     if (this._lastDeclickTime !== undefined && Math.abs(now - this._lastDeclickTime) < 0.005) {
@@ -401,12 +411,16 @@ export class SolarDroneVoice {
     const dipGain = Math.max(0.0001, curVol * 0.02);
     const halfTime = Math.max(0.008, Math.min(0.035, crossfadeTime * 0.45));
     const fullTime = Math.max(0.018, Math.min(0.075, crossfadeTime));
+    const endVol = (typeof targetEndGain === 'number' && isFinite(targetEndGain)) ? targetEndGain : curVol;
+
+    this._currentGain = endVol;
+    this._declickingUntil = now + fullTime;
 
     if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
       this.voiceGain.gain.linearRampToValueAtTime(dipGain, now + halfTime);
-      this.voiceGain.gain.linearRampToValueAtTime(curVol, now + fullTime);
+      this.voiceGain.gain.linearRampToValueAtTime(endVol, now + fullTime);
     } else if (typeof this.voiceGain.gain.setTargetAtTime === 'function') {
-      this.voiceGain.gain.setTargetAtTime(curVol, now, 0.025);
+      this.voiceGain.gain.setTargetAtTime(endVol, now, 0.025);
     }
   }
 
@@ -470,6 +484,9 @@ export class SolarDroneVoice {
       : (this._currentDetune ?? this.detuneCents);
     this.detuneCents = cents;
     this._currentDetune = cents;
+    if (!this.isSubBass) {
+      this._baseDetune = cents;
+    }
     const now = this.ctx.currentTime;
     const tau = Math.max(0.015, Math.min(0.05, timeConstant));
 
@@ -508,6 +525,9 @@ export class SolarDroneVoice {
    */
   setBeatingHz(hz, timeConstant = 0.025) {
     this.subHertzBeat = Math.max(-15.0, Math.min(15.0, hz));
+    if (!this.isSubBass) {
+      this._baseBeating = this.subHertzBeat;
+    }
     const now = this.ctx.currentTime;
     const tau = Math.max(0.015, Math.min(0.05, timeConstant));
     const currentBase = this.currentFreq || this.baseFreq;
@@ -588,6 +608,11 @@ export class SolarDroneVoice {
         this.setDetuneCents(0.0, timeConstant);
         this.setResonance(0.5);
         this.setLfo(this.lfoRate, 12);
+      } else {
+        this.setBeatingHz(this._baseBeating ?? 0.35, timeConstant);
+        this.setDetuneCents(this._baseDetune ?? 2.5, timeConstant);
+        this.setResonance(this._baseResonance ?? 3.5);
+        this.setLfo(this.lfoRate, this._baseLfoDepth ?? 180);
       }
     }
     return freq;
@@ -695,6 +720,9 @@ export class SolarDroneVoice {
    */
   setResonance(q) {
     this.resonance = Math.max(0.5, Math.min(12.0, q));
+    if (!this.isSubBass) {
+      this._baseResonance = this.resonance;
+    }
     const qSqrt = Math.sqrt(this.resonance);
     const now = this.ctx.currentTime;
     if (typeof this.filter1.Q.cancelAndHoldAtTime === 'function') {
@@ -719,6 +747,9 @@ export class SolarDroneVoice {
   setLfo(rateHz, depthHz) {
     this.lfoRate = Math.max(0.01, Math.min(8.0, rateHz));
     this.lfoDepth = Math.max(0, Math.min(1200, depthHz));
+    if (!this.isSubBass) {
+      this._baseLfoDepth = this.lfoDepth;
+    }
     const now = this.ctx.currentTime;
     if (typeof this.lfoOsc.frequency.setTargetAtTime === 'function') {
       this.lfoOsc.frequency.setTargetAtTime(this.lfoRate, now, 0.05);

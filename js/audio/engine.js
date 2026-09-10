@@ -360,26 +360,6 @@ export class AudioEngine {
           }
         }
       }
-      if ((this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') && typeof this.ctx.resume === 'function') {
-        try {
-          await this.ctx.resume();
-        } catch (e) {
-          console.warn('AudioContext resume deferred:', e);
-        }
-      }
-      try {
-        if (typeof this.ctx.createBuffer === 'function' && typeof this.ctx.createBufferSource === 'function') {
-          const buffer = this.ctx.createBuffer(1, 1, 22050);
-          const source = this.ctx.createBufferSource();
-          source.buffer = buffer;
-          if (this.ctx.destination) {
-            source.connect(this.ctx.destination);
-          }
-          if (typeof source.start === 'function') {
-            source.start(0);
-          }
-        }
-      } catch (e) {}
       this.isAudioUnlocked = true;
 
     // Generate band-limited wavetables
@@ -543,8 +523,18 @@ export class AudioEngine {
     this.droneBus.connect(this.tapeDelay.input);
     this.droneBus.connect(this.shimmerReverb.input);
 
-    // Fade in master gain and drone bus only after all nodes, wavetables,
-    // felt voices, drone voices, and convolver buffers are fully instantiated and connected
+    // Resume AudioContext only after all nodes, wavetables, felt voices,
+    // drone voices, and convolver buffers are fully instantiated and connected
+    if ((this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') && typeof this.ctx.resume === 'function') {
+      try {
+        await this.ctx.resume();
+      } catch (e) {
+        console.warn('AudioContext resume deferred:', e);
+      }
+    }
+    this.isAudioUnlocked = true;
+
+    // Fade in master gain and drone bus smoothly only after audio graph assembly is complete
     const initEndNow = this.ctx.currentTime;
     const rampStartTime = initEndNow + 0.02;
     const rampTau = 0.04;
@@ -648,14 +638,16 @@ export class AudioEngine {
     this.drone1Freq = newFreq;
 
     if (this.drone1) {
+      const isSub = (snapKey === 'sub-bass');
+      const targetGain = this.drone1.volume * (isSub ? 1.70 : 1.0);
       if (this.isInitialized && this.drone1.isActive && Math.abs(newFreq - (oldFreq || newFreq)) >= 1.0) {
         if (typeof this.drone1.declickTransition === 'function') {
-          const declickDuration = snapKey === 'sub-bass' ? 0.068 : 0.025;
-          this.drone1.declickTransition(declickDuration);
+          const declickDuration = isSub ? 0.068 : 0.025;
+          this.drone1.declickTransition(declickDuration, targetGain);
         }
       }
       this.drone1.setFrequency(this.drone1Freq, 0.025);
-      if (snapKey === 'sub-bass') {
+      if (isSub) {
         if (typeof this.drone1.setSubBass === 'function') {
           this.drone1.setSubBass(true);
         }

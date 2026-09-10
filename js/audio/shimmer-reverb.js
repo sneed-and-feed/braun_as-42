@@ -19,7 +19,10 @@ export class ShimmerReverb {
     this.isFrozen = false;
 
     this._buildGraph();
-    this.regenerateImpulse(this.decayTime, this.damping);
+    // Use fixed rich 3.8s convolution impulse on initial load to avoid blocking the main
+    // thread for >150ms during graph initialization, scaling perceived RT60 via feedback recirculation
+    this.regenerateImpulse(Math.min(3.8, this.decayTime), this.damping);
+    this._updateDecayParameters(this.decayTime);
   }
 
   _buildGraph() {
