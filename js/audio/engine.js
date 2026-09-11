@@ -915,10 +915,10 @@ export class AudioEngine {
     if (drone) drone.setVolume(vol);
   }
 
-  setDelayTime(sec) {
+  setDelayTime(sec, isInstant = false) {
     const timeSec = (typeof sec === 'number' && sec > 10) ? sec / 1000 : sec;
     this.delayParams.time = timeSec;
-    if (this.tapeDelay) this.tapeDelay.setTime(timeSec);
+    if (this.tapeDelay) this.tapeDelay.setTime(timeSec, isInstant);
   }
 
   setDelayFeedback(fb) {

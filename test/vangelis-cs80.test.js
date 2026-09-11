@@ -1310,7 +1310,7 @@ describe('Pop-Free Harmony Snaps, Piano Timbre Declicking, & Tape Delay Slew Ver
     assert.ok(cancelEv, 'Must cancel scheduled values');
     const targetEv = lEvents.find(e => e.type === 'setTargetAtTime');
     assert.ok(targetEv, 'Must schedule setTargetAtTime');
-    assert.ok(targetEv.tau >= 0.05 && targetEv.tau <= 0.08, 'Tau must remain calibrated between 0.05s and 0.08s');
+    assert.ok(targetEv.tau >= 0.008 && targetEv.tau <= 0.08, 'Tau must remain calibrated between 0.008s and 0.08s');
   });
 
   it('eliminates scratchy potentiometer static by slewing smoothly without repeated cancel calls during continuous live knob dragging', () => {
@@ -1332,7 +1332,82 @@ describe('Pop-Free Harmony Snaps, Piano Timbre Declicking, & Tape Delay Slew Ver
     // Continuous dragging must NOT repeatedly cancel and hold on every single mousemove (which creates scratchy zipper noise)
     assert.strictEqual(cancels.length, 0, 'Live knob drag must not trigger repeated cancelAndHoldAtTime on small increments');
     assert.strictEqual(targetEvents.length, 20, 'Each step must schedule continuous smooth exponential slewing');
-    assert.ok(targetEvents.every(e => e.tau >= 0.05 && e.tau <= 0.08), 'All slew events must use calibrated 55ms analog tape tau');
+    assert.ok(targetEvents.every(e => e.tau >= 0.008 && e.tau <= 0.08), 'All slew events must use calibrated analog tape tau');
+  });
+
+  it('eliminates wooliness and zipper static during rapid large-increment continuous live dragging (>= 60ms/step)', () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 10.0;
+    const delay = new TapeDelay(ctx, { delayTimeL: 0.20 });
+
+    // Simulate fast live dragging across 15 intermediate steps (16ms apart, ~70ms large increments)
+    delay.delayNodeL.delayTime.events = [];
+    for (let i = 1; i <= 15; i++) {
+      ctx.currentTime = 10.0 + (i * 0.016);
+      delay.setTime(0.20 + (i * 0.070)); // +70ms per step
+    }
+
+    const events = delay.delayNodeL.delayTime.events;
+    const cancels = events.filter(e => e.type === 'cancelAndHoldAtTime' || e.type === 'cancelScheduledValues');
+    const targetEvents = events.filter(e => e.type === 'setTargetAtTime');
+
+    // Fast live dragging must NEVER trigger cancels, eliminating potentiometer static
+    assert.strictEqual(cancels.length, 0, 'Fast live knob drag must NOT trigger cancelAndHoldAtTime during continuous gesture');
+    assert.strictEqual(targetEvents.length, 15, 'All steps must schedule continuous exponential slewing');
+    // Tau must be 0.010s (10ms) to eliminate wooly sluggish Doppler lag
+    assert.ok(targetEvents.every(e => e.tau === 0.010), 'Must use calibrated non-wooly 10ms tape slewing tau');
+  });
+
+  it('completely eliminates pop when switching piano timbre with 2 drones active by isolating active sounding voices from instantaneous oscillator phase resets', async () => {
+    const ctx = createDSPMockCtx();
+    ctx.currentTime = 1.0;
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    // 1. Activate both Drone 1 and Drone 2
+    engine.setDroneActive(1, true);
+    engine.setDroneActive(2, true);
+    assert.strictEqual(engine.drone1.isActive, true);
+    assert.strictEqual(engine.drone2.isActive, true);
+
+    // 2. Play a piano note so a piano voice is active
+    ctx.currentTime = 2.0;
+    const voice = engine.feltPiano.playNote(329.63, 0.8, 4.0); // E4
+    assert.strictEqual(voice.isActive, true);
+    assert.strictEqual(voice.currentOscillatorWaveform, 'felt');
+
+    // 3. Clear event logs on output gain
+    engine.feltPiano.output.gain.events = [];
+    ctx.currentTime = 2.5;
+
+    // 4. Switch piano timbre to CS-80 while 2 drones are active and piano note is sustaining
+    engine.setFeltWaveform('cs80');
+
+    // Master output gain of feltPiano schedules smooth micro-crossfade without severe -80dB drop
+    const ramps = engine.feltPiano.output.gain.events.filter(e => e.type === 'linearRampToValueAtTime');
+    assert.strictEqual(ramps.length, 2, 'Must schedule 2 linear ramps for pop-free master crossfade');
+    assert.ok(ramps[0].v <= 0.05, `Ramp dip (${ramps[0].v}) must provide smooth micro-dip (<= 0.05)`);
+    assert.ok(ramps[0].v >= 0.005, `Ramp dip (${ramps[0].v}) must not drop below 0.005 to avoid compressor thump on drones`);
+    assert.ok(ramps[1].v >= 0.25 && ramps[1].v <= 0.45, 'Must restore full headroom gain');
+
+    // Running voice parameter targets (filter Q, chorus, detune) slew smoothly
+    const filterQTargets = voice.filter1.Q.events.filter(e => e.type === 'setTargetAtTime');
+    assert.ok(filterQTargets.length > 0, 'Active voice filter Q must slew smoothly');
+    assert.strictEqual(voice.currentWaveform, 'cs80', 'Voice waveform state must update to cs80');
+    assert.strictEqual(voice.currentOscillatorWaveform, 'cs80', 'Oscillator waveform reports cs80');
+
+    // All inactive voices in the pool have been immediately and silently configured with CS-80
+    const inactiveVoices = engine.feltPiano.voices.filter(v => !v.isActive);
+    assert.ok(inactiveVoices.length > 0, 'Must have inactive voices in pool');
+    assert.ok(inactiveVoices.every(v => v.currentOscillatorWaveform === 'cs80'), 'All inactive voices must have CS-80 ready');
+
+    // Next note played uses an inactive voice which immediately sounds as CS-80
+    ctx.currentTime = 3.0;
+    const nextVoice = engine.feltPiano.playNote(440, 0.75, 3.0);
+    assert.strictEqual(nextVoice.currentOscillatorWaveform, 'cs80', 'New notes sound with CS-80');
+
+    // Zero un-synchronized setTimeout timers exist on synthesizer
+    assert.strictEqual(engine.feltPiano._waveformSwapTimer, undefined, 'No setTimeout timers should be used for waveform swaps');
   });
 });
 

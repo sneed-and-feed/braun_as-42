@@ -47,6 +47,8 @@ export class FeltPianoVoice {
     this.currentVelocity = 0.6;
     this.startTime = 0;
     this.currentWaveform = 'felt';
+    this.currentOscillatorWaveform = 'felt';
+    this._pendingOscillatorWaveform = null;
     this.currentHammerSource = null;
     this._isReleased = false;
     this._releaseTime = null;
@@ -162,57 +164,11 @@ export class FeltPianoVoice {
   /**
    * Set voice waveform: 'felt' | 'sine' | 'saw' | 'square' | 'cs80' | 'vangelis'
    */
-  setWaveform(type) {
-    if (this.currentWaveform === type) return;
+  setWaveformParams(type) {
     this.currentWaveform = type;
     const raw = (typeof type === 'string') ? type.trim().toLowerCase() : type;
     const isCS80 = (raw === 'cs80' || raw === 'vangelis');
-    const isSquare = (raw === 'square' || raw === 'sqr');
-    const isSaw = (raw === 'saw' || raw === 'sawtooth');
-    const isSine = (raw === 'sine' || raw === 'sin');
     const now = this.ctx.currentTime;
-
-    if (isCS80) {
-      if (this.wavetables && this.wavetables.saw) {
-        this.osc1.setPeriodicWave(this.wavetables.saw);
-        this.osc2.setPeriodicWave(this.wavetables.warm || this.wavetables.saw);
-      } else {
-        this.osc1.type = 'sawtooth';
-        this.osc2.type = 'sawtooth';
-      }
-    } else if (isSaw) {
-      if (this.wavetables && this.wavetables.saw) {
-        this.osc1.setPeriodicWave(this.wavetables.saw);
-        this.osc2.setPeriodicWave(this.wavetables.warm || this.wavetables.saw);
-      } else {
-        this.osc1.type = 'sawtooth';
-        this.osc2.type = 'sawtooth';
-      }
-    } else if (isSquare) {
-      if (this.wavetables && this.wavetables.square) {
-        this.osc1.setPeriodicWave(this.wavetables.square);
-        this.osc2.setPeriodicWave(this.wavetables.square);
-      } else {
-        this.osc1.type = 'square';
-        this.osc2.type = 'square';
-        if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
-        if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
-      }
-    } else if (type === 'sine') {
-      this.osc1.type = 'sine';
-      this.osc2.type = 'sine';
-      if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
-      if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
-    } else { // 'felt' / 'triangle' default
-      this.osc1.type = 'sine';
-      if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
-      if (this.wavetables && this.wavetables.triangle) {
-        this.osc2.setPeriodicWave(this.wavetables.triangle);
-      } else {
-        this.osc2.type = 'triangle';
-        if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
-      }
-    }
 
     // Smooth filter Q and chorus transitions (prevents biquad numerical impulse pops)
     const targetQ1 = isCS80 ? 1.85 : 0.707;
@@ -274,6 +230,70 @@ export class FeltPianoVoice {
       } else {
         this.timbreTrim.gain.value = trim;
       }
+    }
+  }
+
+  applyOscillatorWaveforms(type) {
+    this._pendingOscillatorWaveform = null;
+    this.currentWaveform = type;
+    this.currentOscillatorWaveform = type;
+    const raw = (typeof type === 'string') ? type.trim().toLowerCase() : type;
+    const isCS80 = (raw === 'cs80' || raw === 'vangelis');
+    const isSquare = (raw === 'square' || raw === 'sqr');
+    const isSaw = (raw === 'saw' || raw === 'sawtooth');
+    const isSine = (raw === 'sine' || raw === 'sin');
+
+    if (isCS80) {
+      if (this.wavetables && this.wavetables.saw) {
+        this.osc1.setPeriodicWave(this.wavetables.saw);
+        this.osc2.setPeriodicWave(this.wavetables.warm || this.wavetables.saw);
+      } else {
+        this.osc1.type = 'sawtooth';
+        this.osc2.type = 'sawtooth';
+      }
+    } else if (isSaw) {
+      if (this.wavetables && this.wavetables.saw) {
+        this.osc1.setPeriodicWave(this.wavetables.saw);
+        this.osc2.setPeriodicWave(this.wavetables.warm || this.wavetables.saw);
+      } else {
+        this.osc1.type = 'sawtooth';
+        this.osc2.type = 'sawtooth';
+      }
+    } else if (isSquare) {
+      if (this.wavetables && this.wavetables.square) {
+        this.osc1.setPeriodicWave(this.wavetables.square);
+        this.osc2.setPeriodicWave(this.wavetables.square);
+      } else {
+        this.osc1.type = 'square';
+        this.osc2.type = 'square';
+        if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
+        if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
+      }
+    } else if (isSine) {
+      this.osc1.type = 'sine';
+      this.osc2.type = 'sine';
+      if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
+      if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
+    } else { // 'felt' / 'triangle' default
+      this.osc1.type = 'sine';
+      if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
+      if (this.wavetables && this.wavetables.triangle) {
+        this.osc2.setPeriodicWave(this.wavetables.triangle);
+      } else {
+        this.osc2.type = 'triangle';
+        if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
+      }
+    }
+  }
+
+  setWaveform(type) {
+    this.setWaveformParams(type);
+    if (!this.isActive) {
+      this.applyOscillatorWaveforms(type);
+    } else {
+      this._pendingOscillatorWaveform = type;
+      this.currentWaveform = type;
+      this.currentOscillatorWaveform = type;
     }
   }
 
@@ -353,6 +373,11 @@ export class FeltPianoVoice {
     if (this._releaseTimer) {
       clearTimeout(this._releaseTimer);
       this._releaseTimer = null;
+    }
+
+    if (this._pendingOscillatorWaveform) {
+      this.applyOscillatorWaveforms(this._pendingOscillatorWaveform);
+      this._pendingOscillatorWaveform = null;
     }
 
     const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
@@ -871,6 +896,10 @@ export class FeltPianoVoice {
         if (this.startTime === noteStartTime && !this.isHold) {
           this.isActive = false;
           this._isReleased = false;
+          if (this._pendingOscillatorWaveform) {
+            this.applyOscillatorWaveforms(this._pendingOscillatorWaveform);
+            this._pendingOscillatorWaveform = null;
+          }
           if (this.synth) {
             this.synth._updatePolyphonicHeadroom();
           }
@@ -973,6 +1002,10 @@ export class FeltPianoVoice {
       if (this.startTime === releaseStartTime && !this.isHold) {
         this.isActive = false;
         this._isReleased = false;
+        if (this._pendingOscillatorWaveform) {
+          this.applyOscillatorWaveforms(this._pendingOscillatorWaveform);
+          this._pendingOscillatorWaveform = null;
+        }
         if (this.synth) {
           this.synth._updatePolyphonicHeadroom();
         }
@@ -1256,15 +1289,30 @@ export class FeltPianoSynthesizer {
     this.currentWaveform = type;
     const now = this.ctx.currentTime;
 
-    // If voices are currently sounding / active, execute a master micro-gain crossfade
-    // on synthesizer output to guarantee click-free, pop-free timbre morphing into the effects loop
-    const hasActive = this.voices.some(v => v.isActive && v.getEstimatedGain(now) > 0.001);
-    if (hasActive && this.output && this.output.gain) {
-      this.declickTransition(0.032);
+    // Check if any voice is currently active or in release decay
+    const hasActive = this.voices.some(v => v.isActive);
+
+    // Apply continuous voice parameter changes immediately (filter Q, detune, gains slew smoothly)
+    for (const voice of this.voices) {
+      voice.setWaveformParams(type);
     }
 
+    if (hasActive) {
+      // Execute master output micro-crossfade to smooth polyphonic bus transients
+      this.declickTransition(0.035);
+    }
+
+    // Immediately update oscillator waveforms on all silent / inactive voices.
+    // Active sounding voices retain their running oscillator phase/waveform until note completion
+    // or re-trigger to prevent mid-cycle phase step discontinuities and master bus pops.
     for (const voice of this.voices) {
-      voice.setWaveform(type);
+      if (!voice.isActive) {
+        voice.applyOscillatorWaveforms(type);
+      } else {
+        voice._pendingOscillatorWaveform = type;
+        voice.currentWaveform = type;
+        voice.currentOscillatorWaveform = type;
+      }
     }
   }
 
@@ -1272,7 +1320,7 @@ export class FeltPianoSynthesizer {
     return this.setWaveform(type);
   }
 
-  declickTransition(crossfadeTime = 0.032) {
+  declickTransition(crossfadeTime = 0.035) {
     if (!this.output || !this.output.gain || !this.ctx) return;
     const now = this.ctx.currentTime;
     if (this._lastDeclickTime !== undefined && Math.abs(now - this._lastDeclickTime) < 0.005) {
@@ -1282,7 +1330,7 @@ export class FeltPianoSynthesizer {
 
     const curHeadroom = (typeof this._currentHeadroomGain === 'number' && isFinite(this._currentHeadroomGain))
       ? this._currentHeadroomGain
-      : (typeof this.output.gain.value === 'number' && isFinite(this.output.gain.value) ? this.output.gain.value : 1.0);
+      : (typeof this.output.gain.value === 'number' && isFinite(this.output.gain.value) ? this.output.gain.value : (this.baseOutputGain || 0.38));
 
     if (curHeadroom <= 0.001) return;
 
@@ -1295,16 +1343,21 @@ export class FeltPianoSynthesizer {
         held = false;
       }
     }
-    if (!held && typeof this.output.gain.cancelScheduledValues === 'function') {
-      this.output.gain.cancelScheduledValues(now);
+    if (!held) {
+      if (typeof this.output.gain.cancelScheduledValues === 'function') {
+        this.output.gain.cancelScheduledValues(now);
+      }
       if (typeof this.output.gain.setValueAtTime === 'function') {
         this.output.gain.setValueAtTime(curHeadroom, now);
       }
     }
 
-    const dipGain = Math.max(0.0001, curHeadroom * 0.02);
-    const halfTime = Math.max(0.008, crossfadeTime * 0.42);
-    const fullTime = Math.max(0.020, crossfadeTime);
+    // Dip to ~0.02 (-26dB to -34dB) instead of 0.0001 (-80dB).
+    // This provides clean micro-smoothing while preventing severe master compressor pumping
+    // that violently modulates active drone voices.
+    const dipGain = Math.max(0.005, Math.min(0.03, curHeadroom * 0.06));
+    const halfTime = Math.max(0.010, crossfadeTime * 0.40); // ~14ms
+    const fullTime = Math.max(0.025, crossfadeTime); // ~35ms
 
     if (typeof this.output.gain.linearRampToValueAtTime === 'function') {
       this.output.gain.linearRampToValueAtTime(dipGain, now + halfTime);

@@ -234,7 +234,7 @@ export class TapeDelay {
     }
   }
 
-  setTime(timeSeconds) {
+  setTime(timeSeconds, isInstant = false) {
     const t = Math.max(0.015, Math.min(2.0, timeSeconds));
     if (Math.abs(this.delayTimeL - t) < 0.0005) return;
     const oldL = this.delayTimeL;
@@ -245,9 +245,15 @@ export class TapeDelay {
     // Safety clamp wow and flutter modulation depth against the new delay time (debounced / threshold-checked)
     this._updateWowFlutterHeadroom(false);
 
-    // Cancel prior pending target curves only for large jumps or initial assignment
-    // to prevent zipper rasp / scratchy potentiometer static from 60+ Hz cancel calls during live dragging
-    const isLargeJump = !this._hasSetTime || Math.abs(t - oldL) >= 0.05;
+    const timeSinceLast = (this._lastSetTime !== undefined) ? (now - this._lastSetTime) : 999;
+    this._lastSetTime = now;
+
+    // A sequence of setTime calls spaced closely together (< 250ms) indicates a continuous live knob gesture.
+    // Live dragging must NEVER cancel scheduled values, preventing zipper rasp / scratchy potentiometer clicks.
+    const isLiveDrag = timeSinceLast < 0.25;
+
+    // Cancel prior pending curves only for explicit instant requests, initial assignment, or isolated discrete jumps (e.g. preset selection)
+    const isLargeJump = isInstant || !this._hasSetTime || (!isLiveDrag && Math.abs(t - oldL) >= 0.25);
     this._hasSetTime = true;
 
     if (isLargeJump) {
@@ -257,17 +263,40 @@ export class TapeDelay {
           this.delayNodeR.delayTime.cancelAndHoldAtTime(now);
         } catch (e) {
           if (typeof this.delayNodeL.delayTime.cancelScheduledValues === 'function') {
+            const curL = this.delayNodeL.delayTime.value ?? oldL;
+            const curR = this.delayNodeR.delayTime.value ?? (oldL * 1.5);
             this.delayNodeL.delayTime.cancelScheduledValues(now);
             this.delayNodeR.delayTime.cancelScheduledValues(now);
+            if (typeof this.delayNodeL.delayTime.setValueAtTime === 'function') {
+              this.delayNodeL.delayTime.setValueAtTime(curL, now);
+              this.delayNodeR.delayTime.setValueAtTime(curR, now);
+            }
           }
         }
       } else if (typeof this.delayNodeL.delayTime.cancelScheduledValues === 'function') {
+        const curL = this.delayNodeL.delayTime.value ?? oldL;
+        const curR = this.delayNodeR.delayTime.value ?? (oldL * 1.5);
         this.delayNodeL.delayTime.cancelScheduledValues(now);
         this.delayNodeR.delayTime.cancelScheduledValues(now);
+        if (typeof this.delayNodeL.delayTime.setValueAtTime === 'function') {
+          this.delayNodeL.delayTime.setValueAtTime(curL, now);
+          this.delayNodeR.delayTime.setValueAtTime(curR, now);
+        }
       }
     }
 
-    const tau = 0.055; // 55ms analog tape slewing (calibrated for Doppler pitch-slew without scratchy zipper noise)
+    if (isInstant) {
+      if (typeof this.delayNodeL.delayTime.setValueAtTime === 'function') {
+        this.delayNodeL.delayTime.setValueAtTime(this.delayTimeL, now);
+        this.delayNodeR.delayTime.setValueAtTime(this.delayTimeR, now);
+      } else {
+        this.delayNodeL.delayTime.value = this.delayTimeL;
+        this.delayNodeR.delayTime.value = this.delayTimeR;
+      }
+      return;
+    }
+
+    const tau = 0.010; // 10ms analog tape slewing (calibrated for instantaneous hand tracking without wooly Doppler pitch lag or zipper clicks)
     if (typeof this.delayNodeL.delayTime.setTargetAtTime === 'function') {
       this.delayNodeL.delayTime.setTargetAtTime(this.delayTimeL, now, tau);
       this.delayNodeR.delayTime.setTargetAtTime(this.delayTimeR, now, tau);
@@ -277,9 +306,9 @@ export class TapeDelay {
     }
   }
 
-  setDelayTime(timeMs) {
+  setDelayTime(timeMs, isInstant = false) {
     const sec = (typeof timeMs === 'number' && timeMs > 10) ? timeMs / 1000 : timeMs;
-    return this.setTime(sec);
+    return this.setTime(sec, isInstant);
   }
 
   setFeedback(fb) {

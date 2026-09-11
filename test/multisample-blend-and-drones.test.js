@@ -342,7 +342,7 @@ describe('Vector Modulation Audio Slewing & Anti-Zipper DSP', () => {
 
     assert.ok(stats.cancelCount >= 2, 'TapeDelay.setTime must cancel pending curve values on L and R channels');
     const lastTarget = stats.setTargetCalls[stats.setTargetCalls.length - 1];
-    assert.ok(lastTarget.tau >= 0.05 && lastTarget.tau <= 0.08, 'Time constant tau must be calibrated between 0.05s and 0.08s');
+    assert.ok(lastTarget.tau >= 0.008 && lastTarget.tau <= 0.08, 'Time constant tau must be calibrated between 0.008s and 0.08s');
     assert.strictEqual(delay.delayTimeL, 0.82);
   });
 
