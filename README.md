@@ -124,15 +124,6 @@ start.bat
    ```
 3. **Turn on the instrument:** Click the orange **POWER ON** button at the top right to start the Web Audio API context.
 
-### Deploying to GitHub Pages
-To update the live version hosted at [`https://sneed-and-feed.github.io/`](https://sneed-and-feed.github.io/):
-```bat
-deploy-pages.bat
-# or: npm run deploy
-```
-This automatically syncs the latest files to `sneed-and-feed.github.io`, commits, and pushes to GitHub Pages.
-Additionally, this repository includes `.github/workflows/deploy.yml` which deploys automatically on every push to `main`.
-
 ### Keyboard Shortcuts & Gestures
 * **A, S, D, F, G, H, J, K, L, ;, ':** Play the 11 modal scale degrees on the serene single-row harmonic chime strip (spanning octaves 3 through 5, click-free with key repeat protection and continuous hold sustain). Additional bass chime shortcuts `Z, X, C, V` are also supported.
 * **Click & Drag Glissando:** Slide finger or mouse horizontally across chime keys for expressive harp/chime glissandi. Each entered key articulates expressively with velocity sensitivity while smoothly releasing previous sounding notes. Holding in place maintains continuous pedal sustain until mouse release.
