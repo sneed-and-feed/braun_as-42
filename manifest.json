@@ -1,0 +1,28 @@
+{
+  "name": "BRAUN AS 42 Ambient Generative Synthesizer",
+  "short_name": "BRAUN AS 42",
+  "description": "Dieter Rams / Braun inspired microtonal ambient generative synthesizer with Web MIDI support",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#E5E3DC",
+  "theme_color": "#2B2B2B",
+  "categories": [
+    "music",
+    "multimedia",
+    "audio",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22><rect width=%22192%22 height=%22192%22 rx=%2232%22 fill=%22%23EE592B%22/><circle cx=%2296%22 cy=%2296%22 r=%2254%22 fill=%22%23ECEBE4%22/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 512 512%22><rect width=%22512%22 height=%22512%22 rx=%2280%22 fill=%22%23EE592B%22/><circle cx=%22256%22 cy=%22256%22 r=%22144%22 fill=%22%23ECEBE4%22/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

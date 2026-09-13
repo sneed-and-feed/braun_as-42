@@ -37,6 +37,7 @@ export class FeltPianoVoice {
     // Golden-ratio quasi-random distribution across voices ensures no two voices in a chord phase identically
     this.dispersionOffset = ((voiceIndex * 1.6180339887) % 1 - 0.5) * 2.8; // -1.4 to +1.4 cents
     this.overtoneSpread = 1.5 + ((voiceIndex * 3) % 5) * 0.22; // 1.5 to 2.38 cents
+    this.currentPitchBendCents = 0;
 
     this.isActive = false;
     this.isHold = false;
@@ -299,6 +300,41 @@ export class FeltPianoVoice {
 
   setTimbre(type) {
     return this.setWaveform(type);
+  }
+
+  /**
+   * Set voice pitch bend in cents (+/- 200 cents for +/- 2 semitones)
+   * Smoothly slews oscillator detune parameters using setTargetAtTime.
+   * @param {number} cents
+   * @param {number} [timeConstant=0.015]
+   */
+  setPitchBend(cents, timeConstant = 0.015) {
+    this.currentPitchBendCents = Number(cents) || 0;
+    if (!this.osc1 || !this.osc2 || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
+    const detune1 = (isCS80 ? (this.dispersionOffset - 5.5) : this.dispersionOffset) + this.currentPitchBendCents;
+    const detune2 = (isCS80 ? (this.dispersionOffset + 6.5) : (this.dispersionOffset + this.overtoneSpread)) + this.currentPitchBendCents;
+
+    if (this.osc1.detune) {
+      if (typeof this.osc1.detune.setTargetAtTime === 'function') {
+        this.osc1.detune.setTargetAtTime(detune1, now, timeConstant);
+      } else if (typeof this.osc1.detune.setValueAtTime === 'function') {
+        this.osc1.detune.setValueAtTime(detune1, now);
+      } else {
+        this.osc1.detune.value = detune1;
+      }
+    }
+
+    if (this.osc2.detune) {
+      if (typeof this.osc2.detune.setTargetAtTime === 'function') {
+        this.osc2.detune.setTargetAtTime(detune2, now, timeConstant);
+      } else if (typeof this.osc2.detune.setValueAtTime === 'function') {
+        this.osc2.detune.setValueAtTime(detune2, now);
+      } else {
+        this.osc2.detune.value = detune2;
+      }
+    }
   }
 
   /**
@@ -593,8 +629,9 @@ export class FeltPianoVoice {
       this.osc1.detune.cancelScheduledValues(cancelTime);
       this.osc2.detune.cancelScheduledValues(cancelTime);
     }
-    const detune1 = isCS80 ? (this.dispersionOffset - 5.5) : this.dispersionOffset;
-    const detune2 = isCS80 ? (this.dispersionOffset + 6.5) : (this.dispersionOffset + this.overtoneSpread);
+    const bend = (typeof this.currentPitchBendCents === 'number') ? this.currentPitchBendCents : (this.synth?.currentPitchBendCents || 0);
+    const detune1 = (isCS80 ? (this.dispersionOffset - 5.5) : this.dispersionOffset) + bend;
+    const detune2 = (isCS80 ? (this.dispersionOffset + 6.5) : (this.dispersionOffset + this.overtoneSpread)) + bend;
     this.osc1.detune.setValueAtTime(detune1, noteStartTime);
     this.osc2.detune.setValueAtTime(detune2, noteStartTime);
 
@@ -1025,6 +1062,7 @@ export class FeltPianoSynthesizer {
     this.ctx = ctx;
     this.wavetables = wavetables;
     this.currentWaveform = 'felt';
+    this.currentPitchBendCents = 0;
 
     // Master voice mixer bus for polyphonic summation
     this.voiceMixer = ctx.createGain();
@@ -1264,9 +1302,24 @@ export class FeltPianoSynthesizer {
 
     const hold = Boolean(isHold || duration === 20.0 || duration === Infinity || (typeof duration === 'number' && !isFinite(duration)));
     voice.isChord = Boolean(isChord);
+    voice.currentPitchBendCents = this.currentPitchBendCents || 0;
     voice.trigger(freq, velocity, duration, this.params, hold);
     this._updatePolyphonicHeadroom();
     return voice;
+  }
+
+  /**
+   * Set global pitch bend in cents (+/- 200 cents for +/- 2 semitones)
+   * Updates all currently active voices smoothly and stores for upcoming notes.
+   * @param {number} cents
+   */
+  setPitchBend(cents) {
+    this.currentPitchBendCents = Number(cents) || 0;
+    for (const voice of this.voices) {
+      if (voice.isActive && typeof voice.setPitchBend === 'function') {
+        voice.setPitchBend(this.currentPitchBendCents);
+      }
+    }
   }
 
   /**

@@ -5,6 +5,7 @@
  */
 
 import { AudioEngine } from './audio/engine.js';
+import { BraunMidiManager } from './midi/midi-manager.js';
 import { BraunKnob } from './ui/knob.js';
 import { BraunOscilloscope } from './ui/oscilloscope.js';
 import { BraunPlaySurface, isPlayableSynthesizerKey } from './ui/keyboard.js';
@@ -229,6 +230,7 @@ export class AmbientApp {
     this.playSurface = null;
     this.vectorPad = null;
     this.knobs = {};
+    this.midiManager = new BraunMidiManager(this.engine, this);
     this.isPowerOn = false;
     this._initialized = false;
     this._knobsBuilt = false;
@@ -243,6 +245,11 @@ export class AmbientApp {
     if (this._initialized) return;
     this._initialized = true;
     this._initDom();
+    if (this.midiManager && typeof this.midiManager.init === 'function') {
+      this.midiManager.init().catch(err => {
+        console.warn('MIDI initialization error:', err);
+      });
+    }
   }
 
   _setupSelectFocusRelease(selectEl) {
@@ -683,6 +690,9 @@ export class AmbientApp {
 
     // Calibrate all parameters, knobs, and vector pad to pristine default preset on boot
     this.applyPreset('DEFAULT', { animate: false });
+
+    // Initialize JUCE 8 two-way parameter synchronization bridge
+    this._initJuceBridge();
 
     // Ensure all dropdown selects and buttons release focus on selection and prevent key interception
     if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
@@ -1819,6 +1829,68 @@ export class AmbientApp {
       size: 'medium',
       onChange: (v) => this.engine.setDroneVolume(id, v / 100)
     });
+  }
+
+  /**
+   * Initializes two-way parameter synchronization with JUCE 8 VST3 backend
+   * (window.__JUCE__.backend) when running inside JUCE WebBrowserComponent.
+   */
+  _initJuceBridge() {
+    if (typeof window === 'undefined') return;
+
+    const setupBackend = () => {
+      const backend = window.__JUCE__?.backend;
+      if (!backend || this._juceBridgeInitialized) return;
+      this._juceBridgeInitialized = true;
+
+      // 1. Listen for paramUpdate events from JUCE C++ APVTS / host automation
+      if (typeof backend.addEventListener === 'function') {
+        backend.addEventListener('paramUpdate', (payload) => {
+          if (!payload || typeof payload !== 'object') return;
+          const { id, value } = payload;
+          if (id && this.knobs[id] && typeof value === 'number') {
+            // Passing false for triggerCallback suppresses re-emitting paramChange back to C++
+            this.knobs[id].setValue(value, false);
+          }
+        });
+      }
+
+      // 2. Connect knob changes to window.__JUCE__.backend.emitEvent("paramChange", { id, value })
+      for (const [id, knob] of Object.entries(this.knobs)) {
+        if (!knob) continue;
+        const originalOnChange = knob.onChange;
+        knob.onChange = (val) => {
+          if (typeof originalOnChange === 'function') {
+            originalOnChange(val);
+          }
+          try {
+            if (typeof backend.emitEvent === 'function') {
+              backend.emitEvent('paramChange', { id, value: val });
+            }
+          } catch (err) {
+            console.warn('JUCE backend emitEvent error:', err);
+          }
+        };
+      }
+    };
+
+    if (window.__JUCE__?.backend) {
+      setupBackend();
+    } else {
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts++;
+        if (window.__JUCE__?.backend) {
+          clearInterval(poll);
+          setupBackend();
+        } else if (attempts >= 50) {
+          clearInterval(poll);
+        }
+      }, 100);
+      if (typeof poll.unref === 'function') {
+        poll.unref();
+      }
+    }
   }
 }
 

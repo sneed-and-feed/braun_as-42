@@ -24,6 +24,7 @@ export class AudioEngine {
     this.rootPitchClass = 0; // 0 = C
     this.currentScaleKey = 'BUDD_PENTATONIC';
     this.a4 = 440;
+    this.currentPitchBendCents = 0;
 
     // Generative Engines initialized immediately so scales and loops work before power-on
     this.poisson = new PoissonGenerator({
@@ -481,6 +482,9 @@ export class AudioEngine {
     this.feltPiano.setVolume(this.feltParams.volume);
     this.feltPiano.setSympathetic(this.feltParams.sympathetic);
     this.feltPiano.setWaveform(this.feltParams.waveform);
+    if (this.currentPitchBendCents !== 0 && typeof this.feltPiano.setPitchBend === 'function') {
+      this.feltPiano.setPitchBend(this.currentPitchBendCents);
+    }
 
     // Calibrated Felt Piano Bus
     this.pianoBus = this.ctx.createGain();
@@ -805,6 +809,25 @@ export class AudioEngine {
 
   setFeltTimbre(wave) {
     return this.setFeltWaveform(wave);
+  }
+
+  /**
+   * Set master felt piano pitch bend in cents (+/- 200 cents for +/- 2 semitones)
+   * @param {number} cents
+   */
+  setPitchBend(cents) {
+    this.currentPitchBendCents = Number(cents) || 0;
+    if (this.feltPiano && typeof this.feltPiano.setPitchBend === 'function') {
+      this.feltPiano.setPitchBend(this.currentPitchBendCents);
+    }
+  }
+
+  /**
+   * Set modulation wheel value (0.0 to 1.0), adjusting felt tone damping and brightness
+   * @param {number} val
+   */
+  setModulationWheel(val) {
+    this.setFeltTone(val);
   }
 
   setPoissonHumanize(humanize) {

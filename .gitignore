@@ -3,3 +3,16 @@ node_modules/
 firefox_shot.png
 .DS_Store
 Thumbs.db
+
+# Build outputs & agent workspace
+build/
+.agents/
+*.obj
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.suo
+*.user
