@@ -144,16 +144,20 @@ void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
         }
 
         // Also ensure child windows (WebView2 host HWNDs and render widget) enforce clipping
-        ::EnumChildWindows(hwnd, [](HWND child, LPARAM) -> BOOL {
+        int childCount = 0;
+        ::EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
+            auto* count = reinterpret_cast<int*>(lParam);
+            (*count)++;
             LONG_PTR childStyle = ::GetWindowLongPtr(child, GWL_STYLE);
             if ((childStyle & (WS_CLIPCHILDREN | WS_CLIPSIBLINGS)) != (WS_CLIPCHILDREN | WS_CLIPSIBLINGS))
             {
                 ::SetWindowLongPtr(child, GWL_STYLE, childStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
             }
             return TRUE;
-        }, 0);
+        }, reinterpret_cast<LPARAM>(&childCount));
 
-        hwndStylesConfigured = true;
+        if (childCount > 0)
+            hwndStylesConfigured = true;
     }
 #endif
 }
@@ -209,8 +213,9 @@ void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String
 
 void BRAUN_AS42AudioProcessorEditor::timerCallback()
 {
-    if (!hwndStylesConfigured)
+    if (!hwndStylesConfigured || ++hwndCheckCounter >= 25)
     {
+        hwndCheckCounter = 0;
         ensureHwndStyles();
     }
 
@@ -255,7 +260,7 @@ void BRAUN_AS42AudioProcessorEditor::sendScopeDataToWeb()
     if (!processorRef.getPoweredOn() || !webComponent.isVisible())
         return;
 
-    constexpr int kSamples = 256;
+    constexpr int kSamples = 512;
     float sL[kSamples];
     float sR[kSamples];
     processorRef.getScopeSamples(sL, sR, kSamples);

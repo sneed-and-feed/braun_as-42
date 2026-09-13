@@ -236,8 +236,10 @@ void BRAUN_AS42AudioProcessor::getScopeSamples(float* destL, float* destR, int n
     if (destL == nullptr || numSamplesToRead <= 0)
         return;
 
+    numSamplesToRead = std::min(numSamplesToRead, kScopeBufferSize);
+
     int writePos = scopeWritePos.load(std::memory_order_acquire);
-    int readPos = (writePos - numSamplesToRead + kScopeBufferSize) % kScopeBufferSize;
+    int readPos = ((writePos - numSamplesToRead) % kScopeBufferSize + kScopeBufferSize) % kScopeBufferSize;
     for (int i = 0; i < numSamplesToRead; ++i)
     {
         destL[i] = scopeBufferL[readPos];

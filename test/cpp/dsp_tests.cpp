@@ -899,6 +899,98 @@ void test_drone_midi_note_off_gating() {
 }
 
 // ============================================================================
+// Test 13: Lock-free Visualizer Ring Buffer Bounds, Wrapping, and Safety
+// ============================================================================
+void test_scope_visualizer_ring_buffer_bounds_and_safety() {
+    constexpr int kScopeBufferSize = 2048;
+    float scopeBufferL[kScopeBufferSize] = {};
+    float scopeBufferR[kScopeBufferSize] = {};
+    std::atomic<int> scopeWritePos { 0 };
+
+    auto pushSamples = [&](const float* left, const float* right, int numSamples) noexcept {
+        if (left == nullptr || numSamples <= 0)
+            return;
+        int pos = scopeWritePos.load(std::memory_order_relaxed);
+        for (int i = 0; i < numSamples; ++i) {
+            scopeBufferL[pos] = left[i];
+            scopeBufferR[pos] = (right != nullptr) ? right[i] : left[i];
+            pos = (pos + 1);
+            if (pos >= kScopeBufferSize)
+                pos = 0;
+        }
+        scopeWritePos.store(pos, std::memory_order_release);
+    };
+
+    auto getSamples = [&](float* destL, float* destR, int numSamplesToRead) noexcept {
+        if (destL == nullptr || numSamplesToRead <= 0)
+            return;
+        numSamplesToRead = std::min(numSamplesToRead, kScopeBufferSize);
+        int writePos = scopeWritePos.load(std::memory_order_acquire);
+        int readPos = ((writePos - numSamplesToRead) % kScopeBufferSize + kScopeBufferSize) % kScopeBufferSize;
+        for (int i = 0; i < numSamplesToRead; ++i) {
+            destL[i] = scopeBufferL[readPos];
+            if (destR != nullptr)
+                destR[i] = scopeBufferR[readPos];
+            readPos = (readPos + 1);
+            if (readPos >= kScopeBufferSize)
+                readPos = 0;
+        }
+    };
+
+    // 1. Basic push and read
+    std::vector<float> inputL(512);
+    std::vector<float> inputR(512);
+    for (int i = 0; i < 512; ++i) {
+        inputL[i] = std::sin(2.0f * 3.14159f * i / 32.0f);
+        inputR[i] = std::cos(2.0f * 3.14159f * i / 32.0f);
+    }
+    pushSamples(inputL.data(), inputR.data(), 512);
+
+    std::vector<float> readL(512);
+    std::vector<float> readR(512);
+    getSamples(readL.data(), readR.data(), 512);
+
+    for (int i = 0; i < 512; ++i) {
+        TEST_ASSERT(std::abs(readL[i] - inputL[i]) < 1e-6f, "Left channel sample mismatch");
+        TEST_ASSERT(std::abs(readR[i] - inputR[i]) < 1e-6f, "Right channel sample mismatch");
+    }
+
+    // 2. Wrap-around past 2048 buffer boundary (push 3000 samples)
+    std::vector<float> streamL(3000);
+    std::vector<float> streamR(3000);
+    for (int i = 0; i < 3000; ++i) {
+        streamL[i] = static_cast<float>(i + 1);
+        streamR[i] = -static_cast<float>(i + 1);
+    }
+    pushSamples(streamL.data(), streamR.data(), 3000);
+
+    // Read last 512 samples
+    getSamples(readL.data(), readR.data(), 512);
+    for (int i = 0; i < 512; ++i) {
+        const float expectedL = streamL[3000 - 512 + i];
+        const float expectedR = streamR[3000 - 512 + i];
+        TEST_ASSERT(readL[i] == expectedL, "Chronological ring-buffer wrap-around Left mismatch");
+        TEST_ASSERT(readR[i] == expectedR, "Chronological ring-buffer wrap-around Right mismatch");
+    }
+
+    // 3. Oversized read request clamping (request 4096 samples from 2048 buffer)
+    std::vector<float> largeDestL(4096, -999.0f);
+    std::vector<float> largeDestR(4096, -999.0f);
+    getSamples(largeDestL.data(), largeDestR.data(), 4096);
+    // Elements 0..2047 should be populated safely, and no memory violation occurs
+    TEST_ASSERT(largeDestL[0] != -999.0f, "First clamped element must be written");
+    TEST_ASSERT(largeDestL[2047] != -999.0f, "Last clamped element must be written");
+    TEST_ASSERT(largeDestL[2048] == -999.0f, "Unrequested portion beyond kScopeBufferSize must remain untouched");
+
+    // 4. Zero and negative sample request safety
+    float dummyL = 42.0f;
+    getSamples(&dummyL, nullptr, 0);
+    TEST_ASSERT(dummyL == 42.0f, "Zero sample read must not alter destination");
+    getSamples(&dummyL, nullptr, -10);
+    TEST_ASSERT(dummyL == 42.0f, "Negative sample read must not alter destination");
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -918,6 +1010,7 @@ int main() {
     RUN_TEST(test_dsp_engine_no_self_oscillation_under_extreme_parameters);
     RUN_TEST(test_drone_midi_pitch_tracking);
     RUN_TEST(test_drone_midi_note_off_gating);
+    RUN_TEST(test_scope_visualizer_ring_buffer_bounds_and_safety);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

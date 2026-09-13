@@ -708,6 +708,7 @@ describe('Audio Enhancements and DSP Verification', () => {
 
     const strokes = [];
     const fills = [];
+    const pathPoints = [];
     const mockCtx = {
       fillStyle: '',
       strokeStyle: '',
@@ -716,9 +717,9 @@ describe('Audio Enhancements and DSP Verification', () => {
       lineJoin: 'round',
       save: () => {},
       restore: () => {},
-      beginPath: () => {},
-      moveTo: (x, y) => {},
-      lineTo: (x, y) => {},
+      beginPath: () => { pathPoints.length = 0; },
+      moveTo: (x, y) => { pathPoints.push({ type: 'moveTo', x, y }); },
+      lineTo: (x, y) => { pathPoints.push({ type: 'lineTo', x, y }); },
       stroke: () => { strokes.push(mockCtx.strokeStyle); },
       fillRect: (x, y, w, h) => { fills.push({ fillStyle: mockCtx.fillStyle, x, y, w, h }); },
       scale: () => {}
@@ -745,10 +746,10 @@ describe('Audio Enhancements and DSP Verification', () => {
     scope.setPower(true);
     assert.strictEqual(scope.isPowered, true, 'Power ON state');
 
-    // 3. Native C++ audio data streaming (simulate 440Hz sine wave)
-    const leftBuf = new Uint8Array(256);
-    const rightBuf = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) {
+    // 3. Native C++ audio data streaming (simulate 512 samples)
+    const leftBuf = new Uint8Array(512);
+    const rightBuf = new Uint8Array(512);
+    for (let i = 0; i < 512; i++) {
       leftBuf[i] = Math.round(128 + 60 * Math.sin((2 * Math.PI * i) / 32));
       rightBuf[i] = Math.round(128 + 60 * Math.cos((2 * Math.PI * i) / 32));
     }
@@ -756,25 +757,46 @@ describe('Audio Enhancements and DSP Verification', () => {
     assert.strictEqual(scope.hasNativeData, true, 'Should mark hasNativeData');
     assert.strictEqual(scope.checkSilence(), false, 'Audio with 440Hz wave is not silent');
 
-    // 4. Waveform render
+    // 4. Waveform render & edge-to-edge span verification
     scope.setMode('WAVEFORM');
     strokes.length = 0;
     scope.draw();
     assert.ok(strokes.length > 0, 'Waveform must be stroked');
+    assert.ok(pathPoints.length >= 2, 'Waveform path must contain points');
+    const firstX = pathPoints[0].x;
+    const lastX = pathPoints[pathPoints.length - 1].x;
+    assert.strictEqual(firstX, 0, 'Waveform must begin at x = 0');
+    assert.ok(Math.abs(lastX - 288) < 0.01, `Waveform must span to full width 288, got ${lastX}`);
 
     // 5. FFT Spectrum mode with native real-time Cooley-Tukey calculation
     scope.setMode('SPECTRUM');
+    // Push broadband signal
+    for (let i = 0; i < 512; i++) {
+      leftBuf[i] = Math.round(128 + 30 * Math.sin((2 * Math.PI * i) / 16) + 30 * Math.sin((2 * Math.PI * i) / 4) + ((i % 7) - 3) * 5);
+      rightBuf[i] = leftBuf[i];
+    }
     scope.pushAudioData(leftBuf, rightBuf);
     assert.ok(scope.freqData.some(v => v > 0), 'FFT should compute non-zero frequency bins');
     fills.length = 0;
     scope.draw();
-    assert.ok(fills.length >= 48, 'Should render 48 spectrum bars');
+    assert.strictEqual(fills.filter(f => f.fillStyle === scope.phosphorColor).length, 48, 'Should render 48 spectrum bars');
+    // Ensure spectrum bars have height >= 2 baseline across entire frequency spectrum
+    const spectrumBars = fills.filter(f => f.fillStyle === scope.phosphorColor);
+    assert.ok(spectrumBars.every(b => b.h >= 2), 'Every spectrum bar must have minimum 2px baseline');
 
     // 6. Stereo Lissajous phase goniometer mode
     scope.setMode('LISSAJOUS');
     strokes.length = 0;
     scope.draw();
     assert.ok(strokes.length > 0, 'Lissajous trace must be stroked');
+    assert.ok(pathPoints.length > 10, 'Lissajous must render trace points');
+
+    // Mono fallback Lissajous mode
+    scope.pushAudioData(leftBuf, null);
+    strokes.length = 0;
+    scope.draw();
+    assert.ok(strokes.length > 0, 'Mono Lissajous must be stroked');
+    assert.ok(pathPoints.length > 10, 'Mono Lissajous must render trace points');
 
     // 7. Resize safety: solid background and immediate redraw
     fills.length = 0;
@@ -787,5 +809,9 @@ describe('Audio Enhancements and DSP Verification', () => {
     strokes.length = 0;
     scope.draw();
     assert.ok(strokes.includes(scope.phosphorColor) || strokes.includes(scope.phosphorGlow), 'Standby phosphor beam drawn');
+
+    // 9. Destroy cleanly
+    scope.destroy();
+    assert.strictEqual(scope.isRunning, false, 'Should be stopped after destroy');
   });
 });

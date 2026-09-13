@@ -43,6 +43,10 @@ export class BraunOscilloscope {
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', () => this._resize());
     }
+    if (typeof ResizeObserver !== 'undefined' && this.canvas && this.canvas.parentElement) {
+      this._resizeObserver = new ResizeObserver(() => this._resize());
+      this._resizeObserver.observe(this.canvas.parentElement);
+    }
   }
 
   setAnalyser(analyser) {
@@ -70,23 +74,33 @@ export class BraunOscilloscope {
   }
 
   pushAudioData(dataL, dataR = null) {
-    if (!dataL) return;
+    if (!dataL || dataL.length === 0) return;
     this.hasNativeData = true;
 
-    const len = Math.min(this.timeData.length, dataL.length);
-    this.dataLength = len;
+    const len = dataL.length;
+    if (this.timeData.length !== len) {
+      this.timeData = new Uint8Array(len);
+    }
     for (let i = 0; i < len; i++) {
       this.timeData[i] = dataL[i];
     }
 
-    if (dataR) {
-      if (!this.timeDataR || this.timeDataR.length !== this.timeData.length) {
-        this.timeDataR = new Uint8Array(this.timeData.length);
+    if (dataR && dataR.length > 0) {
+      const rLen = dataR.length;
+      if (!this.timeDataR || this.timeDataR.length !== rLen) {
+        this.timeDataR = new Uint8Array(rLen);
       }
-      const rLen = Math.min(this.timeDataR.length, dataR.length);
       for (let i = 0; i < rLen; i++) {
         this.timeDataR[i] = dataR[i];
       }
+    } else {
+      this.timeDataR = null;
+    }
+
+    this.dataLength = len;
+
+    if (!this.isPowered) {
+      this.isPowered = true;
     }
 
     if (this.mode === 'SPECTRUM' && !this.analyser) {
@@ -273,10 +287,9 @@ export class BraunOscilloscope {
 
     ctx.beginPath();
 
-    // Analog edge trigger stabilization: find the first rising zero-crossing
-    // Locks periodic waveforms into a steady rock-solid CRT trace instead of jittering
+    const len = (this.hasNativeData && this.dataLength) ? this.dataLength : this.timeData.length;
     let startIdx = 0;
-    const searchLimit = Math.min(1024, this.timeData.length - 2);
+    const searchLimit = Math.min(Math.floor(len / 2), Math.max(0, len - 2));
     for (let i = 0; i < searchLimit; i++) {
       if (this.timeData[i] < 128 && this.timeData[i + 1] >= 128) {
         startIdx = i;
@@ -284,13 +297,9 @@ export class BraunOscilloscope {
       }
     }
 
-    const samplesToDraw = Math.min(this.timeData.length - startIdx, 1024);
-    if (samplesToDraw <= 1) {
-      ctx.restore();
-      return;
-    }
-
-    const sliceWidth = w / samplesToDraw;
+    const maxSamples = this.hasNativeData ? (len - startIdx) : Math.min(len - startIdx, 1024);
+    const samplesToDraw = Math.max(2, maxSamples);
+    const sliceWidth = w / (samplesToDraw - 1);
     let x = 0;
 
     for (let i = 0; i < samplesToDraw; i++) {
@@ -318,7 +327,11 @@ export class BraunOscilloscope {
   }
 
   _computeSpectrumFromTimeData() {
-    const N = Math.min(256, this.timeData.length);
+    const len = (this.hasNativeData && this.dataLength) ? this.dataLength : this.timeData.length;
+    let N = 1;
+    while ((N << 1) <= len && (N << 1) <= 512) {
+      N <<= 1;
+    }
     if (N < 16) return;
 
     if (!this._fftReal || this._fftReal.length !== N) {
@@ -351,12 +364,12 @@ export class BraunOscilloscope {
     }
 
     // Cooley-Tukey decimation-in-time radix-2 FFT
-    for (let len = 2; len <= N; len <<= 1) {
-      const halfLen = len >> 1;
-      const angle = (-2 * Math.PI) / len;
+    for (let lenStep = 2; lenStep <= N; lenStep <<= 1) {
+      const halfLen = lenStep >> 1;
+      const angle = (-2 * Math.PI) / lenStep;
       const wStepR = Math.cos(angle);
       const wStepI = Math.sin(angle);
-      for (let i = 0; i < N; i += len) {
+      for (let i = 0; i < N; i += lenStep) {
         let wr = 1.0;
         let wi = 0.0;
         for (let m = 0; m < halfLen; m++) {
@@ -377,7 +390,7 @@ export class BraunOscilloscope {
 
     // Map magnitudes to frequency bins with logarithmic dB scaling
     const halfN = N >> 1;
-    if (this.freqData.length < halfN) {
+    if (!this.freqData || this.freqData.length !== halfN) {
       this.freqData = new Uint8Array(halfN);
     }
     for (let k = 0; k < halfN; k++) {
@@ -400,16 +413,19 @@ export class BraunOscilloscope {
 
     const numBars = 48;
     const barWidth = (w / numBars) - 1.5;
-    const step = Math.max(1, Math.floor(this.freqData.length / (numBars * 1.6)));
+    const totalBins = this.freqData ? this.freqData.length : 1;
 
     for (let i = 0; i < numBars; i++) {
-      const idx = Math.min(this.freqData.length - 1, i * step);
-      const val = this.freqData[idx] / 255.0;
+      const normIdx = i / numBars;
+      // Perceptual frequency warp (f(t) = t^1.4 gives rich bass resolution while spanning to Nyquist)
+      const binIdx = Math.min(totalBins - 1, Math.floor(Math.pow(normIdx, 1.4) * totalBins));
+      const val = this.freqData ? (this.freqData[binIdx] / 255.0) : 0;
       const barHeight = val * (h - 20);
       const x = i * (barWidth + 1.5);
       const y = h - barHeight - 4;
 
-      ctx.fillRect(x, y, barWidth, barHeight);
+      // Authentic vintage phosphor bar: minimum 2px baseline indicator
+      ctx.fillRect(x, y, barWidth, Math.max(2, barHeight));
     }
     ctx.restore();
   }
@@ -424,10 +440,12 @@ export class BraunOscilloscope {
     const cy = h / 2;
     const radius = Math.min(w, h) * 0.42;
 
+    const len = (this.hasNativeData && this.dataLength) ? this.dataLength : this.timeData.length;
+
     if (this.timeDataR) {
       // True stereo phase goniometer (X = Left, Y = Right rotated 45 degrees)
-      const len = Math.min(this.timeData.length, this.timeDataR.length);
-      for (let i = 0; i < len; i += 2) {
+      const rLen = Math.min(len, this.timeDataR.length);
+      for (let i = 0; i < rLen; i += 2) {
         const xVal = (this.timeData[i] - 128) / 128.0;
         const yVal = (this.timeDataR[i] - 128) / 128.0;
 
@@ -442,8 +460,9 @@ export class BraunOscilloscope {
       }
     } else {
       // Quarter-phase offset mono Lissajous fallback
-      const phaseOffset = Math.floor(this.timeData.length / 4);
-      for (let i = 0; i < this.timeData.length - phaseOffset; i += 2) {
+      const phaseOffset = Math.max(1, Math.floor(len / 4));
+      const drawLen = len - phaseOffset;
+      for (let i = 0; i < drawLen; i += 2) {
         const xVal = (this.timeData[i] - 128) / 128.0;
         const yVal = (this.timeData[i + phaseOffset] - 128) / 128.0;
 
@@ -468,5 +487,13 @@ export class BraunOscilloscope {
     ctx.stroke();
 
     ctx.restore();
+  }
+
+  destroy() {
+    this.stop();
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
   }
 }

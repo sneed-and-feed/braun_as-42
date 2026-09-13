@@ -56,7 +56,7 @@ public:
     bool consumeDroneTrackMidiDirty() noexcept;
 
     // Lock-free oscilloscope visualizer buffer
-    static constexpr int kScopeBufferSize = 512;
+    static constexpr int kScopeBufferSize = 2048;
     void pushScopeSamples(const float* left, const float* right, int numSamples) noexcept;
     void getScopeSamples(float* destL, float* destR, int numSamplesToRead) const noexcept;
 

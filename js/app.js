@@ -1974,6 +1974,20 @@ export class AmbientApp {
                 }
                 bufR = this._scopeBufR;
               }
+
+              if (!this.isPowerOn) {
+                this.isPowerOn = true;
+                const powerBtn = document.getElementById('btn-power');
+                if (powerBtn) {
+                  powerBtn.classList.add('is-active');
+                  const textEl = powerBtn.querySelector('.braun-status-text');
+                  if (textEl) textEl.textContent = 'SYSTEM ON';
+                }
+              }
+              if (!this.scope.isPowered) {
+                this.scope.setPower(true);
+              }
+
               this.scope.pushAudioData(this._scopeBufL, bufR);
             }
           } catch (err) {
