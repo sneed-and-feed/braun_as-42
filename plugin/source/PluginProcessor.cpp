@@ -114,6 +114,11 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (numSamples <= 0)
         return;
 
+    // Unconditionally clear the audio buffer before synthesis.
+    // As a synthesizer generator with 0 inputs, all output channels must be cleared
+    // to prevent leaking uninitialized host buffers, garbage memory, or extra channel data.
+    buffer.clear();
+
     // Power gating: Check if plugin is powered on or triggered by Note-On
     if (!isPoweredOn.load(std::memory_order_relaxed))
     {
@@ -138,7 +143,6 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         }
         else
         {
-            buffer.clear();
             midiMessages.clear();
             return;
         }
@@ -208,6 +212,7 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 void BRAUN_AS42AudioProcessor::setPoweredOn(bool on) noexcept
 {
     isPoweredOn.store(on, std::memory_order_relaxed);
+    powerStateDirty.store(true, std::memory_order_relaxed);
     if (!on)
     {
         dspEngine.reset();
@@ -227,6 +232,7 @@ bool BRAUN_AS42AudioProcessor::consumePowerStateDirty() noexcept
 void BRAUN_AS42AudioProcessor::setDrone1Active(bool active) noexcept
 {
     drone1Active.store(active, std::memory_order_relaxed);
+    drone1StateDirty.store(true, std::memory_order_relaxed);
 }
 
 bool BRAUN_AS42AudioProcessor::getDrone1Active() const noexcept
@@ -234,14 +240,25 @@ bool BRAUN_AS42AudioProcessor::getDrone1Active() const noexcept
     return drone1Active.load(std::memory_order_relaxed);
 }
 
+bool BRAUN_AS42AudioProcessor::consumeDrone1StateDirty() noexcept
+{
+    return drone1StateDirty.exchange(false, std::memory_order_relaxed);
+}
+
 void BRAUN_AS42AudioProcessor::setDrone2Active(bool active) noexcept
 {
     drone2Active.store(active, std::memory_order_relaxed);
+    drone2StateDirty.store(true, std::memory_order_relaxed);
 }
 
 bool BRAUN_AS42AudioProcessor::getDrone2Active() const noexcept
 {
     return drone2Active.load(std::memory_order_relaxed);
+}
+
+bool BRAUN_AS42AudioProcessor::consumeDrone2StateDirty() noexcept
+{
+    return drone2StateDirty.exchange(false, std::memory_order_relaxed);
 }
 
 bool BRAUN_AS42AudioProcessor::hasEditor() const

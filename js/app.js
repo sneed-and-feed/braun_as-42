@@ -1825,6 +1825,7 @@ export class AmbientApp {
             const textEl = activeBtn.querySelector('.braun-status-text');
             if (textEl) textEl.textContent = `DRONE ${id} ON`;
           }
+          this._emitJuceParamChange(`drone${id}_active`, 1.0);
         }
       });
     });
@@ -1914,6 +1915,9 @@ export class AmbientApp {
           }
         };
       }
+
+      // 3. Request initial state synchronization from C++ backend
+      this._emitJuceParamChange('requestSync', 1.0);
     };
 
     if (window.__JUCE__?.backend) {

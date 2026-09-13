@@ -142,9 +142,23 @@ void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String
 
 void BRAUN_AS42AudioProcessorEditor::timerCallback()
 {
+    if (!initialSyncDone && webComponent.isVisible())
+    {
+        syncAllParametersToWeb();
+        initialSyncDone = true;
+    }
+
     if (processorRef.consumePowerStateDirty())
     {
         sendPowerUpdateToWeb(processorRef.getPoweredOn());
+    }
+    if (processorRef.consumeDrone1StateDirty())
+    {
+        sendDroneActiveUpdateToWeb(1, processorRef.getDrone1Active());
+    }
+    if (processorRef.consumeDrone2StateDirty())
+    {
+        sendDroneActiveUpdateToWeb(2, processorRef.getDrone2Active());
     }
 }
 
@@ -164,6 +178,22 @@ void BRAUN_AS42AudioProcessorEditor::sendDroneActiveUpdateToWeb(int droneId, boo
     webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
 }
 
+void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
+{
+    sendPowerUpdateToWeb(processorRef.getPoweredOn());
+    sendDroneActiveUpdateToWeb(1, processorRef.getDrone1Active());
+    sendDroneActiveUpdateToWeb(2, processorRef.getDrone2Active());
+
+    for (const auto& item : kParamMap)
+    {
+        if (auto* param = processorRef.getAPVTS().getParameter(item.apvtsId))
+        {
+            const float currentVal = param->getValue() * (param->getNormalisableRange().end - param->getNormalisableRange().start) + param->getNormalisableRange().start;
+            sendParameterUpdateToWeb(item.apvtsId, currentVal);
+        }
+    }
+}
+
 void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& data)
 {
     if (!data.isObject())
@@ -175,6 +205,13 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
 
     const juce::String incomingId = obj->getProperty("id").toString();
     const float incomingVal = static_cast<float>(obj->getProperty("value"));
+
+    // Handle state sync request from WebView2
+    if (incomingId.equalsIgnoreCase("requestSync") || incomingId.equalsIgnoreCase("requestState"))
+    {
+        syncAllParametersToWeb();
+        return;
+    }
 
     // Handle discrete engine power and drone active state controls
     if (incomingId.equalsIgnoreCase("power"))

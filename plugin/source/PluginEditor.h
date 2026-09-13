@@ -24,6 +24,7 @@ public:
     void sendParameterUpdateToWeb(const juce::String& paramID, float newValue);
     void sendPowerUpdateToWeb(bool isPoweredOn);
     void sendDroneActiveUpdateToWeb(int droneId, bool active);
+    void syncAllParametersToWeb();
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
 
 private:
@@ -34,6 +35,7 @@ private:
     BRAUN_AS42AudioProcessor& processorRef;
     braun::WebResourceManager resourceManager;
     juce::WebBrowserComponent webComponent;
+    bool initialSyncDone { false };
 
     void registerParameterListeners();
     void unregisterParameterListeners();

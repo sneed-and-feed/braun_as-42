@@ -461,6 +461,131 @@ void test_dsp_engine_silence_on_startup_until_triggered_or_active() {
 }
 
 // ============================================================================
+// Test 9: Zero output when powered on & idle, natural tail decay to exact zero
+// ============================================================================
+void test_dsp_engine_zero_output_when_idle_powered_on_and_tail_decay() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    braun::ParameterSnapshot params;
+    TEST_ASSERT(!params.drone1_active, "drone1_active must be false");
+    TEST_ASSERT(!params.drone2_active, "drone2_active must be false");
+
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // 1. Powered ON, idle from boot: process 100 blocks (51,200 samples = >1 second)
+    for (int b = 0; b < 100; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(blockL[i] == 0.0f, "Idle output L must be exactly 0.0f");
+            TEST_ASSERT(blockR[i] == 0.0f, "Idle output R must be exactly 0.0f");
+        }
+    }
+
+    // 2. Play Middle C (Note-On), hold for 0.5s (48 blocks), then send Note-Off
+    braun::MidiEvent noteOn = { 0, 0x90, 60, 100 };
+    std::fill(blockL.begin(), blockL.end(), 0.0f);
+    std::fill(blockR.begin(), blockR.end(), 0.0f);
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteOn, 1);
+
+    float activePeak = 0.0f;
+    for (int b = 0; b < 48; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            activePeak = std::max(activePeak, std::max(std::abs(blockL[i]), std::abs(blockR[i])));
+        }
+    }
+    TEST_ASSERT(activePeak > 0.05f, "Active note must produce audible sound");
+
+    // 3. Send Note-Off
+    braun::MidiEvent noteOff = { 0, 0x80, 60, 0 };
+    std::fill(blockL.begin(), blockL.end(), 0.0f);
+    std::fill(blockR.begin(), blockR.end(), 0.0f);
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteOff, 1);
+
+    // 4. Process natural decay tail (35 seconds = 3281 blocks of 512) WITHOUT calling reset()
+    for (int b = 0; b < 3300; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+
+    TEST_ASSERT(engine.getFeltPiano().getActiveVoiceCount() == 0, "Active piano voices must be 0 after decay");
+
+    // 5. Verify output has reached exact 0.0f silence across 50 consecutive blocks
+    for (int b = 0; b < 50; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(blockL[i] == 0.0f, "Decayed note tail L must reach exact 0.0f silence");
+            TEST_ASSERT(blockR[i] == 0.0f, "Decayed note tail R must reach exact 0.0f silence");
+        }
+    }
+}
+
+// ============================================================================
+// Test 10: Immunity to self-oscillation, LFO bleed, or noise under extreme params
+// ============================================================================
+void test_dsp_engine_no_self_oscillation_under_extreme_parameters() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    braun::ParameterSnapshot extremeParams;
+    extremeParams.drone1_active = false;
+    extremeParams.drone2_active = false;
+    extremeParams.tape_feedback = 0.92f;  // Maximum tape feedback
+    extremeParams.tape_mix = 1.0f;        // 100% wet
+    extremeParams.tape_wow = 1.0f;        // Maximum wow/flutter
+    extremeParams.shimmer_decay = 25.0f;  // Maximum reverb decay (25s)
+    extremeParams.shimmer_mix = 1.0f;     // 100% wet
+    extremeParams.shimmer_amount = 1.0f;  // Maximum shimmer pitch shift
+    extremeParams.drone1_resonance = 10.0f;
+    extremeParams.drone2_resonance = 10.0f;
+    extremeParams.felt_space = 1.0f;      // Maximum sympathetic coupling
+    extremeParams.master_volume = 1.0f;
+
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // Process 100 blocks (51,200 samples) under extreme settings without notes
+    for (int b = 0; b < 100; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, extremeParams, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(blockL[i] == 0.0f, "Extreme param idle L must be exactly 0.0f (no self-oscillation)");
+            TEST_ASSERT(blockR[i] == 0.0f, "Extreme param idle R must be exactly 0.0f (no self-oscillation)");
+        }
+    }
+
+    // CC 1 modulation wheel at 127
+    braun::MidiEvent cc1 = { 0, 0xB0, 1, 127 };
+    std::fill(blockL.begin(), blockL.end(), 0.0f);
+    std::fill(blockR.begin(), blockR.end(), 0.0f);
+    engine.process(blockL.data(), blockR.data(), 512, extremeParams, &cc1, 1);
+    for (int i = 0; i < 512; ++i) {
+        TEST_ASSERT(blockL[i] == 0.0f, "CC 1 idle L must be exactly 0.0f");
+        TEST_ASSERT(blockR[i] == 0.0f, "CC 1 idle R must be exactly 0.0f");
+    }
+
+    // Pitch bend maximum
+    braun::MidiEvent pitchBendMax = { 0, 0xE0, 127, 127 };
+    std::fill(blockL.begin(), blockL.end(), 0.0f);
+    std::fill(blockR.begin(), blockR.end(), 0.0f);
+    engine.process(blockL.data(), blockR.data(), 512, extremeParams, &pitchBendMax, 1);
+    for (int i = 0; i < 512; ++i) {
+        TEST_ASSERT(blockL[i] == 0.0f, "Pitch bend idle L must be exactly 0.0f");
+        TEST_ASSERT(blockR[i] == 0.0f, "Pitch bend idle R must be exactly 0.0f");
+    }
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -476,6 +601,8 @@ int main() {
     RUN_TEST(test_sub_bass_mode_characteristics);
     RUN_TEST(test_dsp_engine_full_signal_flow);
     RUN_TEST(test_dsp_engine_silence_on_startup_until_triggered_or_active);
+    RUN_TEST(test_dsp_engine_zero_output_when_idle_powered_on_and_tail_decay);
+    RUN_TEST(test_dsp_engine_no_self_oscillation_under_extreme_parameters);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

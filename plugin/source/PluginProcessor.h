@@ -45,9 +45,11 @@ public:
 
     void setDrone1Active(bool active) noexcept;
     bool getDrone1Active() const noexcept;
+    bool consumeDrone1StateDirty() noexcept;
 
     void setDrone2Active(bool active) noexcept;
     bool getDrone2Active() const noexcept;
+    bool consumeDrone2StateDirty() noexcept;
 
 private:
     juce::AudioProcessorValueTreeState apvts;
@@ -57,7 +59,9 @@ private:
     std::atomic<bool> isPoweredOn { false };
     std::atomic<bool> powerStateDirty { false };
     std::atomic<bool> drone1Active { false };
+    std::atomic<bool> drone1StateDirty { false };
     std::atomic<bool> drone2Active { false };
+    std::atomic<bool> drone2StateDirty { false };
 
     // Cached raw atomic parameter pointers for lock-free, zero-overhead audio thread reads
     std::atomic<float>* paramFeltVolume { nullptr };
