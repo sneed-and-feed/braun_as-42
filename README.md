@@ -167,10 +167,10 @@ The project maintains comprehensive verification across both JavaScript Web Audi
 ```bash
 npm test
 ```
-* **346 unit and integration tests across 69 test suites** running via Node.js native test runner.
-* Validates Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, and anti-clipping bus headroom staging.
+* **347 unit and integration tests across 69 test suites** running via Node.js native test runner.
+* Validates Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, full-width CRT oscilloscope edge-to-edge drawing, 48-bar FFT spectrum, and anti-clipping bus headroom staging.
 
 ### 5.2 Native C++ DSP & Real-Time Safety Tests
-* **DSP Unit Tests (`test\cpp\dsp_tests.exe`):** 12 passed, 0 failed. Validates Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, and zero idle output.
+* **DSP Unit Tests (`test\cpp\dsp_tests.exe`):** 13 passed, 0 failed. Validates Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, oscilloscope visualizer ring buffer bounds, and zero idle output.
 * **Adversarial Stress Tests (`test\cpp\challenger_stress_tests.exe`):** 8 passed, 0 failed. Verifies block sizes from 32 to 2048, multiple sample rates (44.1k to 192k), 22-parameter rapid sweeps, polyphonic voice stealing race conditions, and **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
 * **Asset & MIME Integrity Audit (`node test/web-assets-and-mime-stress.mjs`):** 18/18 embedded web assets verified against SHA-256 hashes, zero MIME type resolution errors, and 22-parameter bidirectional APVTS roundtrip verified.
