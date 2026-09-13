@@ -44,8 +44,10 @@ private:
     std::atomic<bool> paramDirty[22] {};
 
     bool hwndStylesConfigured { false };
-    int hwndCheckCounter { 0 };
     void ensureHwndStyles();
+
+    int silentFrameCounter { 0 };
+    void sendScopeDataToWeb();
 
     void registerParameterListeners();
     void unregisterParameterListeners();

@@ -1352,9 +1352,11 @@ export class AmbientApp {
       this.isPowerOn = true;
 
       // Connect audio analyser to active CRT oscilloscope
-      if (this.scope && !this.isJuce && this.engine.analyser) {
-        this.scope.setAnalyser(this.engine.analyser);
-        this.scope.start();
+      if (this.scope) {
+        if (!this.isJuce && this.engine.analyser) {
+          this.scope.setAnalyser(this.engine.analyser);
+        }
+        this.scope.setPower(true);
       }
 
       // Update power button UI
@@ -1398,7 +1400,10 @@ export class AmbientApp {
 
       // Reset oscilloscope back to standby phosphor beam
       if (this.scope) {
-        this.scope.setAnalyser(null);
+        this.scope.setPower(false);
+        if (!this.isJuce) {
+          this.scope.setAnalyser(null);
+        }
       }
 
       // Stop recording if active when powering down
@@ -1915,6 +1920,9 @@ export class AmbientApp {
             } else if (!nextPower && this.isPowerOn) {
               this.togglePower({ emitToNative: false }).catch(() => {});
             }
+            if (this.scope) {
+              this.scope.setPower(nextPower);
+            }
             return;
           }
           if ((id === 'drone1_active' || id === 'drone2_active') && typeof value === 'number') {
@@ -1941,7 +1949,40 @@ export class AmbientApp {
         });
       }
 
-      // 2. Connect knob changes to window.__JUCE__.backend.emitEvent("paramChange", { id, value })
+      // 2. Listen for scopeFrame audio snapshots from JUCE C++ DSP engine
+      if (typeof backend.addEventListener === 'function') {
+        backend.addEventListener('scopeFrame', (payload) => {
+          if (!payload || !this.scope) return;
+          try {
+            const rawL = (typeof payload.l === 'string') ? atob(payload.l) : null;
+            const rawR = (typeof payload.r === 'string') ? atob(payload.r) : null;
+            if (rawL) {
+              const len = rawL.length;
+              if (!this._scopeBufL || this._scopeBufL.length !== len) {
+                this._scopeBufL = new Uint8Array(len);
+              }
+              for (let i = 0; i < len; i++) {
+                this._scopeBufL[i] = rawL.charCodeAt(i);
+              }
+              let bufR = null;
+              if (rawR) {
+                if (!this._scopeBufR || this._scopeBufR.length !== rawR.length) {
+                  this._scopeBufR = new Uint8Array(rawR.length);
+                }
+                for (let i = 0; i < rawR.length; i++) {
+                  this._scopeBufR[i] = rawR.charCodeAt(i);
+                }
+                bufR = this._scopeBufR;
+              }
+              this.scope.pushAudioData(this._scopeBufL, bufR);
+            }
+          } catch (err) {
+            console.warn('scopeFrame decode error:', err);
+          }
+        });
+      }
+
+      // 3. Connect knob changes to window.__JUCE__.backend.emitEvent("paramChange", { id, value })
       for (const [id, knob] of Object.entries(this.knobs)) {
         if (!knob) continue;
         const originalOnChange = knob.onChange;
@@ -1959,7 +2000,7 @@ export class AmbientApp {
         };
       }
 
-      // 3. Request initial state synchronization from C++ backend
+      // 4. Request initial state synchronization from C++ backend
       this._emitJuceParamChange('requestSync', 1.0);
     };
 

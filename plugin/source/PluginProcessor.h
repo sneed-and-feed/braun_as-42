@@ -55,6 +55,11 @@ public:
     bool getDroneTrackMidi() const noexcept;
     bool consumeDroneTrackMidiDirty() noexcept;
 
+    // Lock-free oscilloscope visualizer buffer
+    static constexpr int kScopeBufferSize = 512;
+    void pushScopeSamples(const float* left, const float* right, int numSamples) noexcept;
+    void getScopeSamples(float* destL, float* destR, int numSamplesToRead) const noexcept;
+
 private:
     juce::AudioProcessorValueTreeState apvts;
     braun::DspEngine dspEngine;
@@ -97,6 +102,10 @@ private:
     std::atomic<float>* paramShimmerDecay { nullptr };
 
     std::atomic<float>* paramMasterVolume { nullptr };
+
+    std::atomic<int> scopeWritePos { 0 };
+    float scopeBufferL[kScopeBufferSize] {};
+    float scopeBufferR[kScopeBufferSize] {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BRAUN_AS42AudioProcessor)
 };

@@ -210,6 +210,43 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     float* right = (buffer.getNumChannels() > 1) ? buffer.getWritePointer(1) : left;
 
     dspEngine.process(left, right, numSamples, snapshot, midiEventsStack, eventCount);
+
+    pushScopeSamples(left, right, numSamples);
+}
+
+void BRAUN_AS42AudioProcessor::pushScopeSamples(const float* left, const float* right, int numSamples) noexcept
+{
+    if (left == nullptr || numSamples <= 0)
+        return;
+
+    int pos = scopeWritePos.load(std::memory_order_relaxed);
+    for (int i = 0; i < numSamples; ++i)
+    {
+        scopeBufferL[pos] = left[i];
+        scopeBufferR[pos] = (right != nullptr) ? right[i] : left[i];
+        pos = (pos + 1);
+        if (pos >= kScopeBufferSize)
+            pos = 0;
+    }
+    scopeWritePos.store(pos, std::memory_order_release);
+}
+
+void BRAUN_AS42AudioProcessor::getScopeSamples(float* destL, float* destR, int numSamplesToRead) const noexcept
+{
+    if (destL == nullptr || numSamplesToRead <= 0)
+        return;
+
+    int writePos = scopeWritePos.load(std::memory_order_acquire);
+    int readPos = (writePos - numSamplesToRead + kScopeBufferSize) % kScopeBufferSize;
+    for (int i = 0; i < numSamplesToRead; ++i)
+    {
+        destL[i] = scopeBufferL[readPos];
+        if (destR != nullptr)
+            destR[i] = scopeBufferR[readPos];
+        readPos = (readPos + 1);
+        if (readPos >= kScopeBufferSize)
+            readPos = 0;
+    }
 }
 
 void BRAUN_AS42AudioProcessor::setPoweredOn(bool on) noexcept

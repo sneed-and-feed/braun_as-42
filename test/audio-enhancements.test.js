@@ -702,4 +702,90 @@ describe('Audio Enhancements and DSP Verification', () => {
       assert.ok(!Number.isNaN(v.startTime), 'Voice startTime must be a valid number');
     });
   });
+
+  it('verifies BraunOscilloscope CRT monitor standby, native streaming, FFT and Lissajous modes', async () => {
+    const { BraunOscilloscope } = await import('../js/ui/oscilloscope.js');
+
+    const strokes = [];
+    const fills = [];
+    const mockCtx = {
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'round',
+      lineJoin: 'round',
+      save: () => {},
+      restore: () => {},
+      beginPath: () => {},
+      moveTo: (x, y) => {},
+      lineTo: (x, y) => {},
+      stroke: () => { strokes.push(mockCtx.strokeStyle); },
+      fillRect: (x, y, w, h) => { fills.push({ fillStyle: mockCtx.fillStyle, x, y, w, h }); },
+      scale: () => {}
+    };
+    const mockCanvas = {
+      getContext: () => mockCtx,
+      getBoundingClientRect: () => ({ width: 288, height: 180 }),
+      width: 288,
+      height: 180
+    };
+
+    // 1. Standby Initialization
+    const scope = new BraunOscilloscope(mockCanvas, null);
+    assert.strictEqual(scope.isPowered, false, 'Initial state should be unpowered');
+    assert.strictEqual(scope.analyser, null, 'No analyser in standalone/VST3 mode');
+    assert.strictEqual(scope.timeData[0], 128, 'Baseline timeData must be centered at 128');
+
+    // Draw standby beam
+    scope.draw();
+    assert.ok(fills.length > 0, 'Must render background');
+    assert.ok(strokes.length > 0, 'Must render graticule and standby beam');
+
+    // 2. Power On
+    scope.setPower(true);
+    assert.strictEqual(scope.isPowered, true, 'Power ON state');
+
+    // 3. Native C++ audio data streaming (simulate 440Hz sine wave)
+    const leftBuf = new Uint8Array(256);
+    const rightBuf = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) {
+      leftBuf[i] = Math.round(128 + 60 * Math.sin((2 * Math.PI * i) / 32));
+      rightBuf[i] = Math.round(128 + 60 * Math.cos((2 * Math.PI * i) / 32));
+    }
+    scope.pushAudioData(leftBuf, rightBuf);
+    assert.strictEqual(scope.hasNativeData, true, 'Should mark hasNativeData');
+    assert.strictEqual(scope.checkSilence(), false, 'Audio with 440Hz wave is not silent');
+
+    // 4. Waveform render
+    scope.setMode('WAVEFORM');
+    strokes.length = 0;
+    scope.draw();
+    assert.ok(strokes.length > 0, 'Waveform must be stroked');
+
+    // 5. FFT Spectrum mode with native real-time Cooley-Tukey calculation
+    scope.setMode('SPECTRUM');
+    scope.pushAudioData(leftBuf, rightBuf);
+    assert.ok(scope.freqData.some(v => v > 0), 'FFT should compute non-zero frequency bins');
+    fills.length = 0;
+    scope.draw();
+    assert.ok(fills.length >= 48, 'Should render 48 spectrum bars');
+
+    // 6. Stereo Lissajous phase goniometer mode
+    scope.setMode('LISSAJOUS');
+    strokes.length = 0;
+    scope.draw();
+    assert.ok(strokes.length > 0, 'Lissajous trace must be stroked');
+
+    // 7. Resize safety: solid background and immediate redraw
+    fills.length = 0;
+    scope._resize();
+    assert.ok(fills.some(f => f.fillStyle === '#121414'), 'Resize must fill solid dark chassis color');
+
+    // 8. Power down back to standby beam
+    scope.setPower(false);
+    assert.strictEqual(scope.isPowered, false);
+    strokes.length = 0;
+    scope.draw();
+    assert.ok(strokes.includes(scope.phosphorColor) || strokes.includes(scope.phosphorGlow), 'Standby phosphor beam drawn');
+  });
 });

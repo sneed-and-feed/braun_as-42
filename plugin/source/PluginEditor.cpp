@@ -135,30 +135,20 @@ void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
         if (hwnd == nullptr)
             return;
 
-        // Traverse all parent windows up to the desktop root and enforce WS_CLIPCHILDREN | WS_CLIPSIBLINGS.
-        // This prevents FL Studio's host wrapper from painting over the child plugin window,
-        // eliminating the classic DWM / GDI solitaire smear trail when moving overlapping windows.
-        HWND cur = hwnd;
-        while (cur != nullptr)
+        // Apply WS_CLIPCHILDREN | WS_CLIPSIBLINGS to our own plugin HWND only.
+        // We NEVER touch ancestor/parent windows to avoid corrupting FL Studio or host DAW title bars/frames.
+        LONG_PTR style = ::GetWindowLongPtr(hwnd, GWL_STYLE);
+        if ((style & (WS_CLIPCHILDREN | WS_CLIPSIBLINGS)) != (WS_CLIPCHILDREN | WS_CLIPSIBLINGS))
         {
-            LONG_PTR style = ::GetWindowLongPtr(cur, GWL_STYLE);
-            if ((style & (WS_CLIPCHILDREN | WS_CLIPSIBLINGS)) != (WS_CLIPCHILDREN | WS_CLIPSIBLINGS))
-            {
-                ::SetWindowLongPtr(cur, GWL_STYLE, style | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
-                ::SetWindowPos(cur, nullptr, 0, 0, 0, 0,
-                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-            }
-            cur = ::GetParent(cur);
+            ::SetWindowLongPtr(hwnd, GWL_STYLE, style | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
         }
 
-        // Also ensure all child windows (WebView2 host HWNDs and render widget) enforce clipping
+        // Also ensure child windows (WebView2 host HWNDs and render widget) enforce clipping
         ::EnumChildWindows(hwnd, [](HWND child, LPARAM) -> BOOL {
-            LONG_PTR style = ::GetWindowLongPtr(child, GWL_STYLE);
-            if ((style & (WS_CLIPCHILDREN | WS_CLIPSIBLINGS)) != (WS_CLIPCHILDREN | WS_CLIPSIBLINGS))
+            LONG_PTR childStyle = ::GetWindowLongPtr(child, GWL_STYLE);
+            if ((childStyle & (WS_CLIPCHILDREN | WS_CLIPSIBLINGS)) != (WS_CLIPCHILDREN | WS_CLIPSIBLINGS))
             {
-                ::SetWindowLongPtr(child, GWL_STYLE, style | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
-                ::SetWindowPos(child, nullptr, 0, 0, 0, 0,
-                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                ::SetWindowLongPtr(child, GWL_STYLE, childStyle | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
             }
             return TRUE;
         }, 0);
@@ -219,9 +209,8 @@ void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String
 
 void BRAUN_AS42AudioProcessorEditor::timerCallback()
 {
-    if (!hwndStylesConfigured || ++hwndCheckCounter >= 25)
+    if (!hwndStylesConfigured)
     {
-        hwndCheckCounter = 0;
         ensureHwndStyles();
     }
 
@@ -257,6 +246,58 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
             sendParameterUpdateToWeb(kParamMap[i].apvtsId, val);
         }
     }
+
+    sendScopeDataToWeb();
+}
+
+void BRAUN_AS42AudioProcessorEditor::sendScopeDataToWeb()
+{
+    if (!processorRef.getPoweredOn() || !webComponent.isVisible())
+        return;
+
+    constexpr int kSamples = 256;
+    float sL[kSamples];
+    float sR[kSamples];
+    processorRef.getScopeSamples(sL, sR, kSamples);
+
+    bool hasSignal = false;
+    for (int i = 0; i < kSamples; ++i)
+    {
+        if (std::abs(sL[i]) > 0.002f || std::abs(sR[i]) > 0.002f)
+        {
+            hasSignal = true;
+            break;
+        }
+    }
+
+    if (!hasSignal)
+    {
+        if (++silentFrameCounter > 4)
+        {
+            // During prolonged silence, throttle IPC dispatch to ~2 Hz
+            if (silentFrameCounter % 12 != 0)
+                return;
+        }
+    }
+    else
+    {
+        silentFrameCounter = 0;
+    }
+
+    uint8_t bytesL[kSamples];
+    uint8_t bytesR[kSamples];
+    for (int i = 0; i < kSamples; ++i)
+    {
+        const float sampL = std::clamp(sL[i], -1.0f, 1.0f);
+        const float sampR = std::clamp(sR[i], -1.0f, 1.0f);
+        bytesL[i] = static_cast<uint8_t>(std::clamp(static_cast<int>(std::round(128.0f + sampL * 127.0f)), 0, 255));
+        bytesR[i] = static_cast<uint8_t>(std::clamp(static_cast<int>(std::round(128.0f + sampR * 127.0f)), 0, 255));
+    }
+
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("l", juce::Base64::toBase64(bytesL, kSamples));
+    obj->setProperty("r", juce::Base64::toBase64(bytesR, kSamples));
+    webComponent.emitEventIfBrowserIsVisible("scopeFrame", juce::var(obj));
 }
 
 void BRAUN_AS42AudioProcessorEditor::sendPowerUpdateToWeb(bool on)
