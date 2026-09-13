@@ -1207,6 +1207,7 @@ export class AmbientApp {
               const textEl = toggleBtn.querySelector('.braun-status-text');
               if (textEl) textEl.textContent = droneData.active ? `DRONE ${id} ON` : `DRONE ${id} OFF`;
             }
+            this._emitJuceParamChange(`drone${id}_active`, droneData.active ? 1.0 : 0.0);
           }
         }
       });
@@ -1306,7 +1307,7 @@ export class AmbientApp {
     });
   }
 
-  async startAudio() {
+  async startAudio({ emitToNative = true } = {}) {
     if (this.isPowerOn && this.engine.isInitialized && this.engine.ctx && this.engine.ctx.state === 'running') return;
     if (this._startingAudio) return;
     this._startingAudio = true;
@@ -1329,21 +1330,29 @@ export class AmbientApp {
         if (textEl) textEl.textContent = 'SYSTEM ON';
       }
 
+      if (emitToNative) {
+        this._emitJuceParamChange('power', 1.0);
+      }
+
       this.updateLoopNotes();
     } finally {
       this._startingAudio = false;
     }
   }
 
-  async togglePower() {
+  async togglePower({ emitToNative = true } = {}) {
     const powerBtn = document.getElementById('btn-power');
     const autoEvolveBtn = document.getElementById('toggle-auto-evolve');
     const loopsBtn = document.getElementById('toggle-phase-loops');
 
     if (!this.isPowerOn) {
-      await this.startAudio();
+      await this.startAudio({ emitToNative });
     } else {
       this.isPowerOn = false;
+
+      if (emitToNative) {
+        this._emitJuceParamChange('power', 0.0);
+      }
 
       // Immediately update power button UI
       if (powerBtn) {
@@ -1686,6 +1695,7 @@ export class AmbientApp {
         activeBtn.classList.toggle('is-active', nextActive);
         const textEl = activeBtn.querySelector('.braun-status-text');
         if (textEl) textEl.textContent = nextActive ? `DRONE ${id} ON` : `DRONE ${id} OFF`;
+        this._emitJuceParamChange(`drone${id}_active`, nextActive ? 1.0 : 0.0);
       });
     }
 
@@ -1831,6 +1841,17 @@ export class AmbientApp {
     });
   }
 
+  _emitJuceParamChange(id, value) {
+    try {
+      const backend = window.__JUCE__?.backend;
+      if (backend && typeof backend.emitEvent === 'function') {
+        backend.emitEvent('paramChange', { id, value });
+      }
+    } catch (err) {
+      console.warn('JUCE backend emitEvent error:', err);
+    }
+  }
+
   /**
    * Initializes two-way parameter synchronization with JUCE 8 VST3 backend
    * (window.__JUCE__.backend) when running inside JUCE WebBrowserComponent.
@@ -1848,6 +1869,27 @@ export class AmbientApp {
         backend.addEventListener('paramUpdate', (payload) => {
           if (!payload || typeof payload !== 'object') return;
           const { id, value } = payload;
+          if (id === 'power' && typeof value === 'number') {
+            const nextPower = (value > 0.5);
+            if (nextPower && !this.isPowerOn) {
+              this.startAudio({ emitToNative: false }).catch(() => {});
+            } else if (!nextPower && this.isPowerOn) {
+              this.togglePower({ emitToNative: false }).catch(() => {});
+            }
+            return;
+          }
+          if ((id === 'drone1_active' || id === 'drone2_active') && typeof value === 'number') {
+            const dId = id === 'drone1_active' ? 1 : 2;
+            const nextActive = (value > 0.5);
+            this.engine.setDroneActive(dId, nextActive);
+            const toggleBtn = document.getElementById(`btn-drone${dId}-active`) || document.getElementById(`toggle-drone-${dId}`);
+            if (toggleBtn) {
+              toggleBtn.classList.toggle('is-active', nextActive);
+              const textEl = toggleBtn.querySelector('.braun-status-text');
+              if (textEl) textEl.textContent = nextActive ? `DRONE ${dId} ON` : `DRONE ${dId} OFF`;
+            }
+            return;
+          }
           if (id && this.knobs[id] && typeof value === 'number') {
             // Passing false for triggerCallback suppresses re-emitting paramChange back to C++
             this.knobs[id].setValue(value, false);

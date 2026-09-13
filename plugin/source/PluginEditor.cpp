@@ -67,11 +67,14 @@ BRAUN_AS42AudioProcessorEditor::BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioPr
     setResizable(true, true);
     setResizeLimits(800, 560, 1920, 1080);
 
+    startTimerHz(30);
+
     webComponent.goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 }
 
 BRAUN_AS42AudioProcessorEditor::~BRAUN_AS42AudioProcessorEditor()
 {
+    stopTimer();
     unregisterParameterListeners();
 }
 
@@ -137,6 +140,30 @@ void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String
     }
 }
 
+void BRAUN_AS42AudioProcessorEditor::timerCallback()
+{
+    if (processorRef.consumePowerStateDirty())
+    {
+        sendPowerUpdateToWeb(processorRef.getPoweredOn());
+    }
+}
+
+void BRAUN_AS42AudioProcessorEditor::sendPowerUpdateToWeb(bool on)
+{
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("id", "power");
+    obj->setProperty("value", on ? 1.0f : 0.0f);
+    webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+}
+
+void BRAUN_AS42AudioProcessorEditor::sendDroneActiveUpdateToWeb(int droneId, bool active)
+{
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("id", droneId == 1 ? "drone1_active" : "drone2_active");
+    obj->setProperty("value", active ? 1.0f : 0.0f);
+    webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+}
+
 void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& data)
 {
     if (!data.isObject())
@@ -148,6 +175,23 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
 
     const juce::String incomingId = obj->getProperty("id").toString();
     const float incomingVal = static_cast<float>(obj->getProperty("value"));
+
+    // Handle discrete engine power and drone active state controls
+    if (incomingId.equalsIgnoreCase("power"))
+    {
+        processorRef.setPoweredOn(incomingVal > 0.5f);
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("drone1_active") || incomingId.equalsIgnoreCase("drone1Active"))
+    {
+        processorRef.setDrone1Active(incomingVal > 0.5f);
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("drone2_active") || incomingId.equalsIgnoreCase("drone2Active"))
+    {
+        processorRef.setDrone2Active(incomingVal > 0.5f);
+        return;
+    }
 
     juce::String targetApvtsId;
     float targetApvtsVal = incomingVal;

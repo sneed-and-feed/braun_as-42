@@ -114,6 +114,36 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (numSamples <= 0)
         return;
 
+    // Power gating: Check if plugin is powered on or triggered by Note-On
+    if (!isPoweredOn.load(std::memory_order_relaxed))
+    {
+        bool hasNoteOn = false;
+        for (const auto metadata : midiMessages)
+        {
+            if (metadata.numBytes >= 3)
+            {
+                const auto* rawData = metadata.data;
+                if ((rawData[0] & 0xF0) == 0x90 && rawData[2] > 0)
+                {
+                    hasNoteOn = true;
+                    break;
+                }
+            }
+        }
+
+        if (hasNoteOn)
+        {
+            isPoweredOn.store(true, std::memory_order_relaxed);
+            powerStateDirty.store(true, std::memory_order_relaxed);
+        }
+        else
+        {
+            buffer.clear();
+            midiMessages.clear();
+            return;
+        }
+    }
+
     // Read atomic parameter values into Plain-Old-Data snapshot
     braun::ParameterSnapshot snapshot;
     if (paramFeltVolume)      snapshot.felt_volume = paramFeltVolume->load(std::memory_order_relaxed);
@@ -122,12 +152,14 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (paramFeltHammer)      snapshot.felt_hammer = paramFeltHammer->load(std::memory_order_relaxed);
     if (paramFeltSpace)       snapshot.felt_space = paramFeltSpace->load(std::memory_order_relaxed);
 
+    snapshot.drone1_active = drone1Active.load(std::memory_order_relaxed);
     if (paramDrone1Volume)    snapshot.drone1_volume = paramDrone1Volume->load(std::memory_order_relaxed);
     if (paramDrone1Pitch)     snapshot.drone1_pitch = paramDrone1Pitch->load(std::memory_order_relaxed);
     if (paramDrone1Fold)      snapshot.drone1_fold = paramDrone1Fold->load(std::memory_order_relaxed);
     if (paramDrone1Cutoff)    snapshot.drone1_cutoff = paramDrone1Cutoff->load(std::memory_order_relaxed);
     if (paramDrone1Resonance) snapshot.drone1_resonance = paramDrone1Resonance->load(std::memory_order_relaxed);
 
+    snapshot.drone2_active = drone2Active.load(std::memory_order_relaxed);
     if (paramDrone2Volume)    snapshot.drone2_volume = paramDrone2Volume->load(std::memory_order_relaxed);
     if (paramDrone2Pitch)     snapshot.drone2_pitch = paramDrone2Pitch->load(std::memory_order_relaxed);
     if (paramDrone2Fold)      snapshot.drone2_fold = paramDrone2Fold->load(std::memory_order_relaxed);
@@ -173,6 +205,45 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     dspEngine.process(left, right, numSamples, snapshot, midiEventsStack, eventCount);
 }
 
+void BRAUN_AS42AudioProcessor::setPoweredOn(bool on) noexcept
+{
+    isPoweredOn.store(on, std::memory_order_relaxed);
+    if (!on)
+    {
+        dspEngine.reset();
+    }
+}
+
+bool BRAUN_AS42AudioProcessor::getPoweredOn() const noexcept
+{
+    return isPoweredOn.load(std::memory_order_relaxed);
+}
+
+bool BRAUN_AS42AudioProcessor::consumePowerStateDirty() noexcept
+{
+    return powerStateDirty.exchange(false, std::memory_order_relaxed);
+}
+
+void BRAUN_AS42AudioProcessor::setDrone1Active(bool active) noexcept
+{
+    drone1Active.store(active, std::memory_order_relaxed);
+}
+
+bool BRAUN_AS42AudioProcessor::getDrone1Active() const noexcept
+{
+    return drone1Active.load(std::memory_order_relaxed);
+}
+
+void BRAUN_AS42AudioProcessor::setDrone2Active(bool active) noexcept
+{
+    drone2Active.store(active, std::memory_order_relaxed);
+}
+
+bool BRAUN_AS42AudioProcessor::getDrone2Active() const noexcept
+{
+    return drone2Active.load(std::memory_order_relaxed);
+}
+
 bool BRAUN_AS42AudioProcessor::hasEditor() const
 {
     return true;
@@ -186,6 +257,9 @@ juce::AudioProcessorEditor* BRAUN_AS42AudioProcessor::createEditor()
 void BRAUN_AS42AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
+    state.setProperty("isPoweredOn", isPoweredOn.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("drone1Active", drone1Active.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("drone2Active", drone2Active.load(std::memory_order_relaxed), nullptr);
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
 }
@@ -194,7 +268,16 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
-        apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+    {
+        auto vt = juce::ValueTree::fromXml(*xmlState);
+        apvts.replaceState(vt);
+        if (vt.hasProperty("isPoweredOn"))
+            setPoweredOn(static_cast<bool>(vt.getProperty("isPoweredOn")));
+        if (vt.hasProperty("drone1Active"))
+            setDrone1Active(static_cast<bool>(vt.getProperty("drone1Active")));
+        if (vt.hasProperty("drone2Active"))
+            setDrone2Active(static_cast<bool>(vt.getProperty("drone2Active")));
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

@@ -39,9 +39,25 @@ public:
     juce::AudioProcessorValueTreeState& getAPVTS() noexcept { return apvts; }
     braun::DspEngine& getDspEngine() noexcept { return dspEngine; }
 
+    void setPoweredOn(bool on) noexcept;
+    bool getPoweredOn() const noexcept;
+    bool consumePowerStateDirty() noexcept;
+
+    void setDrone1Active(bool active) noexcept;
+    bool getDrone1Active() const noexcept;
+
+    void setDrone2Active(bool active) noexcept;
+    bool getDrone2Active() const noexcept;
+
 private:
     juce::AudioProcessorValueTreeState apvts;
     braun::DspEngine dspEngine;
+
+    // Power and generative voice active states (silent on startup until triggered or powered on)
+    std::atomic<bool> isPoweredOn { false };
+    std::atomic<bool> powerStateDirty { false };
+    std::atomic<bool> drone1Active { false };
+    std::atomic<bool> drone2Active { false };
 
     // Cached raw atomic parameter pointers for lock-free, zero-overhead audio thread reads
     std::atomic<float>* paramFeltVolume { nullptr };

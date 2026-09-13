@@ -41,7 +41,7 @@ struct ParameterSnapshot {
     int drone1_waveA { 2 };           // Saw
     int drone1_waveB { 6 };           // Warm
     bool drone1_isSubBass { false };
-    bool drone1_active { true };
+    bool drone1_active { false };
 
     // Drone 2 parameters
     float drone2_volume { 0.55f };
@@ -53,7 +53,7 @@ struct ParameterSnapshot {
     float drone2_detune { -3.2f };
     int drone2_waveA { 3 };           // Square
     int drone2_waveB { 5 };           // Triangle
-    bool drone2_active { true };
+    bool drone2_active { false };
 
     // Tape Delay parameters
     float tape_time { 0.48f };

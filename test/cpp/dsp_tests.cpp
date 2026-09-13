@@ -391,6 +391,76 @@ void test_dsp_engine_full_signal_flow() {
 }
 
 // ============================================================================
+// Test 8: Silence on startup and activation upon trigger / active state
+// ============================================================================
+void test_dsp_engine_silence_on_startup_until_triggered_or_active() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    // Default snapshot has drone1_active = false, drone2_active = false
+    braun::ParameterSnapshot defaultParams;
+    TEST_ASSERT(!defaultParams.drone1_active, "Default snapshot must have drone1_active == false");
+    TEST_ASSERT(!defaultParams.drone2_active, "Default snapshot must have drone2_active == false");
+
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // 1. Verify 100% pure silence on startup across 20 consecutive blocks (10,240 samples)
+    for (int b = 0; b < 20; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, defaultParams, nullptr, 0);
+
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(blockL[i] == 0.0f, "Startup output L must be exactly 0.0f");
+            TEST_ASSERT(blockR[i] == 0.0f, "Startup output R must be exactly 0.0f");
+        }
+    }
+
+    // 2. Verify sound generation when Drone 1 is activated
+    braun::ParameterSnapshot drone1ActiveParams = defaultParams;
+    drone1ActiveParams.drone1_active = true;
+
+    float drone1Max = 0.0f;
+    for (int b = 0; b < 10; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, drone1ActiveParams, nullptr, 0);
+
+        for (int i = 0; i < 512; ++i) {
+            drone1Max = std::max(drone1Max, std::max(std::abs(blockL[i]), std::abs(blockR[i])));
+        }
+    }
+    TEST_ASSERT(drone1Max > 0.01f, "Drone 1 must produce audible output when drone1_active == true");
+
+    // 3. Verify return to silence when Drone 1 is deactivated and flush occurs
+    engine.reset();
+    for (int b = 0; b < 10; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, defaultParams, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(blockL[i] == 0.0f, "Deactivated Drone 1 must return to exact silence in L");
+            TEST_ASSERT(blockR[i] == 0.0f, "Deactivated Drone 1 must return to exact silence in R");
+        }
+    }
+
+    // 4. Verify sound generation when Note-On is triggered
+    std::vector<braun::MidiEvent> midiEvents = {
+        { 0, 0x90, 60, 100 } // Middle C Note-On
+    };
+    std::fill(blockL.begin(), blockL.end(), 0.0f);
+    std::fill(blockR.begin(), blockR.end(), 0.0f);
+    engine.process(blockL.data(), blockR.data(), 512, defaultParams, midiEvents.data(), 1);
+
+    float noteOnMax = 0.0f;
+    for (int i = 0; i < 512; ++i) {
+        noteOnMax = std::max(noteOnMax, std::max(std::abs(blockL[i]), std::abs(blockR[i])));
+    }
+    TEST_ASSERT(noteOnMax > 0.01f, "Triggered Note-On must produce audible output with default params");
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -405,6 +475,7 @@ int main() {
     RUN_TEST(test_polyphonic_voice_allocation_and_stealing);
     RUN_TEST(test_sub_bass_mode_characteristics);
     RUN_TEST(test_dsp_engine_full_signal_flow);
+    RUN_TEST(test_dsp_engine_silence_on_startup_until_triggered_or_active);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

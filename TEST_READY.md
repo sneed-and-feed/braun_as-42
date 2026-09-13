@@ -121,8 +121,8 @@ Both native release binaries have been compiled, linked, and verified on Windows
 
 ### 4.1 VST3 Audio Plugin Bundle
 - **Location:** `build\BRAUN_AS42_artefacts\Release\VST3\BRAUN_AS42.vst3\Contents\x86_64-win\BRAUN_AS42.vst3`
-- **Size:** `6,965,760` bytes (6.64 MB)
-- **SHA256:** `9DB5ECF9DB9EB5B3A92853D75D1B06B07DC39ECCC3EF403BDF8130D1EDFB8CC4`
+- **Size:** `6,970,368` bytes (6.65 MB)
+- **SHA256:** `7203BE87EDD378321861A8E683EAA872C64893EE773012C93F9062B7812DF171`
 - **Architecture:** PE32+ (x64 Dynamic Link Library)
 - **Exported Symbols (Steinberg VST3 API):**
   - `GetPluginFactory`
@@ -132,8 +132,8 @@ Both native release binaries have been compiled, linked, and verified on Windows
 
 ### 4.2 Standalone Executable
 - **Location:** `build\BRAUN_AS42_artefacts\Release\Standalone\BRAUN_AS42.exe`
-- **Size:** `8,017,408` bytes (7.65 MB)
-- **SHA256:** `17C386DF6FA6D2C2846E6E23511C131CC10C732835CC6A2385668B1E3C7B8FF0`
+- **Size:** `8,021,504` bytes (7.65 MB)
+- **SHA256:** `CF7CB0DDE07077AEDD5121E82BC602252EAD4F85B46EB2E1A2B3F0F2924F92F5`
 - **Architecture:** PE32+ (x64 Windows GUI Executable)
 - **Subsystem:** Windows GUI (`IMAGE_SUBSYSTEM_WINDOWS_GUI`)
 

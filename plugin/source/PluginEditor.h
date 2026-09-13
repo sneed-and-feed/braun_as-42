@@ -6,7 +6,8 @@
 #include "web/WebResourceManager.h"
 
 class BRAUN_AS42AudioProcessorEditor : public juce::AudioProcessorEditor,
-                                       public juce::AudioProcessorValueTreeState::Listener
+                                       public juce::AudioProcessorValueTreeState::Listener,
+                                       private juce::Timer
 {
 public:
     explicit BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioProcessor&);
@@ -21,9 +22,13 @@ public:
     // Web integration helpers
     void handleParamChangeFromWeb(const juce::var& data);
     void sendParameterUpdateToWeb(const juce::String& paramID, float newValue);
+    void sendPowerUpdateToWeb(bool isPoweredOn);
+    void sendDroneActiveUpdateToWeb(int droneId, bool active);
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
 
 private:
+    void timerCallback() override;
+
     static juce::WebBrowserComponent::Options createWebOptions(BRAUN_AS42AudioProcessorEditor& editor);
 
     BRAUN_AS42AudioProcessor& processorRef;
