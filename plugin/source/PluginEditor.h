@@ -15,6 +15,7 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    void parentHierarchyChanged() override;
 
     // juce::AudioProcessorValueTreeState::Listener callback
     void parameterChanged(const juce::String& parameterID, float newValue) override;
@@ -41,6 +42,10 @@ private:
     // Lock-free parameter change coalescing to avoid flooding Win32 message loop
     std::atomic<float> pendingParamValues[22] {};
     std::atomic<bool> paramDirty[22] {};
+
+    bool hwndStylesConfigured { false };
+    int hwndCheckCounter { 0 };
+    void ensureHwndStyles();
 
     void registerParameterListeners();
     void unregisterParameterListeners();

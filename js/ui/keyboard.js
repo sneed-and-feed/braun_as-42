@@ -213,7 +213,10 @@ export class BraunPlaySurface {
     if (!record) return;
     this.activeTouches.delete(pointerId);
 
-    const { keyEl, voice } = record;
+    const { keyEl, voice, midi } = record;
+    if (this.engine && typeof this.engine.noteOff === 'function' && typeof midi === 'number') {
+      this.engine.noteOff(midi);
+    }
     if (voice) {
       this.activePointerVoices.delete(voice);
       if (typeof voice.release === 'function') {
@@ -823,6 +826,9 @@ export class BraunPlaySurface {
     if (this.engine && typeof this.engine.trackDronePitch === 'function') {
       this.engine.trackDronePitch(midi);
     }
+    if (this.engine && typeof this.engine.noteOn === 'function') {
+      this.engine.noteOn(midi);
+    }
     if (this.onPlay) {
       this.onPlay(freq, midi, velocity);
     }
@@ -923,11 +929,16 @@ export class BraunPlaySurface {
       voicingId,
       isReleased: false,
       voices: [],
-      timers: []
+      timers: [],
+      midiNotes: []
     };
 
     const triggerChordVoice = (freq, vel, midi) => {
       this.flashKey(midi);
+      session.midiNotes.push(midi);
+      if (this.engine && typeof this.engine.noteOn === 'function') {
+        this.engine.noteOn(midi);
+      }
       const playVoice = (piano) => {
         const voice = piano.playNote(freq, vel, duration, isHold, true);
         if (voice) {
@@ -990,6 +1001,10 @@ export class BraunPlaySurface {
       }
     });
     session.voices = [];
+    if (this.engine && typeof this.engine.noteOff === 'function' && Array.isArray(session.midiNotes)) {
+      session.midiNotes.forEach(m => this.engine.noteOff(m));
+    }
+    session.midiNotes = [];
   }
 
   /**

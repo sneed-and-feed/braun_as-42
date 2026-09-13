@@ -23,6 +23,9 @@ void DspEngine::prepare(double sampleRate, int maxBlockSize) {
     mScratchPianoL.assign(scratchCapacity, 0.0f);
     mScratchPianoR.assign(scratchCapacity, 0.0f);
 
+    mDroneGateAttackCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(mSampleRate) * 0.010f));
+    mDroneGateReleaseCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(mSampleRate) * 0.040f));
+
     reset();
 }
 
@@ -45,6 +48,7 @@ void DspEngine::reset() noexcept {
     mLastTrackedMidiNote = -1;
     mTrackedDrone1Freq = 65.41f;
     mTrackedDrone2Freq = 98.00f;
+    mDroneGateGain = 0.0f;
 }
 
 void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
@@ -124,6 +128,19 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
                 mSustainPedalDown = pedalDown;
             } else if (ccNum == 1) { // Modulation Wheel (Felt Tone damping)
                 mCurrentModWheel = static_cast<float>(ccVal) / 127.0f;
+            } else if (ccNum == 121) { // Reset All Controllers
+                if (mSustainPedalDown) {
+                    for (size_t n = 0; n < 128; ++n) {
+                        if (mLatchedKeys.test(n) && !mHeldKeys.test(n)) {
+                            mFeltPiano.noteOff(static_cast<int>(n));
+                        }
+                    }
+                    mLatchedKeys.reset();
+                    mSustainPedalDown = false;
+                }
+                mCurrentModWheel = 0.0f;
+                mCurrentPitchBendCents = 0.0f;
+                mFeltPiano.setPitchBend(0.0f);
             } else if (ccNum == 120 || ccNum == 123) { // All Sound Off / All Notes Off
                 mFeltPiano.releaseAll();
                 mHeldKeys.reset();
@@ -215,7 +232,7 @@ void DspEngine::process(float* left, float* right, int numSamples,
     masterParams.limiterKnee = 0.80f;
 
     // 3. Process block with sample-accurate MIDI event dispatching
-    const bool trackingActive = mDroneTrackMidi && params.drone_track_midi;
+    const bool trackingActive = params.drone_track_midi;
     auto updatePitches = [&]() noexcept {
         if (trackingActive && mLastTrackedMidiNote >= 0) {
             int minNote = 36;
@@ -290,16 +307,35 @@ void DspEngine::process(float* left, float* right, int numSamples,
             const float pianoL = mScratchPianoL[i];
             const float pianoR = mScratchPianoR[i];
 
+            // Drone Note-Off Gating in MIDI Track Mode:
+            // When tracking is active, drone outputs only when notes are actively held/sustained.
+            // When all notes end, cleanly release/fade out with 200ms anti-pop envelope.
+            // When tracking is off (classic drone mode), target is 1.0 (free-running).
+            const bool hasActive = mHeldKeys.any() || (mSustainPedalDown && mLatchedKeys.any());
+            const float targetGate = (!trackingActive || hasActive) ? 1.0f : 0.0f;
+            if (targetGate > mDroneGateGain) {
+                mDroneGateGain += mDroneGateAttackCoeff * (targetGate - mDroneGateGain);
+            } else {
+                mDroneGateGain += mDroneGateReleaseCoeff * (targetGate - mDroneGateGain);
+            }
+            if (std::abs(targetGate - mDroneGateGain) < 1.0e-5f) {
+                mDroneGateGain = targetGate;
+            }
+
             // Render Drone Voices (Voice 1 & Voice 2)
             float droneL = 0.0f;
             float droneR = 0.0f;
-            mDrone1.processSample(drone1Params, droneL, droneR);
-            mDrone2.processSample(drone2Params, droneL, droneR);
+            if (mDroneGateGain > 1.0e-5f || targetGate > 0.0f) {
+                mDrone1.processSample(drone1Params, droneL, droneR);
+                mDrone2.processSample(drone2Params, droneL, droneR);
+            }
 
-            // Calibrated Drone Bus Gain = 0.22 (-8.0dB relative to felt piano bus)
+            // Calibrated Drone Bus Gain = 0.22 (-8.0dB relative to felt piano bus) with gating
             constexpr float kDroneBusGain = 0.22f;
-            const float droneBusL = droneL * kDroneBusGain;
-            const float droneBusR = droneR * kDroneBusGain;
+            const float gatedDroneL = droneL * mDroneGateGain;
+            const float gatedDroneR = droneR * mDroneGateGain;
+            const float droneBusL = gatedDroneL * kDroneBusGain;
+            const float droneBusR = gatedDroneR * kDroneBusGain;
 
             // FX Feeds: Tape Delay & Shimmer Reverb receive Piano + Drone
             const float fxSendL = pianoL + droneBusL;

@@ -42,6 +42,9 @@ export class BraunOscilloscope {
     if (this.analyser) {
       this.timeData = new Uint8Array(this.analyser.fftSize);
       this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
+      if (!this.isRunning) {
+        this.start();
+      }
     }
   }
 
@@ -75,8 +78,23 @@ export class BraunOscilloscope {
     this.lastRenderTime = 0;
     this.silentFrames = 0;
 
+    // If no analyser attached (e.g. standby or running inside VST3 where C++ DSP renders audio),
+    // draw the static CRT standby beam once and pause animation loop to consume 0% GPU/CPU.
+    if (!this.analyser) {
+      this.draw();
+      this.isRunning = false;
+      return;
+    }
+
     const render = (timestamp) => {
       if (!this.isRunning) return;
+
+      if (!this.analyser) {
+        this.draw();
+        this.isRunning = false;
+        this.animationFrameId = null;
+        return;
+      }
 
       const now = timestamp || (typeof performance !== 'undefined' ? performance.now() : Date.now());
       const elapsed = now - this.lastRenderTime;

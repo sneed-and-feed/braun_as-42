@@ -1,5 +1,8 @@
 #include "PluginEditor.h"
 #include <cstdlib>
+#if JUCE_WINDOWS
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -41,16 +44,21 @@ static_assert(std::size(kParamMap) == 22, "kParamMap size must match pendingPara
 juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOptions(BRAUN_AS42AudioProcessorEditor& editor)
 {
 #if JUCE_WINDOWS
-    // Pass optimized Chromium flags to WebView2:
-    // - Force GPU rasterization
-    // - Disable background timer throttling
-    // - Disable background Chromium features (Translate, MediaRouter, OptimizationHints, CalculateNativeWinOcclusion)
+    // Configure WebView2 Chromium flags for host DAW embedding (FL Studio, Ableton, Reaper, etc.):
+    // - Mute browser audio output (C++ DSP engine handles all audio synthesis)
+    // - Disable Web MIDI in Chromium (prevents WinMM device contention with DAW MIDI inputs)
+    // - Disable background Chromium features that create unneeded threads / network queries
+    // - Disable CalculateNativeWinOcclusion to eliminate global SetWinEventHook desktop dragging lag
+    // - Disable backgrounding and timer throttling for occluded windows to prevent dirty rect stalls
     _wputenv_s(
         L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-        L"--enable-gpu-rasterization "
+        L"--mute-audio "
+        L"--disable-audio-output "
+        L"--disable-web-midi "
         L"--disable-background-timer-throttling "
+        L"--disable-backgrounding-occluded-windows "
         L"--disable-renderer-backgrounding "
-        L"--disable-features=Translate,OptimizationHints,MediaRouter,CalculateNativeWinOcclusion"
+        L"--disable-features=Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions,CalculateNativeWinOcclusion"
     );
 #endif
 
@@ -62,6 +70,7 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
                 .withUserDataFolder(juce::File::getSpecialLocation(juce::File::SpecialLocationType::tempDirectory).getChildFile("BraunAS42_WebView2"))
                 .withBackgroundColour(juce::Colour(0xff121414)))
 #endif
+        .withUserScript("window.__IS_JUCE__ = true;")
         .withNativeIntegrationEnabled()
         .withResourceProvider([&editor](const juce::String& url) {
             return editor.getResource(url);
@@ -102,12 +111,61 @@ BRAUN_AS42AudioProcessorEditor::~BRAUN_AS42AudioProcessorEditor()
 
 void BRAUN_AS42AudioProcessorEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff222222));
+    g.fillAll(juce::Colour(0xff121414));
 }
 
 void BRAUN_AS42AudioProcessorEditor::resized()
 {
     webComponent.setBounds(getLocalBounds());
+}
+
+void BRAUN_AS42AudioProcessorEditor::parentHierarchyChanged()
+{
+    AudioProcessorEditor::parentHierarchyChanged();
+    hwndStylesConfigured = false;
+    ensureHwndStyles();
+}
+
+void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
+{
+#if JUCE_WINDOWS
+    if (auto* peer = getPeer())
+    {
+        HWND hwnd = static_cast<HWND>(peer->getNativeHandle());
+        if (hwnd == nullptr)
+            return;
+
+        // Traverse all parent windows up to the desktop root and enforce WS_CLIPCHILDREN | WS_CLIPSIBLINGS.
+        // This prevents FL Studio's host wrapper from painting over the child plugin window,
+        // eliminating the classic DWM / GDI solitaire smear trail when moving overlapping windows.
+        HWND cur = hwnd;
+        while (cur != nullptr)
+        {
+            LONG_PTR style = ::GetWindowLongPtr(cur, GWL_STYLE);
+            if ((style & (WS_CLIPCHILDREN | WS_CLIPSIBLINGS)) != (WS_CLIPCHILDREN | WS_CLIPSIBLINGS))
+            {
+                ::SetWindowLongPtr(cur, GWL_STYLE, style | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
+                ::SetWindowPos(cur, nullptr, 0, 0, 0, 0,
+                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            }
+            cur = ::GetParent(cur);
+        }
+
+        // Also ensure all child windows (WebView2 host HWNDs and render widget) enforce clipping
+        ::EnumChildWindows(hwnd, [](HWND child, LPARAM) -> BOOL {
+            LONG_PTR style = ::GetWindowLongPtr(child, GWL_STYLE);
+            if ((style & (WS_CLIPCHILDREN | WS_CLIPSIBLINGS)) != (WS_CLIPCHILDREN | WS_CLIPSIBLINGS))
+            {
+                ::SetWindowLongPtr(child, GWL_STYLE, style | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
+                ::SetWindowPos(child, nullptr, 0, 0, 0, 0,
+                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            }
+            return TRUE;
+        }, 0);
+
+        hwndStylesConfigured = true;
+    }
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::parameterChanged(const juce::String& parameterID, float newValue)
@@ -161,6 +219,12 @@ void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String
 
 void BRAUN_AS42AudioProcessorEditor::timerCallback()
 {
+    if (!hwndStylesConfigured || ++hwndCheckCounter >= 25)
+    {
+        hwndCheckCounter = 0;
+        ensureHwndStyles();
+    }
+
     if (!initialSyncDone && webComponent.isVisible())
     {
         syncAllParametersToWeb();

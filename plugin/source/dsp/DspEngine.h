@@ -55,8 +55,8 @@ struct ParameterSnapshot {
     int drone2_waveB { 5 };           // Triangle
     bool drone2_active { false };
 
-    // Drone MIDI Note Tracking (follows piano roll notes in bass/sub octave)
-    bool drone_track_midi { true };
+    // Drone MIDI Note Tracking (follows piano roll notes in bass/sub octave with note-off gating)
+    bool drone_track_midi { false };
 
     // Tape Delay parameters
     float tape_time { 0.48f };
@@ -128,6 +128,12 @@ public:
     float getTrackedDrone1Freq() const noexcept { return mTrackedDrone1Freq; }
     float getTrackedDrone2Freq() const noexcept { return mTrackedDrone2Freq; }
 
+    // Drone MIDI Note-Off Gating State & Helpers
+    float getDroneGateGain() const noexcept { return mDroneGateGain; }
+    bool hasActiveMidiNotes() const noexcept {
+        return mHeldKeys.any() || (mSustainPedalDown && mLatchedKeys.any());
+    }
+
 private:
     void handleMidiEvent(const MidiEvent& event) noexcept;
 
@@ -158,6 +164,11 @@ private:
     int mLastTrackedMidiNote { -1 };
     float mTrackedDrone1Freq { 65.41f };
     float mTrackedDrone2Freq { 98.00f };
+
+    // Drone Note-Off Gating in MIDI Track Mode (pop-free attack, 200ms release envelope)
+    float mDroneGateGain { 0.0f };
+    float mDroneGateAttackCoeff { 0.001f };
+    float mDroneGateReleaseCoeff { 0.0001f };
 };
 
 } // namespace braun

@@ -705,6 +705,200 @@ void test_drone_midi_pitch_tracking() {
 }
 
 // ============================================================================
+// Test 12: Drone MIDI Note-Off Gating in MIDI Track Mode
+// ============================================================================
+void test_drone_midi_note_off_gating() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    braun::ParameterSnapshot params;
+    params.master_volume = 1.0f;
+    params.drone1_active = true;
+    params.drone2_active = true;
+    params.drone1_volume = 0.8f;
+    params.drone2_volume = 0.8f;
+    params.felt_volume = 0.0f; // Mute felt piano so output is strictly drone
+    params.shimmer_mix = 0.0f; // Dry output for immediate gating inspection
+    params.tape_mix = 0.0f;
+
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // 1. In MIDI Track Mode (drone_track_midi = true), when no notes have been played:
+    // Drones must be gated off (mDroneGateGain == 0.0f) and output must be silent.
+    params.drone_track_midi = true;
+    for (int b = 0; b < 10; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() == 0.0f, "Idle drone gate gain before any MIDI note must be 0.0");
+    float maxIdleAmp = 0.0f;
+    for (int i = 0; i < 512; ++i) {
+        maxIdleAmp = std::max(maxIdleAmp, std::max(std::abs(blockL[i]), std::abs(blockR[i])));
+    }
+    TEST_ASSERT(maxIdleAmp == 0.0f, "Output must be completely silent while idle in MIDI track mode");
+
+    // 2. Note-On C4 (MIDI 60)
+    // Gate should ramp up toward 1.0f with 20ms attack.
+    braun::MidiEvent noteC4On = { 0, 0x90, 60, 100 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteC4On, 1);
+    TEST_ASSERT(engine.hasActiveMidiNotes(), "Must detect active held MIDI note");
+    TEST_ASSERT(engine.getDroneGateGain() > 0.0f, "Gate gain must begin ramping up on Note-On");
+
+    // Process ~50ms (10 blocks of 512 at 48kHz = 5120 samples = 106.7ms) to reach steady state (> 0.99)
+    for (int b = 0; b < 10; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() > 0.99f, "Gate gain must reach near 1.0f while note is held");
+
+    float maxNoteAmp = 0.0f;
+    for (int i = 0; i < 512; ++i) {
+        maxNoteAmp = std::max(maxNoteAmp, std::max(std::abs(blockL[i]), std::abs(blockR[i])));
+    }
+    TEST_ASSERT(maxNoteAmp > 0.01f, "Drone output must be actively sounding while note is held");
+
+    // 3. Note-Off C4 (no sustain pedal)
+    // Gate should cleanly fade out with ~200ms anti-pop release ramp down to zero.
+    braun::MidiEvent noteC4Off = { 0, 0x80, 60, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteC4Off, 1);
+    TEST_ASSERT(!engine.hasActiveMidiNotes(), "Must report no active MIDI notes after Note-Off");
+    TEST_ASSERT(engine.getDroneGateGain() < 1.0f, "Gate gain must start decaying immediately on Note-Off");
+
+    // Process 400ms (38 blocks of 512 = 19456 samples = 405ms > 2x release time constant)
+    for (int b = 0; b < 40; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() < 0.001f, "Gate gain must cleanly decay to ~0.0 within 400ms");
+
+    // Once fully released (under 1.0e-5f), engine snaps gate to 0.0f and mutes output
+    for (int b = 0; b < 60; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() == 0.0f, "Gate gain must snap to 0.0 after full release ramp");
+    float maxPostReleaseAmp = 0.0f;
+    for (int i = 0; i < 512; ++i) {
+        maxPostReleaseAmp = std::max(maxPostReleaseAmp, std::max(std::abs(blockL[i]), std::abs(blockR[i])));
+    }
+    TEST_ASSERT(maxPostReleaseAmp == 0.0f, "Drone output must return to 0.0 after release");
+
+    // 4. Sustain Pedal Behavior:
+    // Depress sustain pedal (CC 64 = 127), then play Note-On E4 (64), then release E4 key (Note-Off 64).
+    // Because pedal is held down, note is latched, so gate must remain ON (> 0.99f).
+    braun::MidiEvent pedalDown = { 0, 0xB0, 64, 127 };
+    braun::MidiEvent noteE4On = { 10, 0x90, 64, 100 };
+    braun::MidiEvent pedalOnEvents[] = { pedalDown, noteE4On };
+    engine.process(blockL.data(), blockR.data(), 512, params, pedalOnEvents, 2);
+
+    for (int b = 0; b < 10; ++b) {
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() > 0.99f, "Gate must open when note is triggered with pedal down");
+
+    // Key is physically released, but pedal is STILL held down
+    braun::MidiEvent noteE4Off = { 0, 0x80, 64, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteE4Off, 1);
+    TEST_ASSERT(engine.hasActiveMidiNotes(), "Note must remain latched by sustain pedal");
+
+    for (int b = 0; b < 10; ++b) {
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() > 0.99f, "Gate must remain open while sustain pedal is held");
+
+    // Now release sustain pedal (CC 64 = 0)
+    braun::MidiEvent pedalUp = { 0, 0xB0, 64, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &pedalUp, 1);
+    TEST_ASSERT(!engine.hasActiveMidiNotes(), "Releasing pedal must clear all latched notes");
+
+    // Process release ramp
+    for (int b = 0; b < 100; ++b) {
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() == 0.0f, "Gate must fade out to 0.0 after sustain pedal is released");
+
+    // 5. Classic Continuous Drone Mode (drone_track_midi = false):
+    // In classic mode, gate must remain 1.0f continuously even without any MIDI notes held.
+    params.drone_track_midi = false;
+    for (int b = 0; b < 10; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() > 0.99f, "In classic continuous mode, gate must open to 1.0f");
+    float maxClassicAmp = 0.0f;
+    for (int i = 0; i < 512; ++i) {
+        maxClassicAmp = std::max(maxClassicAmp, std::max(std::abs(blockL[i]), std::abs(blockR[i])));
+    }
+    TEST_ASSERT(maxClassicAmp > 0.01f, "Classic mode must sound continuously without MIDI keys held");
+
+    // 6. Mid-Release Retrigger:
+    // Switch back to tracking mode, trigger Note-On F4 (65), then Note-Off F4, let release decay halfway,
+    // then trigger Note-On G4 (67) mid-release.
+    // The gate must smoothly rise back up to 1.0f without negative dips or pops.
+    params.drone_track_midi = true;
+    braun::MidiEvent noteF4On = { 0, 0x90, 65, 100 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteF4On, 1);
+    for (int b = 0; b < 10; ++b) {
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() > 0.99f, "Gate must reach steady state on F4");
+
+    braun::MidiEvent noteF4Off = { 0, 0x80, 65, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteF4Off, 1);
+    // Process 4 blocks (~42ms, ~1 time constant: gate gain should be around ~0.35 - 0.40)
+    for (int b = 0; b < 4; ++b) {
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    const float midReleaseGain = engine.getDroneGateGain();
+    TEST_ASSERT(midReleaseGain > 0.10f && midReleaseGain < 0.70f, "Gate must be actively in mid-release decay");
+
+    // Retrigger G4 (67)
+    braun::MidiEvent noteG4On = { 0, 0x90, 67, 100 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteG4On, 1);
+    TEST_ASSERT(engine.getDroneGateGain() >= midReleaseGain, "Gate must immediately reverse decay and ramp up on new note");
+    for (int b = 0; b < 10; ++b) {
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() > 0.99f, "Gate must recover to > 0.99f after mid-release retrigger");
+
+    // 7. Panic CC 123 (All Notes Off) while note is held:
+    braun::MidiEvent allNotesOff = { 0, 0xB0, 123, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &allNotesOff, 1);
+    TEST_ASSERT(!engine.hasActiveMidiNotes(), "CC 123 must clear all active notes");
+    for (int b = 0; b < 80; ++b) {
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() == 0.0f, "Gate must be fully silenced after CC 123");
+
+    // 8. Controller Reset CC 121 with sustain pedal held:
+    braun::MidiEvent pedalHold = { 0, 0xB0, 64, 127 };
+    braun::MidiEvent noteA4On = { 5, 0x90, 69, 100 };
+    braun::MidiEvent setupPedal[] = { pedalHold, noteA4On };
+    engine.process(blockL.data(), blockR.data(), 512, params, setupPedal, 2);
+    for (int b = 0; b < 10; ++b) engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+
+    // Release key (latched by sustain)
+    braun::MidiEvent noteA4Off = { 0, 0x80, 69, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteA4Off, 1);
+    TEST_ASSERT(engine.hasActiveMidiNotes(), "Note A4 must remain latched by sustain");
+
+    // Send CC 121 (Reset All Controllers)
+    braun::MidiEvent resetControllers = { 0, 0xB0, 121, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &resetControllers, 1);
+    TEST_ASSERT(!engine.hasActiveMidiNotes(), "CC 121 must reset sustain pedal and clear latched notes");
+    for (int b = 0; b < 80; ++b) {
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(engine.getDroneGateGain() == 0.0f, "Gate must be fully silenced after CC 121 reset");
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -723,6 +917,7 @@ int main() {
     RUN_TEST(test_dsp_engine_zero_output_when_idle_powered_on_and_tail_decay);
     RUN_TEST(test_dsp_engine_no_self_oscillation_under_extreme_parameters);
     RUN_TEST(test_drone_midi_pitch_tracking);
+    RUN_TEST(test_drone_midi_note_off_gating);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

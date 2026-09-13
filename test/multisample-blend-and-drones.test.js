@@ -394,3 +394,135 @@ describe('Vector Modulation Audio Slewing & Anti-Zipper DSP', () => {
     assert.ok(Math.abs(captured.shimmerAmount - 0.60) < 1e-3, `shimmerAmount must be ~0.60, got ${captured.shimmerAmount}`);
   });
 });
+
+  function createMockParam(initVal = 0) {
+    return {
+      value: initVal,
+      targetValue: initVal,
+      tau: 0,
+      setValueAtTime(v) { this.value = v; this.targetValue = v; },
+      setTargetAtTime(target, time, tau) { this.value = target; this.targetValue = target; this.tau = tau; },
+      linearRampToValueAtTime(v) { this.value = v; },
+      exponentialRampToValueAtTime(v) { this.value = v; },
+      cancelScheduledValues() {},
+      cancelAndHoldAtTime() {}
+    };
+  }
+
+  function createGatingMockCtx() {
+    return {
+      currentTime: 1.0,
+      sampleRate: 48000,
+      createGain: () => ({
+        gain: createMockParam(1.0),
+        connect() {},
+        disconnect() {}
+      }),
+      createBiquadFilter: () => ({
+        frequency: createMockParam(1000),
+        Q: createMockParam(1),
+        connect() {},
+        disconnect() {}
+      }),
+      createWaveShaper: () => ({ connect() {}, disconnect() {} }),
+      createDynamicsCompressor: () => ({
+        threshold: createMockParam(-3),
+        knee: createMockParam(6),
+        ratio: createMockParam(8),
+        attack: createMockParam(0.003),
+        release: createMockParam(0.060),
+        connect() {},
+        disconnect() {}
+      }),
+      createConvolver: () => ({ connect() {}, disconnect() {} }),
+      createBuffer: () => ({ getChannelData: () => new Float32Array(512) }),
+      createBufferSource: () => ({
+        buffer: null,
+        connect() {},
+        disconnect() {},
+        start() {},
+        stop() {},
+        loop: false
+      }),
+      createDelay: () => ({
+        delayTime: createMockParam(0.25),
+        connect() {},
+        disconnect() {}
+      }),
+      createChannelSplitter: () => ({ connect() {}, disconnect() {} }),
+      createChannelMerger: () => ({ connect() {}, disconnect() {} }),
+      createOscillator: () => ({
+        frequency: createMockParam(440),
+        detune: createMockParam(0),
+        connect() {},
+        disconnect() {},
+        start() {},
+        stop() {},
+        setPeriodicWave() {}
+      }),
+      createAnalyser: () => ({ fftSize: 2048, frequencyBinCount: 1024, smoothingTimeConstant: 0.8, connect() {}, disconnect() {} }),
+      resume: async () => {}
+    };
+  }
+
+describe('Drone MIDI Note-Off Gating in MIDI Track Mode', () => {
+  it('gates off drone output to 0.0 in MIDI track mode when no notes are held', async () => {
+    const ctx = createGatingMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    engine.setDroneTrackMidi(true);
+    assert.strictEqual(engine.droneTrackMidi, true);
+    assert.strictEqual(engine.droneGateNode.gain.targetValue, 0.0, 'Target gain must be 0.0 when idle');
+    assert.strictEqual(engine.droneGateNode.gain.tau, 0.040, 'Release time constant must be 40ms');
+  });
+
+  it('opens drone gate to 1.0 on Note-On with 10ms attack and fades out on Note-Off with 200ms envelope', async () => {
+    const ctx = createGatingMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+    engine.setDroneTrackMidi(true);
+
+    // Note-On C4 (60)
+    engine.noteOn(60);
+    assert.strictEqual(engine.droneGateNode.gain.targetValue, 1.0, 'Target gain must open to 1.0 on Note-On');
+    assert.strictEqual(engine.droneGateNode.gain.tau, 0.010, 'Attack time constant must be 10ms');
+
+    // Note-Off C4 (60)
+    engine.noteOff(60);
+    assert.strictEqual(engine.droneGateNode.gain.targetValue, 0.0, 'Target gain must fade out to 0.0 on Note-Off');
+    assert.strictEqual(engine.droneGateNode.gain.tau, 0.040, 'Release time constant must be 40ms (5 * tau = 200ms anti-pop envelope)');
+  });
+
+  it('sustains drone gate while sustain pedal is active even after key is physically released', async () => {
+    const ctx = createGatingMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+    engine.setDroneTrackMidi(true);
+
+    // Press sustain pedal down
+    engine.setSustainPedal(true);
+    // Strike Note-On E4 (64)
+    engine.noteOn(64);
+    assert.strictEqual(engine.droneGateNode.gain.targetValue, 1.0);
+
+    // Release key E4 physically
+    engine.noteOff(64);
+    assert.strictEqual(engine.droneGateNode.gain.targetValue, 1.0, 'Gate must remain open while pedal is depressed');
+
+    // Release sustain pedal
+    engine.setSustainPedal(false);
+    assert.strictEqual(engine.droneGateNode.gain.targetValue, 0.0, 'Gate must fade out once sustain pedal is released');
+    assert.strictEqual(engine.droneGateNode.gain.tau, 0.040);
+  });
+
+  it('keeps drone gate continuously open at 1.0 when classic drone mode is active', async () => {
+    const ctx = createGatingMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    engine.setDroneTrackMidi(false);
+    assert.strictEqual(engine.droneTrackMidi, false);
+    assert.strictEqual(engine.droneGateNode.gain.targetValue, 1.0, 'In classic mode, drone gate must be 1.0 continuously');
+  });
+});

@@ -238,6 +238,9 @@ export class BraunMidiManager {
     if (this.engine && typeof this.engine.trackDronePitch === 'function') {
       this.engine.trackDronePitch(note);
     }
+    if (this.engine && typeof this.engine.noteOn === 'function') {
+      this.engine.noteOn(note);
+    }
 
     // Continuous sustain hold (20.0s isHold) until physical Note-Off or sustain pedal release
     const voice = this.engine.feltPiano.playNote(freq, normVelocity, 20.0, true);
@@ -275,6 +278,10 @@ export class BraunMidiManager {
    * @param {number} note - MIDI note number (0-127)
    */
   _handleNoteOff(note) {
+    if (this.engine && typeof this.engine.noteOff === 'function') {
+      this.engine.noteOff(note);
+    }
+
     const voices = this.activeNotes.get(note);
     if (!voices || voices.size === 0) {
       this.activeNotes.delete(note);
@@ -309,8 +316,14 @@ export class BraunMidiManager {
       // CC 64: Sustain Pedal (Damper)
       if (value >= 64) {
         this.isSustainDown = true;
+        if (this.engine && typeof this.engine.setSustainPedal === 'function') {
+          this.engine.setSustainPedal(true);
+        }
       } else {
         this.isSustainDown = false;
+        if (this.engine && typeof this.engine.setSustainPedal === 'function') {
+          this.engine.setSustainPedal(false);
+        }
         // Collect all voices whose physical key is currently held down in activeNotes
         const heldVoices = new Set();
         for (const voiceSet of this.activeNotes.values()) {
@@ -382,6 +395,9 @@ export class BraunMidiManager {
     }
     this.latchedVoices.clear();
     this.isSustainDown = false;
+    if (this.engine && typeof this.engine.releaseAllNotes === 'function') {
+      this.engine.releaseAllNotes();
+    }
   }
 
   /**

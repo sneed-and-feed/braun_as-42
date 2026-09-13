@@ -63,6 +63,9 @@ export class AudioEngine {
       2: 'perfect-5th'
     };
     this.droneTrackMidi = true;
+    this._heldNotes = new Set();
+    this._latchedNotes = new Set();
+    this._isSustainPedalDown = false;
     this._lastAppliedDrone2Snap = 'perfect-5th';
     this._dialedDrone2Beat = 0.65;
     this.drone1Midi = 36 + this.rootPitchClass;
@@ -505,6 +508,11 @@ export class AudioEngine {
     this.droneBus = this.ctx.createGain();
     this.droneBus.gain.setValueAtTime(0.0, this.ctx.currentTime);
 
+    this.droneGateNode = (typeof this.ctx.createGain === 'function') ? this.ctx.createGain() : null;
+    if (this.droneGateNode && this.droneGateNode.gain) {
+      this.droneGateNode.gain.setValueAtTime(this.droneTrackMidi ? 0.0 : 1.0, this.ctx.currentTime);
+    }
+
     this.drone1 = new SolarDroneVoice(this.ctx, this.droneBus, this.wavetables, 1);
     this.drone2 = new SolarDroneVoice(this.ctx, this.droneBus, this.wavetables, 2);
 
@@ -526,9 +534,16 @@ export class AudioEngine {
     this.applyDrone1Snap();
     this.applyDrone2Snap();
 
-    this.droneBus.connect(this.masterGain);
-    this.droneBus.connect(this.tapeDelay.input);
-    this.droneBus.connect(this.shimmerReverb.input);
+    if (this.droneGateNode) {
+      this.droneBus.connect(this.droneGateNode);
+      this.droneGateNode.connect(this.masterGain);
+      this.droneGateNode.connect(this.tapeDelay.input);
+      this.droneGateNode.connect(this.shimmerReverb.input);
+    } else {
+      this.droneBus.connect(this.masterGain);
+      this.droneBus.connect(this.tapeDelay.input);
+      this.droneBus.connect(this.shimmerReverb.input);
+    }
 
     // Resume AudioContext only after all nodes, wavetables, felt voices,
     // drone voices, and convolver buffers are fully instantiated and connected
@@ -797,6 +812,63 @@ export class AudioEngine {
     if (this.drone2) {
       this.drone2.setFrequency(f2, 0.040);
     }
+  }
+
+  /**
+   * Update drone output gating based on active MIDI notes and tracking state.
+   */
+  _updateDroneGating() {
+    if (!this.droneGateNode || !this.droneGateNode.gain || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const hasActiveNotes = (this._heldNotes && this._heldNotes.size > 0) ||
+                           (this._isSustainPedalDown && this._latchedNotes && this._latchedNotes.size > 0);
+    const target = (!this.droneTrackMidi || hasActiveNotes) ? 1.0 : 0.0;
+    const tau = target > 0.5 ? 0.010 : 0.040; // 10ms attack, 200ms anti-pop release envelope (5 * tau)
+    if (typeof this.droneGateNode.gain.setTargetAtTime === 'function') {
+      this.droneGateNode.gain.setTargetAtTime(target, now, tau);
+    } else {
+      this.droneGateNode.gain.value = target;
+    }
+  }
+
+  setDroneTrackMidi(track) {
+    this.droneTrackMidi = Boolean(track);
+    this._updateDroneGating();
+  }
+
+  noteOn(note) {
+    if (typeof note === 'number') {
+      if (!this._heldNotes) this._heldNotes = new Set();
+      if (!this._latchedNotes) this._latchedNotes = new Set();
+      this._heldNotes.add(note);
+      this._latchedNotes.delete(note);
+      this.trackDronePitch(note);
+    }
+    this._updateDroneGating();
+  }
+
+  noteOff(note) {
+    if (typeof note === 'number') {
+      if (this._heldNotes) this._heldNotes.delete(note);
+      if (this._isSustainPedalDown && this._latchedNotes) {
+        this._latchedNotes.add(note);
+      }
+    }
+    this._updateDroneGating();
+  }
+
+  setSustainPedal(isDown) {
+    this._isSustainPedalDown = Boolean(isDown);
+    if (!this._isSustainPedalDown && this._latchedNotes) {
+      this._latchedNotes.clear();
+    }
+    this._updateDroneGating();
+  }
+
+  releaseAllNotes() {
+    if (this._heldNotes) this._heldNotes.clear();
+    if (this._latchedNotes) this._latchedNotes.clear();
+    this._updateDroneGating();
   }
 
   setTuningReference(a4) {

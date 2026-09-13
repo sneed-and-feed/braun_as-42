@@ -233,6 +233,10 @@ export class AmbientApp {
     this.midiManager = new BraunMidiManager(this.engine, this);
     this.isPowerOn = false;
     this.droneTrackMidi = true;
+    this._isJuce = Boolean(
+      typeof window !== 'undefined' &&
+      (window.__IS_JUCE__ || window.__JUCE__?.backend || window.location?.hostname === 'juce.backend')
+    );
     this._initialized = false;
     this._knobsBuilt = false;
     this._isApplyingPreset = false;
@@ -242,11 +246,22 @@ export class AmbientApp {
     this.init();
   }
 
+  get isJuce() {
+    return Boolean(
+      this._isJuce ||
+      (typeof window !== 'undefined' && (window.__IS_JUCE__ || window.__JUCE__?.backend || window.location?.hostname === 'juce.backend'))
+    );
+  }
+
+  set isJuce(val) {
+    this._isJuce = Boolean(val);
+  }
+
   init() {
     if (this._initialized) return;
     this._initialized = true;
     this._initDom();
-    if (this.midiManager && typeof this.midiManager.init === 'function') {
+    if (!this.isJuce && this.midiManager && typeof this.midiManager.init === 'function') {
       this.midiManager.init().catch(err => {
         console.warn('MIDI initialization error:', err);
       });
@@ -1326,16 +1341,18 @@ export class AmbientApp {
   }
 
   async startAudio({ emitToNative = true } = {}) {
-    if (this.isPowerOn && this.engine.isInitialized && this.engine.ctx && this.engine.ctx.state === 'running') return;
+    if (this.isPowerOn && (this.isJuce || (this.engine.isInitialized && this.engine.ctx && this.engine.ctx.state === 'running'))) return;
     if (this._startingAudio) return;
     this._startingAudio = true;
 
     try {
-      await this.engine.init();
+      if (!this.isJuce) {
+        await this.engine.init();
+      }
       this.isPowerOn = true;
 
       // Connect audio analyser to active CRT oscilloscope
-      if (this.scope) {
+      if (this.scope && !this.isJuce && this.engine.analyser) {
         this.scope.setAnalyser(this.engine.analyser);
         this.scope.start();
       }
@@ -1385,7 +1402,7 @@ export class AmbientApp {
       }
 
       // Stop recording if active when powering down
-      if (this.engine.isRecording) {
+      if (!this.isJuce && this.engine.isRecording) {
         const recordBtn = document.getElementById('btn-record');
         this.engine.stopRecording();
         if (recordBtn) {
@@ -1396,7 +1413,7 @@ export class AmbientApp {
       }
 
       // Gracefully disengage generative engines when powered down
-      if (this.engine.poisson && this.engine.poisson.isRunning) {
+      if (!this.isJuce && this.engine.poisson && this.engine.poisson.isRunning) {
         this.engine.poisson.stop();
         if (autoEvolveBtn) {
           autoEvolveBtn.classList.remove('is-active');
@@ -1404,7 +1421,7 @@ export class AmbientApp {
           if (textEl) textEl.textContent = 'EVOLVE OFF';
         }
       }
-      if (this.engine.phaseLoops && this.engine.phaseLoops.isRunning) {
+      if (!this.isJuce && this.engine.phaseLoops && this.engine.phaseLoops.isRunning) {
         this.engine.phaseLoops.stop();
         if (loopsBtn) {
           loopsBtn.classList.remove('is-active');
@@ -1418,7 +1435,7 @@ export class AmbientApp {
         });
       }
 
-      if (this.engine.ctx) {
+      if (!this.isJuce && this.engine.ctx) {
         try {
           if (typeof this.engine.powerOff === 'function') {
             await this.engine.powerOff();
@@ -1884,6 +1901,7 @@ export class AmbientApp {
       const backend = window.__JUCE__?.backend;
       if (!backend || this._juceBridgeInitialized) return;
       this._juceBridgeInitialized = true;
+      this.isJuce = true;
 
       // 1. Listen for paramUpdate events from JUCE C++ APVTS / host automation
       if (typeof backend.addEventListener === 'function') {
@@ -1943,10 +1961,6 @@ export class AmbientApp {
 
       // 3. Request initial state synchronization from C++ backend
       this._emitJuceParamChange('requestSync', 1.0);
-      if (this.engine) {
-        this._emitJuceParamChange('drone1_pitch', this.engine.drone1Freq || 65.41);
-        this._emitJuceParamChange('drone2_pitch', this.engine.drone2Freq || 98.00);
-      }
     };
 
     if (window.__JUCE__?.backend) {
@@ -1971,7 +1985,11 @@ export class AmbientApp {
   setDroneTrackMidi(active, { emitToNative = true } = {}) {
     this.droneTrackMidi = Boolean(active);
     if (this.engine) {
-      this.engine.droneTrackMidi = this.droneTrackMidi;
+      if (typeof this.engine.setDroneTrackMidi === 'function') {
+        this.engine.setDroneTrackMidi(this.droneTrackMidi);
+      } else {
+        this.engine.droneTrackMidi = this.droneTrackMidi;
+      }
     }
     const btn = document.getElementById('toggle-drone-track');
     if (btn) {
