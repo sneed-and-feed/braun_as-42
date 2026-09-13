@@ -1,6 +1,7 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-EE592B?style=for-the-badge&logo=github)](https://sneed-and-feed.github.io/)
+[![VST3 Plugin](https://img.shields.io/badge/VST3-Windows%20x64-blue?style=for-the-badge)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.2.0-Windows-x64.zip)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Web Audio API](https://img.shields.io/badge/Web%20Audio-100%25%20Client--Side-4A4A4A?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
@@ -9,9 +10,11 @@
 
 ---
 
-### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
+### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.2.0-Windows-x64.zip)
+*Direct download: **`BRAUN_AS42-v1.2.0-Windows-x64.zip`** (6.08 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
 
-*No installation, plugins, or accounts required. Powered entirely by the browser's native Web Audio API.*
+### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
+*No installation, plugins, or accounts required. Native Web Audio API + Web MIDI support.*
 
 ---
 
