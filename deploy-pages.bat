@@ -32,6 +32,7 @@ cd /d "%~dp0"
 
 copy /y "index.html" "%TARGET_DIR%\" >nul
 copy /y ".nojekyll" "%TARGET_DIR%\" >nul
+copy /y "manifest.json" "%TARGET_DIR%\" >nul
 copy /y "README.md" "%TARGET_DIR%\" >nul
 copy /y "package.json" "%TARGET_DIR%\" >nul
 copy /y "server.js" "%TARGET_DIR%\" >nul
