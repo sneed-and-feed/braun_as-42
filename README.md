@@ -50,6 +50,12 @@ The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into
 
 ### 1.3 Elta Solar 42n: Microtonal Twin-Oscillator Drone Voices
 * **Calibrated Output Volume Balancing:** Drone bus gain is calibrated to -8.5dB relative to the keys bus, ensuring the twin drones serve as a warm, lush, non-overpowering ambient underbed while piano chords and chime melodies sit distinctly on top with crystalline clarity.
+* **Dynamic Piano Roll & MIDI Pitch Tracking (v1.2.0):**
+  * In addition to manual pitch knob operation, the drones dynamically follow notes played in the piano roll or MIDI keyboard.
+  * *Drone 1 (Tonic):* Follows the played root note transposed into the deep sub/bass register ($32.7\text{ Hz} - 130.8\text{ Hz}$) with smooth 40 ms portamento frequency slewing (no sudden pops or jumps).
+  * *Drone 2 (Harmony):* Tracks Drone 1 locked to the selected harmonic ratio (Unison, Sus 4th, Perfect 5th, Octave, Major 9th, 10th).
+  * *MIDI TRACK Toggle:* A dedicated button (`MIDI TRACK ON` / `MIDI TRACK OFF`) in the header lets you alternate instantly between dynamic note tracking and classic static drone operation.
+  * *Legato Fallback:* Releasing keys smoothly glides back to any remaining held notes.
 * **Dieter Rams Quick-Snap Tuning Buttons:** Instant one-click microtonal and harmonic drone snapping without manual knob hunting:
   * *Voice 1 (Tonic):* **SUB BASS** (C1 / ~32.7 Hz), **DEEP TONIC** (C2 / ~65.4 Hz), **WARM ROOT** (C3 / ~130.8 Hz), **OCTAVE UP** (C4 / ~261.6 Hz).
   * *Voice 2 (Dominant / Harmony):* **PERFECT 5TH** (3:2 ratio), **SUS 4TH** (4:3 ratio), **MAJOR 9TH** (9:8 ratio), **BEATING UNISON** (unison with ~0.35 Hz acoustic beat offset).
@@ -58,6 +64,20 @@ The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into
 * **Continuous Sub-Hertz Beating Control:** Dedicated continuous Hz offset dial (0.00 to 5.00 Hz) and fine detune (cents) to create slow, hypnotic, organic acoustic interference waves.
 * **West-Coast Wavefolder:** Multi-stage wavefolding transfer function ($y = \tanh(\sin(0.5\pi D x) - F \sin(1.5\pi D x))$) folding waveform peaks inward with 4x oversampled anti-aliasing.
 * **4-Pole Resonant Ladder Lowpass Filter:** Dual cascaded biquad filters with resonance up to self-oscillation and slow breathing LFO drift.
+
+### 1.4 Native VST3 Plugin & DAW Integration
+* **Hybrid C++ / WebView2 Architecture:** Built with JUCE 8 and Microsoft WebView2. The UI is rendered with high-DPI GPU acceleration, while the DSP engine runs entirely in native, highly optimized C++ with **0 heap allocations** on the audio thread.
+* **DAW Compositor & Performance Optimization:**
+  * **Opaque Surface (`setOpaque(true)`):** Eliminates 32-bit alpha compositing overhead in Windows Desktop Window Manager (DWM) and FL Studio.
+  * **Batched CRT Vector Graticule:** Oscilloscope grid lines are batched into a single path call.
+  * **Idle Silence Throttling:** Oscilloscope automatically steps down to 5 FPS when no audio is passing, freeing host GUI cycles in dense DAW arrangements.
+  * **Accurate APVTS Sync:** Direct atomic parameter binding prevents logarithmic curve skew.
+* **DAW Installation:**
+  Copy `BRAUN_AS42.vst3` into your system VST3 directory:
+  ```
+  C:\Program Files\Common Files\VST3\
+  ```
+  Compatible with FL Studio, Ableton Live, Reaper, Cubase, Bitwig, Studio One, and other VST3 hosts.
 
 ---
 
@@ -138,9 +158,16 @@ start.bat
 
 ## 5. Verification & Testing
 
-The project includes an extensive automated test suite verifying scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, mouse click & drag glissandi, and anti-clipping bus headroom staging:
+The project maintains comprehensive verification across both JavaScript Web Audio and native C++ DSP pipelines:
 
+### 5.1 JavaScript Audio & MIDI Suite
 ```bash
 npm test
 ```
-All 149 unit and integration tests across 28 test suites run with Node's built-in test runner.
+* **342 unit and integration tests across 68 test suites** running via Node.js native test runner.
+* Validates Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, and anti-clipping bus headroom staging.
+
+### 5.2 Native C++ DSP & Real-Time Safety Tests
+* **DSP Unit Tests (`test\cpp\dsp_tests.exe`):** 11 passed, 0 failed. Validates Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, and zero idle output.
+* **Adversarial Stress Tests (`test\cpp\challenger_stress_tests.exe`):** 8 passed, 0 failed. Verifies block sizes from 32 to 2048, multiple sample rates (44.1k to 192k), 22-parameter rapid sweeps, polyphonic voice stealing race conditions, and **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
+* **Asset & MIME Integrity Audit (`node test/web-assets-and-mime-stress.mjs`):** 18/18 embedded web assets verified against SHA-256 hashes, zero MIME type resolution errors, and 22-parameter bidirectional APVTS roundtrip verified.
