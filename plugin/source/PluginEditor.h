@@ -24,6 +24,7 @@ public:
     void sendParameterUpdateToWeb(const juce::String& paramID, float newValue);
     void sendPowerUpdateToWeb(bool isPoweredOn);
     void sendDroneActiveUpdateToWeb(int droneId, bool active);
+    void sendDroneTrackUpdateToWeb(bool track);
     void syncAllParametersToWeb();
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
 
@@ -36,6 +37,10 @@ private:
     braun::WebResourceManager resourceManager;
     juce::WebBrowserComponent webComponent;
     bool initialSyncDone { false };
+
+    // Lock-free parameter change coalescing to avoid flooding Win32 message loop
+    std::atomic<float> pendingParamValues[22] {};
+    std::atomic<bool> paramDirty[22] {};
 
     void registerParameterListeners();
     void unregisterParameterListeners();

@@ -42,6 +42,9 @@ void DspEngine::reset() noexcept {
     mLatchedKeys.reset();
     mCurrentPitchBendCents = 0.0f;
     mCurrentModWheel = 0.0f;
+    mLastTrackedMidiNote = -1;
+    mTrackedDrone1Freq = 65.41f;
+    mTrackedDrone2Freq = 98.00f;
 }
 
 void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
@@ -55,6 +58,7 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
                 if (note < 128) {
                     mHeldKeys.set(note, true);
                     mLatchedKeys.set(note, false);
+                    mLastTrackedMidiNote = static_cast<int>(note);
                 }
                 const float velNorm = static_cast<float>(vel) / 127.0f;
                 mFeltPiano.noteOn(note, velNorm, 3.5f, true, false);
@@ -66,6 +70,15 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
                         mLatchedKeys.set(note, true);
                     } else {
                         mFeltPiano.noteOff(note);
+                    }
+
+                    if (mLastTrackedMidiNote == static_cast<int>(note) && mHeldKeys.any()) {
+                        for (int k = 127; k >= 0; --k) {
+                            if (mHeldKeys.test(k)) {
+                                mLastTrackedMidiNote = k;
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -79,6 +92,15 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
                     mLatchedKeys.set(note, true);
                 } else {
                     mFeltPiano.noteOff(note);
+                }
+
+                if (mLastTrackedMidiNote == static_cast<int>(note) && mHeldKeys.any()) {
+                    for (int k = 127; k >= 0; --k) {
+                        if (mHeldKeys.test(k)) {
+                            mLastTrackedMidiNote = k;
+                            break;
+                        }
+                    }
                 }
             }
             break;
@@ -193,14 +215,59 @@ void DspEngine::process(float* left, float* right, int numSamples,
     masterParams.limiterKnee = 0.80f;
 
     // 3. Process block with sample-accurate MIDI event dispatching
+    const bool trackingActive = mDroneTrackMidi && params.drone_track_midi;
+    auto updatePitches = [&]() noexcept {
+        if (trackingActive && mLastTrackedMidiNote >= 0) {
+            int minNote = 36;
+            int maxNote = 47;
+            if (params.drone1_isSubBass || params.drone1_pitch < 45.0f) {
+                minNote = 24;
+                maxNote = 35;
+            } else if (params.drone1_pitch >= 90.0f && params.drone1_pitch < 180.0f) {
+                minNote = 48;
+                maxNote = 59;
+            } else if (params.drone1_pitch >= 180.0f) {
+                minNote = 60;
+                maxNote = 71;
+            }
+
+            int trackedNote = mLastTrackedMidiNote;
+            while (trackedNote > maxNote) trackedNote -= 12;
+            while (trackedNote < minNote) trackedNote += 12;
+
+            const float f1 = 440.0f * std::pow(2.0f, static_cast<float>(trackedNote - 69) / 12.0f);
+            drone1Params.pitchHz = f1;
+            mTrackedDrone1Freq = f1;
+
+            const float ratio = (params.drone1_pitch > 1.0f)
+                ? (params.drone2_pitch / params.drone1_pitch)
+                : 1.5f;
+            const float f2 = f1 * ratio;
+            drone2Params.pitchHz = f2;
+            mTrackedDrone2Freq = f2;
+        } else {
+            drone1Params.pitchHz = params.drone1_pitch;
+            drone2Params.pitchHz = params.drone2_pitch;
+            mTrackedDrone1Freq = params.drone1_pitch;
+            mTrackedDrone2Freq = params.drone2_pitch;
+        }
+    };
+    updatePitches();
+
     int currentSample = 0;
     int midiIdx = 0;
 
     while (currentSample < numSamples) {
         // Dispatch all MIDI events scheduled at or before this sample offset
+        bool midiChanged = false;
         while (midiIdx < numMidiEvents && midiEvents[midiIdx].sampleOffset <= currentSample) {
             handleMidiEvent(midiEvents[midiIdx]);
             ++midiIdx;
+            midiChanged = true;
+        }
+
+        if (midiChanged) {
+            updatePitches();
         }
 
         // Determine slice length until next MIDI event

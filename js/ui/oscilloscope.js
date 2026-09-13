@@ -72,10 +72,32 @@ export class BraunOscilloscope {
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
+    this.lastRenderTime = 0;
+    this.silentFrames = 0;
 
-    const render = () => {
+    const render = (timestamp) => {
       if (!this.isRunning) return;
-      this.draw();
+
+      const now = timestamp || (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      const elapsed = now - this.lastRenderTime;
+
+      // Minimum interval before any check or draw:
+      // Active: ~40 FPS (25ms). Settled silence (>15 frames): 10 FPS (100ms). Deep silence (>60 frames): 5 FPS (200ms).
+      // Throttling prevents high-refresh displays (120/144/240Hz) from wasting CPU/GPU rasterization cycles.
+      const interval = (this.silentFrames > 60) ? 200 : (this.silentFrames > 15) ? 100 : 25;
+
+      if (elapsed >= interval) {
+        const isSilent = this.checkSilence();
+        if (isSilent) {
+          this.silentFrames = Math.min(100, (this.silentFrames || 0) + 1);
+        } else {
+          this.silentFrames = 0;
+        }
+
+        this.lastRenderTime = now;
+        this.draw();
+      }
+
       if (typeof requestAnimationFrame !== 'undefined') {
         this.animationFrameId = requestAnimationFrame(render);
       }
@@ -84,6 +106,18 @@ export class BraunOscilloscope {
     if (typeof requestAnimationFrame !== 'undefined') {
       this.animationFrameId = requestAnimationFrame(render);
     }
+  }
+
+  checkSilence() {
+    if (!this.analyser) return true;
+    this.analyser.getByteTimeDomainData(this.timeData);
+    const len = this.timeData.length;
+    for (let i = 0; i < len; i += 32) {
+      if (Math.abs(this.timeData[i] - 128) > 2) {
+        return false;
+      }
+    }
+    return true;
   }
 
   stop() {
@@ -110,15 +144,16 @@ export class BraunOscilloscope {
     this._drawGrid(ctx, w, h);
 
     if (!this.analyser) {
-      // Draw subtle standby CRT beam
+      // Draw subtle standby CRT beam with hardware-accelerated vector glow
       ctx.save();
-      ctx.strokeStyle = this.phosphorColor;
-      ctx.shadowColor = this.phosphorGlow;
-      ctx.shadowBlur = 4;
-      ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(0, h / 2);
       ctx.lineTo(w, h / 2);
+      ctx.strokeStyle = this.phosphorGlow;
+      ctx.lineWidth = 3.0;
+      ctx.stroke();
+      ctx.strokeStyle = this.phosphorColor;
+      ctx.lineWidth = 1.4;
       ctx.stroke();
       ctx.restore();
       return;
@@ -138,23 +173,21 @@ export class BraunOscilloscope {
     ctx.strokeStyle = this.gridColor;
     ctx.lineWidth = 1;
 
-    // 8x6 grid divisions
+    // Batch 8x6 grid divisions into single path (reduces 14 stroke calls to 1)
     const cols = 8;
     const rows = 6;
+    ctx.beginPath();
     for (let i = 1; i < cols; i++) {
       const x = Math.floor((w / cols) * i) + 0.5;
-      ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h);
-      ctx.stroke();
     }
     for (let j = 1; j < rows; j++) {
       const y = Math.floor((h / rows) * j) + 0.5;
-      ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
-      ctx.stroke();
     }
+    ctx.stroke();
 
     // Center crosshairs with tick marks
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
@@ -169,13 +202,7 @@ export class BraunOscilloscope {
   }
 
   _drawWaveform(ctx, w, h) {
-    this.analyser.getByteTimeDomainData(this.timeData);
-
     ctx.save();
-    ctx.strokeStyle = this.phosphorColor;
-    ctx.shadowColor = this.phosphorGlow;
-    ctx.shadowBlur = 8;
-    ctx.lineWidth = 1.8;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -208,7 +235,15 @@ export class BraunOscilloscope {
       x += sliceWidth;
     }
 
+    // Hardware-accelerated two-pass vector glow (avoids heavy software-rasterized shadowBlur)
+    ctx.strokeStyle = this.phosphorGlow;
+    ctx.lineWidth = 3.6;
     ctx.stroke();
+
+    ctx.strokeStyle = this.phosphorColor;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
     ctx.restore();
   }
 
@@ -217,8 +252,6 @@ export class BraunOscilloscope {
 
     ctx.save();
     ctx.fillStyle = this.phosphorColor;
-    ctx.shadowColor = this.phosphorGlow;
-    ctx.shadowBlur = 6;
 
     const numBars = 48;
     const barWidth = (w / numBars) - 1.5;
@@ -236,13 +269,9 @@ export class BraunOscilloscope {
   }
 
   _drawLissajous(ctx, w, h) {
-    this.analyser.getByteTimeDomainData(this.timeData);
-
     ctx.save();
-    ctx.strokeStyle = this.phosphorColor;
-    ctx.shadowColor = this.phosphorGlow;
-    ctx.shadowBlur = 9;
-    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     ctx.beginPath();
     const cx = w / 2;
@@ -265,7 +294,16 @@ export class BraunOscilloscope {
         ctx.lineTo(px, py);
       }
     }
+
+    // Hardware-accelerated two-pass vector glow
+    ctx.strokeStyle = this.phosphorGlow;
+    ctx.lineWidth = 3.2;
     ctx.stroke();
+
+    ctx.strokeStyle = this.phosphorColor;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
     ctx.restore();
   }
 }

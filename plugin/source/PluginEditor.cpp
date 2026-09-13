@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include <cstdlib>
 
 namespace {
 
@@ -33,16 +34,33 @@ static const ParamInfo kParamMap[] = {
     { "master_volume",    "masterVol",     0.01f }
 };
 
+static_assert(std::size(kParamMap) == 22, "kParamMap size must match pendingParamValues array size");
+
 } // namespace
 
 juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOptions(BRAUN_AS42AudioProcessorEditor& editor)
 {
+#if JUCE_WINDOWS
+    // Pass optimized Chromium flags to WebView2:
+    // - Force GPU rasterization
+    // - Disable background timer throttling
+    // - Disable background Chromium features (Translate, MediaRouter, OptimizationHints, CalculateNativeWinOcclusion)
+    _wputenv_s(
+        L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        L"--enable-gpu-rasterization "
+        L"--disable-background-timer-throttling "
+        L"--disable-renderer-backgrounding "
+        L"--disable-features=Translate,OptimizationHints,MediaRouter,CalculateNativeWinOcclusion"
+    );
+#endif
+
     auto options = juce::WebBrowserComponent::Options{}
 #if JUCE_WINDOWS
         .withBackend(juce::WebBrowserComponent::Options::Backend::webview2)
         .withWinWebView2Options(
             juce::WebBrowserComponent::Options::WinWebView2{}
-                .withUserDataFolder(juce::File::getSpecialLocation(juce::File::SpecialLocationType::tempDirectory).getChildFile("BraunAS42_WebView2")))
+                .withUserDataFolder(juce::File::getSpecialLocation(juce::File::SpecialLocationType::tempDirectory).getChildFile("BraunAS42_WebView2"))
+                .withBackgroundColour(juce::Colour(0xff121414)))
 #endif
         .withNativeIntegrationEnabled()
         .withResourceProvider([&editor](const juce::String& url) {
@@ -60,6 +78,10 @@ BRAUN_AS42AudioProcessorEditor::BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioPr
       processorRef(p),
       webComponent(createWebOptions(*this))
 {
+    // Prevent FL Studio and Windows DWM from performing expensive alpha compositing
+    setOpaque(true);
+    webComponent.setOpaque(true);
+
     addAndMakeVisible(webComponent);
     registerParameterListeners();
 
@@ -67,7 +89,7 @@ BRAUN_AS42AudioProcessorEditor::BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioPr
     setResizable(true, true);
     setResizeLimits(800, 560, 1920, 1080);
 
-    startTimerHz(30);
+    startTimerHz(25);
 
     webComponent.goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 }
@@ -90,14 +112,17 @@ void BRAUN_AS42AudioProcessorEditor::resized()
 
 void BRAUN_AS42AudioProcessorEditor::parameterChanged(const juce::String& parameterID, float newValue)
 {
-    juce::Component::SafePointer<BRAUN_AS42AudioProcessorEditor> safeThis(this);
-    juce::MessageManager::callAsync([safeThis, parameterID, newValue]()
+    // Coalesce parameter changes into atomic array without calling MessageManager::callAsync
+    // to prevent flooding the Win32 message loop during rapid host automation.
+    for (size_t i = 0; i < std::size(kParamMap); ++i)
     {
-        if (safeThis != nullptr)
+        if (parameterID == kParamMap[i].apvtsId)
         {
-            safeThis->sendParameterUpdateToWeb(parameterID, newValue);
+            pendingParamValues[i].store(newValue, std::memory_order_relaxed);
+            paramDirty[i].store(true, std::memory_order_relaxed);
+            break;
         }
-    });
+    }
 }
 
 void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String& paramID, float newValue)
@@ -129,12 +154,6 @@ void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String
                 objAlias->setProperty("value", webValue);
                 webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(objAlias));
             }
-
-            // Also emit under the native APVTS ID for direct bindings
-            auto* obj2 = new juce::DynamicObject();
-            obj2->setProperty("id", item.apvtsId);
-            obj2->setProperty("value", newValue);
-            webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj2));
             return;
         }
     }
@@ -160,6 +179,20 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
     {
         sendDroneActiveUpdateToWeb(2, processorRef.getDrone2Active());
     }
+    if (processorRef.consumeDroneTrackMidiDirty())
+    {
+        sendDroneTrackUpdateToWeb(processorRef.getDroneTrackMidi());
+    }
+
+    // Coalesced dirty parameter dispatch at a smooth, stable 25 Hz
+    for (size_t i = 0; i < std::size(kParamMap); ++i)
+    {
+        if (paramDirty[i].exchange(false, std::memory_order_relaxed))
+        {
+            const float val = pendingParamValues[i].load(std::memory_order_relaxed);
+            sendParameterUpdateToWeb(kParamMap[i].apvtsId, val);
+        }
+    }
 }
 
 void BRAUN_AS42AudioProcessorEditor::sendPowerUpdateToWeb(bool on)
@@ -178,18 +211,26 @@ void BRAUN_AS42AudioProcessorEditor::sendDroneActiveUpdateToWeb(int droneId, boo
     webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
 }
 
+void BRAUN_AS42AudioProcessorEditor::sendDroneTrackUpdateToWeb(bool track)
+{
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("id", "drone_track_midi");
+    obj->setProperty("value", track ? 1.0f : 0.0f);
+    webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+}
+
 void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
 {
     sendPowerUpdateToWeb(processorRef.getPoweredOn());
     sendDroneActiveUpdateToWeb(1, processorRef.getDrone1Active());
     sendDroneActiveUpdateToWeb(2, processorRef.getDrone2Active());
+    sendDroneTrackUpdateToWeb(processorRef.getDroneTrackMidi());
 
     for (const auto& item : kParamMap)
     {
-        if (auto* param = processorRef.getAPVTS().getParameter(item.apvtsId))
+        if (auto* rawVal = processorRef.getAPVTS().getRawParameterValue(item.apvtsId))
         {
-            const float currentVal = param->getValue() * (param->getNormalisableRange().end - param->getNormalisableRange().start) + param->getNormalisableRange().start;
-            sendParameterUpdateToWeb(item.apvtsId, currentVal);
+            sendParameterUpdateToWeb(item.apvtsId, rawVal->load(std::memory_order_relaxed));
         }
     }
 }
@@ -213,7 +254,7 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
         return;
     }
 
-    // Handle discrete engine power and drone active state controls
+    // Handle discrete engine power, drone active state controls, and MIDI pitch tracking
     if (incomingId.equalsIgnoreCase("power"))
     {
         processorRef.setPoweredOn(incomingVal > 0.5f);
@@ -227,6 +268,11 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
     if (incomingId.equalsIgnoreCase("drone2_active") || incomingId.equalsIgnoreCase("drone2Active"))
     {
         processorRef.setDrone2Active(incomingVal > 0.5f);
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("drone_track_midi") || incomingId.equalsIgnoreCase("droneTrackMidi") || incomingId.equalsIgnoreCase("droneTrack"))
+    {
+        processorRef.setDroneTrackMidi(incomingVal > 0.5f);
         return;
     }
 

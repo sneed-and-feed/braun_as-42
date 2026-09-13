@@ -55,6 +55,9 @@ struct ParameterSnapshot {
     int drone2_waveB { 5 };           // Triangle
     bool drone2_active { false };
 
+    // Drone MIDI Note Tracking (follows piano roll notes in bass/sub octave)
+    bool drone_track_midi { true };
+
     // Tape Delay parameters
     float tape_time { 0.48f };
     float tape_feedback { 0.58f };
@@ -118,6 +121,13 @@ public:
     MasterLimiterDsp& getMasterLimiter() noexcept { return mMasterLimiter; }
     const WavetableBank& getWavetables() const noexcept { return mWavetables; }
 
+    // Drone MIDI Pitch Tracking Controls
+    void setDroneTrackMidi(bool track) noexcept { mDroneTrackMidi = track; }
+    bool getDroneTrackMidi() const noexcept { return mDroneTrackMidi; }
+    int getLastTrackedMidiNote() const noexcept { return mLastTrackedMidiNote; }
+    float getTrackedDrone1Freq() const noexcept { return mTrackedDrone1Freq; }
+    float getTrackedDrone2Freq() const noexcept { return mTrackedDrone2Freq; }
+
 private:
     void handleMidiEvent(const MidiEvent& event) noexcept;
 
@@ -142,6 +152,12 @@ private:
     std::bitset<128> mLatchedKeys;
     float mCurrentPitchBendCents { 0.0f };
     float mCurrentModWheel { 0.0f };
+
+    // Drone Note Tracking State
+    bool mDroneTrackMidi { true };
+    int mLastTrackedMidiNote { -1 };
+    float mTrackedDrone1Freq { 65.41f };
+    float mTrackedDrone2Freq { 98.00f };
 };
 
 } // namespace braun

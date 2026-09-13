@@ -62,6 +62,7 @@ export class AudioEngine {
       1: 'deep-tonic',
       2: 'perfect-5th'
     };
+    this.droneTrackMidi = true;
     this._lastAppliedDrone2Snap = 'perfect-5th';
     this._dialedDrone2Beat = 0.65;
     this.drone1Midi = 36 + this.rootPitchClass;
@@ -748,6 +749,54 @@ export class AudioEngine {
       }
     }
     return this.drone2Freq;
+  }
+
+  /**
+   * Track played MIDI note pitch on drone voices in bass/sub register with smooth portamento
+   * @param {number} note - Incoming MIDI note number (0-127)
+   */
+  trackDronePitch(note) {
+    if (!this.droneTrackMidi) return;
+
+    // Transpose played note into bass/sub octave matching active Drone 1 snap
+    const snapKey = this.droneSnap[1] || 'deep-tonic';
+    let minNote = 36; // C2..B2 (Deep Tonic)
+    let maxNote = 47;
+    if (snapKey === 'sub-bass') {
+      minNote = 24; // C1..B1 (Sub Bass)
+      maxNote = 35;
+    } else if (snapKey === 'warm-root') {
+      minNote = 48; // C3..B3 (Warm Root)
+      maxNote = 59;
+    } else if (snapKey === 'octave-up') {
+      minNote = 60; // C4..B4 (Octave Up)
+      maxNote = 71;
+    }
+
+    let trackedNote = note;
+    while (trackedNote > maxNote) trackedNote -= 12;
+    while (trackedNote < minNote) trackedNote += 12;
+
+    const a4 = (typeof this.a4 === 'number') ? this.a4 : 440;
+    const f1 = midiToFrequency(trackedNote, a4);
+    this.drone1Freq = f1;
+    if (this.drone1) {
+      this.drone1.setFrequency(f1, 0.040);
+    }
+
+    // Drone 2 harmonic interval relative to Drone 1
+    const snap2 = this.droneSnap[2] || 'perfect-5th';
+    let ratio = 1.5;
+    if (snap2 === 'perfect-5th') ratio = 1.5;
+    else if (snap2 === 'sus-4th') ratio = 4.0 / 3.0;
+    else if (snap2 === 'major-9th') ratio = 9.0 / 8.0;
+    else if (snap2 === 'beating-unison') ratio = 1.0;
+
+    const f2 = f1 * ratio;
+    this.drone2Freq = f2;
+    if (this.drone2) {
+      this.drone2.setFrequency(f2, 0.040);
+    }
   }
 
   setTuningReference(a4) {

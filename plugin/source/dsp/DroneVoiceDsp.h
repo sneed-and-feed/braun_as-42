@@ -39,7 +39,7 @@ public:
         const float defaultDetune = (voiceId == 1) ? 2.5f : -3.2f;
 
         mFreqSmoother.setSampleRate(mSampleRate);
-        mFreqSmoother.setTimeConstant(0.025f);
+        mFreqSmoother.setTimeConstant(0.040f);
         mFreqSmoother.reset(defaultFreq);
 
         mCutoffSmoother.setSampleRate(mSampleRate);
@@ -54,6 +54,10 @@ public:
         mDetuneCents = defaultDetune;
 
         reset();
+    }
+
+    void setPortamentoTime(float timeSec) noexcept {
+        mFreqSmoother.setTimeConstant(timeSec);
     }
 
     void reset() noexcept {

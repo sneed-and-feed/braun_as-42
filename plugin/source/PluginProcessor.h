@@ -51,17 +51,23 @@ public:
     bool getDrone2Active() const noexcept;
     bool consumeDrone2StateDirty() noexcept;
 
+    void setDroneTrackMidi(bool track) noexcept;
+    bool getDroneTrackMidi() const noexcept;
+    bool consumeDroneTrackMidiDirty() noexcept;
+
 private:
     juce::AudioProcessorValueTreeState apvts;
     braun::DspEngine dspEngine;
 
-    // Power and generative voice active states (silent on startup until triggered or powered on)
+    // Power, drone voice active states, and drone MIDI tracking state
     std::atomic<bool> isPoweredOn { false };
     std::atomic<bool> powerStateDirty { false };
     std::atomic<bool> drone1Active { false };
     std::atomic<bool> drone1StateDirty { false };
     std::atomic<bool> drone2Active { false };
     std::atomic<bool> drone2StateDirty { false };
+    std::atomic<bool> droneTrackMidi { true };
+    std::atomic<bool> droneTrackMidiDirty { false };
 
     // Cached raw atomic parameter pointers for lock-free, zero-overhead audio thread reads
     std::atomic<float>* paramFeltVolume { nullptr };

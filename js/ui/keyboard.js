@@ -820,6 +820,9 @@ export class BraunPlaySurface {
    */
   playNote(freq, midi, velocity = 0.6, duration = 3.5, isHold = false) {
     this.flashKey(midi);
+    if (this.engine && typeof this.engine.trackDronePitch === 'function') {
+      this.engine.trackDronePitch(midi);
+    }
     if (this.onPlay) {
       this.onPlay(freq, midi, velocity);
     }

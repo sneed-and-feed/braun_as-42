@@ -170,6 +170,9 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (paramDrone2Cutoff)    snapshot.drone2_cutoff = paramDrone2Cutoff->load(std::memory_order_relaxed);
     if (paramDrone2Resonance) snapshot.drone2_resonance = paramDrone2Resonance->load(std::memory_order_relaxed);
 
+    snapshot.drone_track_midi = droneTrackMidi.load(std::memory_order_relaxed);
+    dspEngine.setDroneTrackMidi(snapshot.drone_track_midi);
+
     if (paramTapeTime)        snapshot.tape_time = paramTapeTime->load(std::memory_order_relaxed);
     if (paramTapeFeedback)    snapshot.tape_feedback = paramTapeFeedback->load(std::memory_order_relaxed);
     if (paramTapeMix)         snapshot.tape_mix = paramTapeMix->load(std::memory_order_relaxed);
@@ -261,6 +264,23 @@ bool BRAUN_AS42AudioProcessor::consumeDrone2StateDirty() noexcept
     return drone2StateDirty.exchange(false, std::memory_order_relaxed);
 }
 
+void BRAUN_AS42AudioProcessor::setDroneTrackMidi(bool track) noexcept
+{
+    droneTrackMidi.store(track, std::memory_order_relaxed);
+    droneTrackMidiDirty.store(true, std::memory_order_relaxed);
+    dspEngine.setDroneTrackMidi(track);
+}
+
+bool BRAUN_AS42AudioProcessor::getDroneTrackMidi() const noexcept
+{
+    return droneTrackMidi.load(std::memory_order_relaxed);
+}
+
+bool BRAUN_AS42AudioProcessor::consumeDroneTrackMidiDirty() noexcept
+{
+    return droneTrackMidiDirty.exchange(false, std::memory_order_relaxed);
+}
+
 bool BRAUN_AS42AudioProcessor::hasEditor() const
 {
     return true;
@@ -277,6 +297,7 @@ void BRAUN_AS42AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     state.setProperty("isPoweredOn", isPoweredOn.load(std::memory_order_relaxed), nullptr);
     state.setProperty("drone1Active", drone1Active.load(std::memory_order_relaxed), nullptr);
     state.setProperty("drone2Active", drone2Active.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("droneTrackMidi", droneTrackMidi.load(std::memory_order_relaxed), nullptr);
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
 }
@@ -294,6 +315,8 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
             setDrone1Active(static_cast<bool>(vt.getProperty("drone1Active")));
         if (vt.hasProperty("drone2Active"))
             setDrone2Active(static_cast<bool>(vt.getProperty("drone2Active")));
+        if (vt.hasProperty("droneTrackMidi"))
+            setDroneTrackMidi(static_cast<bool>(vt.getProperty("droneTrackMidi")));
     }
 }
 

@@ -234,6 +234,11 @@ export class BraunMidiManager {
     const freq = midiToFrequency(note, a4);
     const normVelocity = Math.max(0.001, Math.min(1.0, velocity / 127.0));
 
+    // Track drone pitches in bass/sub register if drone pitch tracking is enabled
+    if (this.engine && typeof this.engine.trackDronePitch === 'function') {
+      this.engine.trackDronePitch(note);
+    }
+
     // Continuous sustain hold (20.0s isHold) until physical Note-Off or sustain pedal release
     const voice = this.engine.feltPiano.playNote(freq, normVelocity, 20.0, true);
 

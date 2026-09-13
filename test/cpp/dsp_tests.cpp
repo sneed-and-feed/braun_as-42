@@ -586,6 +586,125 @@ void test_dsp_engine_no_self_oscillation_under_extreme_parameters() {
 }
 
 // ============================================================================
+// Test 11: Drone MIDI pitch tracking, sub-octave transposition, & portamento
+// ============================================================================
+void test_drone_midi_pitch_tracking() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    braun::ParameterSnapshot params;
+    params.drone1_active = true;
+    params.drone2_active = true;
+    params.drone1_pitch = 65.41f;  // C2
+    params.drone2_pitch = 98.00f;  // G2 (Perfect 5th, ratio 1.49824 ~ 1.5)
+    params.drone_track_midi = true;
+
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // 1. Send Note-On F5 (MIDI 77)
+    // F5 (77) should transpose to Deep Tonic octave (C2..B2, 36..47) -> F2 (41, ~87.31 Hz)
+    braun::MidiEvent noteF5 = { 0, 0x90, 77, 100 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteF5, 1);
+
+    TEST_ASSERT(engine.getLastTrackedMidiNote() == 77, "Last tracked MIDI note must be 77");
+    const float f1 = engine.getTrackedDrone1Freq();
+    const float f2 = engine.getTrackedDrone2Freq();
+    TEST_ASSERT(std::abs(f1 - 87.307f) < 0.1f, "Drone 1 must track F5 transposed to F2 (~87.31 Hz)");
+    TEST_ASSERT(std::abs(f2 - 87.307f * (98.00f / 65.41f)) < 0.2f, "Drone 2 must track 5th of F2 (~130.8 Hz)");
+
+    // 2. Send Note-On A#5 (MIDI 82)
+    // A#5 (82) should transpose to Deep Tonic octave -> A#2 (46, ~116.54 Hz)
+    braun::MidiEvent noteAsharp5 = { 0, 0x90, 82, 100 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteAsharp5, 1);
+
+    TEST_ASSERT(engine.getLastTrackedMidiNote() == 82, "Last tracked MIDI note must be 82");
+    const float f1_next = engine.getTrackedDrone1Freq();
+    TEST_ASSERT(std::abs(f1_next - 116.541f) < 0.1f, "Drone 1 must track A#5 transposed to A#2 (~116.54 Hz)");
+    TEST_ASSERT(f1_next > f1, "Drone 1 pitch must increase from F2 to A#2 as user requested");
+
+    // 3. Portamento continuity: process 20 blocks during glide and verify audio is bounded & finite
+    for (int b = 0; b < 20; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(!std::isnan(blockL[i]) && !std::isinf(blockL[i]), "Glide must not produce NaN/Inf");
+            TEST_ASSERT(std::abs(blockL[i]) <= 1.0f, "Glide audio must be safely limited within +/- 1.0");
+        }
+    }
+
+    // 4. Sub-bass mode tracking: should transpose to octave 1 (24..35) -> F1 (~43.65 Hz)
+    params.drone1_isSubBass = true;
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteF5, 1);
+    const float f1_sub = engine.getTrackedDrone1Freq();
+    TEST_ASSERT(std::abs(f1_sub - 43.653f) < 0.1f, "Sub-bass mode must track F5 transposed to F1 (~43.65 Hz)");
+    params.drone1_isSubBass = false;
+
+    // Reset held keys before pedal test
+    braun::MidiEvent allNotesOff = { 0, 0xB0, 123, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &allNotesOff, 1);
+
+    // 5. Tracking under sustain pedal active (CC 64 >= 64)
+    // Send CC 64 = 127 (Pedal Down), then play G5 (MIDI 79 -> G2, 43, ~98.00 Hz)
+    braun::MidiEvent pedalDown = { 0, 0xB0, 64, 127 };
+    braun::MidiEvent noteG5 = { 10, 0x90, 79, 100 };
+    braun::MidiEvent pedalEvents[] = { pedalDown, noteG5 };
+    engine.process(blockL.data(), blockR.data(), 512, params, pedalEvents, 2);
+    TEST_ASSERT(engine.getLastTrackedMidiNote() == 79, "Drone must track MIDI notes even when sustain pedal is active");
+    const float f1_pedal = engine.getTrackedDrone1Freq();
+    TEST_ASSERT(std::abs(f1_pedal - 97.999f) < 0.1f, "Drone 1 must track G5 transposed to G2 (~98.00 Hz) with pedal down");
+
+    // Release pedal
+    braun::MidiEvent pedalUp = { 0, 0xB0, 64, 0 };
+    braun::MidiEvent noteG5Off = { 10, 0x80, 79, 0 };
+    braun::MidiEvent releaseEvents[] = { pedalUp, noteG5Off };
+    engine.process(blockL.data(), blockR.data(), 512, params, releaseEvents, 2);
+    // When all notes are released, drone must preserve its last tracked pitch!
+    TEST_ASSERT(std::abs(engine.getTrackedDrone1Freq() - 97.999f) < 0.1f, "Drone must preserve last pitch when all keys released");
+
+    // 6. Legato key release fallback: hold C4 (60), press E4 (64), release E4 -> returns to C4
+    braun::MidiEvent noteC4On = { 0, 0x90, 60, 90 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteC4On, 1);
+    TEST_ASSERT(engine.getLastTrackedMidiNote() == 60, "Must track C4");
+    TEST_ASSERT(std::abs(engine.getTrackedDrone1Freq() - 65.406f) < 0.1f, "C4 must transpose to C2 (~65.41 Hz)");
+
+    braun::MidiEvent noteE4On = { 0, 0x90, 64, 90 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteE4On, 1);
+    TEST_ASSERT(engine.getLastTrackedMidiNote() == 64, "Must track E4 while both keys held");
+    TEST_ASSERT(std::abs(engine.getTrackedDrone1Freq() - 82.407f) < 0.1f, "E4 must transpose to E2 (~82.41 Hz)");
+
+    braun::MidiEvent noteE4Off = { 0, 0x80, 64, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteE4Off, 1);
+    TEST_ASSERT(engine.getLastTrackedMidiNote() == 60, "Releasing top note must fall back to held C4 for smooth legato");
+    TEST_ASSERT(std::abs(engine.getTrackedDrone1Freq() - 65.406f) < 0.1f, "Must return to C2 (~65.41 Hz)");
+
+    // Release C4
+    braun::MidiEvent noteC4Off = { 0, 0x80, 60, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteC4Off, 1);
+
+    // 7. Toggle static drone mode (drone_track_midi = false)
+    params.drone1_pitch = 55.0f; // A1
+    params.drone2_pitch = 82.5f; // E2 (ratio 1.5)
+    params.drone_track_midi = false;
+    engine.process(blockL.data(), blockR.data(), 512, params, &noteF5, 1); // Send note while tracking is off
+    TEST_ASSERT(std::abs(engine.getTrackedDrone1Freq() - 55.0f) < 0.001f, "Static mode must use params.drone1_pitch");
+    TEST_ASSERT(std::abs(engine.getTrackedDrone2Freq() - 82.5f) < 0.001f, "Static mode must use params.drone2_pitch");
+
+    // Re-enable tracking: should immediately lock to the last note played (F5 -> F2)
+    params.drone_track_midi = true;
+    engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    TEST_ASSERT(std::abs(engine.getTrackedDrone1Freq() - 87.307f) < 0.1f, "Re-enabling tracking must track last note F2");
+
+    // 8. Harmonic ratio locking with Sus-4th (ratio 4/3 = 1.33333)
+    params.drone1_pitch = 65.41f;
+    params.drone2_pitch = 65.41f * (4.0f / 3.0f);
+    engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    const float f2_sus4 = engine.getTrackedDrone2Freq();
+    TEST_ASSERT(std::abs(f2_sus4 - 87.307f * (4.0f / 3.0f)) < 0.1f, "Drone 2 must track Sus-4th ratio (4/3) relative to Drone 1");
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -603,6 +722,7 @@ int main() {
     RUN_TEST(test_dsp_engine_silence_on_startup_until_triggered_or_active);
     RUN_TEST(test_dsp_engine_zero_output_when_idle_powered_on_and_tail_decay);
     RUN_TEST(test_dsp_engine_no_self_oscillation_under_extreme_parameters);
+    RUN_TEST(test_drone_midi_pitch_tracking);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

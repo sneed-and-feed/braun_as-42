@@ -232,6 +232,7 @@ export class AmbientApp {
     this.knobs = {};
     this.midiManager = new BraunMidiManager(this.engine, this);
     this.isPowerOn = false;
+    this.droneTrackMidi = true;
     this._initialized = false;
     this._knobsBuilt = false;
     this._isApplyingPreset = false;
@@ -397,6 +398,10 @@ export class AmbientApp {
         this.engine.setScale(this.engine.currentScaleKey, root);
         if (this.playSurface) this.playSurface.rebuildKeys();
         this.updateLoopNotes();
+        if (this.engine) {
+          this._emitJuceParamChange('drone1_pitch', this.engine.drone1Freq);
+          this._emitJuceParamChange('drone2_pitch', this.engine.drone2Freq);
+        }
         if (typeof rootSelect.blur === 'function') rootSelect.blur();
         if (typeof document !== 'undefined' && document.body && typeof document.body.focus === 'function') {
           document.body.focus();
@@ -600,6 +605,14 @@ export class AmbientApp {
             if (bar) bar.style.width = '0%';
           });
         }
+      });
+    }
+
+    // Drone MIDI Note Tracking Toggle
+    const droneTrackBtn = document.getElementById('toggle-drone-track');
+    if (droneTrackBtn) {
+      droneTrackBtn.addEventListener('click', () => {
+        this.setDroneTrackMidi(!this.droneTrackMidi);
       });
     }
 
@@ -879,6 +892,11 @@ export class AmbientApp {
         this.engine.setDroneSnap(id, snap);
       }
     });
+
+    if (this.engine) {
+      this._emitJuceParamChange('drone1_pitch', this.engine.drone1Freq);
+      this._emitJuceParamChange('drone2_pitch', this.engine.drone2Freq);
+    }
 
     // 5. Vector Pad Coordinates (sync visual coordinates without stomping calibrated preset knobs)
     if (this.vectorPad && preset.vectorX !== undefined && preset.vectorY !== undefined) {
@@ -1810,6 +1828,8 @@ export class AmbientApp {
         btn.classList.add('is-active');
         const snapKey = btn.getAttribute('data-snap');
         this.engine.setDroneSnap(id, snapKey);
+        this._emitJuceParamChange('drone1_pitch', this.engine.drone1Freq);
+        this._emitJuceParamChange('drone2_pitch', this.engine.drone2Freq);
         if (id === 2) {
           const beatKnob = this.knobs[`${prefix}Beat`];
           if (beatKnob) {
@@ -1891,6 +1911,11 @@ export class AmbientApp {
             }
             return;
           }
+          if ((id === 'drone_track_midi' || id === 'droneTrackMidi') && typeof value === 'number') {
+            const track = (value > 0.5);
+            this.setDroneTrackMidi(track, { emitToNative: false });
+            return;
+          }
           if (id && this.knobs[id] && typeof value === 'number') {
             // Passing false for triggerCallback suppresses re-emitting paramChange back to C++
             this.knobs[id].setValue(value, false);
@@ -1918,6 +1943,10 @@ export class AmbientApp {
 
       // 3. Request initial state synchronization from C++ backend
       this._emitJuceParamChange('requestSync', 1.0);
+      if (this.engine) {
+        this._emitJuceParamChange('drone1_pitch', this.engine.drone1Freq || 65.41);
+        this._emitJuceParamChange('drone2_pitch', this.engine.drone2Freq || 98.00);
+      }
     };
 
     if (window.__JUCE__?.backend) {
@@ -1936,6 +1965,24 @@ export class AmbientApp {
       if (typeof poll.unref === 'function') {
         poll.unref();
       }
+    }
+  }
+
+  setDroneTrackMidi(active, { emitToNative = true } = {}) {
+    this.droneTrackMidi = Boolean(active);
+    if (this.engine) {
+      this.engine.droneTrackMidi = this.droneTrackMidi;
+    }
+    const btn = document.getElementById('toggle-drone-track');
+    if (btn) {
+      btn.classList.toggle('is-active', this.droneTrackMidi);
+      const textEl = btn.querySelector('.braun-status-text');
+      if (textEl) {
+        textEl.textContent = this.droneTrackMidi ? 'MIDI TRACK ON' : 'MIDI TRACK OFF';
+      }
+    }
+    if (emitToNative) {
+      this._emitJuceParamChange('drone_track_midi', this.droneTrackMidi ? 1.0 : 0.0);
     }
   }
 }
