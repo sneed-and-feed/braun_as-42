@@ -23,11 +23,11 @@
 Archival engineering documentation and CAD schematics designed in Dieter Rams' functionalist visual language (*"Weniger, aber besser"*).
 
 <p align="center">
-  <img src="BRAUN_AS42_Datasheet_EN.png" alt="BRAUN AS 42 Technical Datasheet (English Edition)" width="720" />
+  <img src="images/BRAUN_AS42_Datasheet_EN.png" alt="BRAUN AS 42 Technical Datasheet (English Edition)" width="720" />
 </p>
 
-* **English Edition (International Standard):** [High-Res Master PNG (2000 × 2860, 300 DPI)](BRAUN_AS42_Datasheet_EN.png) · [Vector Blueprint SVG](BRAUN_AS42_Datasheet_EN.svg)
-* **German Edition (Archival Original):** [High-Res Master PNG (2000 × 2860, 300 DPI)](BRAUN_AS42_Datasheet.png) · [Vector Blueprint SVG](BRAUN_AS42_Datasheet.svg)
+* **English Edition (International Standard):** [High-Res Master PNG (2000 × 2860, 300 DPI)](images/BRAUN_AS42_Datasheet_EN.png) · [Vector Blueprint SVG](images/BRAUN_AS42_Datasheet_EN.svg)
+* **German Edition (Archival Original):** [High-Res Master PNG (2000 × 2860, 300 DPI)](images/BRAUN_AS42_Datasheet.png) · [Vector Blueprint SVG](images/BRAUN_AS42_Datasheet.svg)
 
 ---
 
@@ -138,6 +138,14 @@ Designed for musicians who create intuitively by ear without formal music theory
   * Dedicated Dieter Rams style **EXPORT** and **LOAD** button pair located on the top bar in the utility group alongside **RESET ALL** and **RECORD WAV**.
   * Exports complete `BRAUN_AS42_PATCH` JSON files named `AS-42 Preset [ID].json` (e.g. `AS-42 Preset BUDD_PENTATONIC-2026-09-08-16-50-00.json`) capturing all 32 rotary knobs, root pitch, modal scale, concert pitch reference (432 Hz / 440 Hz), felt piano timbre (including CS-80), dual drone oscillator waveforms, quick-snap tuning modes, and vector pad coordinates.
   * Instant client-side file reading (`.json`) restores all synthesizer sound engines and UI controls smoothly without audio dropouts or vector pad clobbering, making backing up, restoring, and sharing custom patches effortless.
+* **Responsive Tablet & Multi-Touch Performance Architecture:**
+  * Native momentum vertical scrolling across iPadOS (Safari, Brave) and Android tablets (Blink, Samsung Internet, Gecko).
+  * Precision touch disambiguation: Rotary dial dragging is isolated to `.braun-knob-assembly`, allowing touches on parameter labels, value readouts, and section margins to cascade into smooth vertical page scrolling.
+  * Ergonomic Dieter Rams sub-panel organization splitting Brian Eno effects into semantic Tape Delay (5-knob cluster) and Shimmer Reverb (4-knob cluster) modules.
+  * Dedicated high-definition interface documentation:
+    * [iPadOS Landscape (Full Dashboard)](images/braun_tablet_ipad_landscape_full.png) · [Landscape View & FX Panels](images/braun_tablet_ipad_landscape_view.png)
+    * [iPadOS Performance Deck & Chime Strip](images/braun_tablet_ipad_performance_deck.png) · [iPadOS Portrait View](images/braun_tablet_ipad_portrait.png)
+    * [Android Tablet 16:10 Aspect Ratio View](images/braun_tablet_android_16_10.png)
 
 ---
 

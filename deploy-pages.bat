@@ -41,12 +41,13 @@ copy /y "run.bat" "%TARGET_DIR%\" >nul
 
 robocopy "css" "%TARGET_DIR%\css" /E /NFL /NDL /NJH /NJS >nul
 robocopy "js" "%TARGET_DIR%\js" /E /NFL /NDL /NJH /NJS >nul
+robocopy "images" "%TARGET_DIR%\images" /E /NFL /NDL /NJH /NJS >nul
 
 echo [3/4] Checking git status ...
 cd /d "%TARGET_DIR%"
 git status --short
 
-git add index.html .nojekyll README.md package.json server.js start.bat run.bat css js
+git add index.html .nojekyll README.md package.json server.js start.bat run.bat css js images -A
 git diff --cached --quiet
 if !errorlevel! equ 0 (
     echo [INFO] No changes to deploy - sneed-and-feed.github.io is already up-to-date!
