@@ -18,6 +18,19 @@
 
 ---
 
+## 📐 Technical Blueprint & Engineering Datasheet
+
+Archival engineering documentation and CAD schematics designed in Dieter Rams' functionalist visual language (*"Weniger, aber besser"*).
+
+<p align="center">
+  <img src="BRAUN_AS42_Datasheet_EN.png" alt="BRAUN AS 42 Technical Datasheet (English Edition)" width="720" />
+</p>
+
+* **English Edition (International Standard):** [High-Res Master PNG (2000 × 2860, 300 DPI)](BRAUN_AS42_Datasheet_EN.png) · [Vector Blueprint SVG](BRAUN_AS42_Datasheet_EN.svg)
+* **German Edition (Archival Original):** [High-Res Master PNG (2000 × 2860, 300 DPI)](BRAUN_AS42_Datasheet.png) · [Vector Blueprint SVG](BRAUN_AS42_Datasheet.svg)
+
+---
+
 ## 1. Acoustic & DSP Architecture
 
 The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into a cohesive tactile instrument:

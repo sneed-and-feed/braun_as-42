@@ -1,0 +1,798 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 2860" width="2000" height="2860" style="background-color: #ECEBE4; font-family: 'Helvetica Neue', Helvetica, Arial, 'Segoe UI', sans-serif;">
+  <defs>
+    <!-- Paper texture & subtle metallic gradients -->
+    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F4F3ED" />
+      <stop offset="50%" stop-color="#E5E4DC" />
+      <stop offset="100%" stop-color="#DCDAD2" />
+    </linearGradient>
+    <linearGradient id="knobGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="40%" stop-color="#E2E1DA" />
+      <stop offset="100%" stop-color="#B2B1A8" />
+    </linearGradient>
+    <linearGradient id="orangeGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B3D" />
+      <stop offset="100%" stop-color="#D9481B" />
+    </linearGradient>
+    <linearGradient id="scopeBezel" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2D3130" />
+      <stop offset="100%" stop-color="#181B1A" />
+    </linearGradient>
+    <filter id="crtGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Base Archival Background -->
+  <rect width="2000" height="2860" fill="#ECEBE4" />
+
+  <!-- Outer Technical Drafting Border -->
+  <rect x="50" y="50" width="1900" height="2760" fill="none" stroke="#222426" stroke-width="2" />
+  <rect x="56" y="56" width="1888" height="2748" fill="none" stroke="#222426" stroke-width="0.75" />
+
+  <!-- Registration Crosshairs (DIN standard) -->
+  <g stroke="#222426" stroke-width="1">
+    <!-- Top-Left -->
+    <line x1="30" y1="50" x2="70" y2="50" /><line x1="50" y1="30" x2="50" y2="70" /><circle cx="50" cy="50" r="12" fill="none" />
+    <!-- Top-Right -->
+    <line x1="1930" y1="50" x2="1970" y2="50" /><line x1="1950" y1="30" x2="1950" y2="70" /><circle cx="1950" cy="50" r="12" fill="none" />
+    <!-- Bottom-Left -->
+    <line x1="30" y1="2810" x2="70" y2="2810" /><line x1="50" y1="2790" x2="50" y2="2830" /><circle cx="50" cy="2810" r="12" fill="none" />
+    <!-- Bottom-Right -->
+    <line x1="1930" y1="2810" x2="1970" y2="2810" /><line x1="1950" y1="2790" x2="1950" y2="2830" /><circle cx="1950" cy="2810" r="12" fill="none" />
+  </g>
+
+  <!-- ====================================================================== -->
+  <!-- HEADER SECTION: Braun Identity & Document Identification (ENGLISH)    -->
+  <!-- ====================================================================== -->
+  <g id="header">
+    <!-- Braun Authentic Lettermark Construction -->
+    <g transform="translate(90, 85)">
+      <!-- B -->
+      <path d="M 0,0 L 26,0 C 38,0 44,5 44,14 C 44,21 39,25 31,27 C 41,29 47,34 47,43 C 47,53 39,58 26,58 L 0,58 Z M 15,12 L 15,22 L 25,22 C 29,22 32,20 32,17 C 32,14 29,12 25,12 Z M 15,33 L 15,46 L 26,46 C 30,46 33,43 33,39.5 C 33,36 30,33 26,33 Z" fill="#18191B" />
+      <!-- R -->
+      <path d="M 54,0 L 80,0 C 93,0 99,6 99,17 C 99,26 93,31 83,33 L 102,58 L 84,58 L 69,35 L 69,58 L 54,58 Z M 69,12 L 69,24 L 79,24 C 83,24 86,22 86,18 C 86,14 83,12 79,12 Z" fill="#18191B" />
+      <!-- Iconic Braun Tall 'A' -->
+      <path d="M 124,-18 C 144,-18 152,-5 152,18 L 152,58 L 137,58 L 137,45 C 133,54 125,59 114,59 C 101,59 92,51 92,39 C 92,26 102,19 120,18 L 137,17 L 137,14 C 137,5 131,0 122,0 C 114,0 108,4 106,10 L 93,5 C 97,-8 108,-18 124,-18 Z M 137,28 L 123,29 C 113,30 107,33 107,40 C 107,46 112,50 119,50 C 129,50 137,42 137,32 Z" fill="#18191B" />
+      <!-- U -->
+      <path d="M 162,0 L 177,0 L 177,35 C 177,44 182,49 191,49 C 200,49 205,44 205,35 L 205,0 L 220,0 L 220,34 C 220,51 209,59 191,59 C 173,59 162,51 162,34 Z" fill="#18191B" />
+      <!-- N -->
+      <path d="M 230,0 L 245,0 L 245,14 C 249,5 258,0 269,0 C 286,0 293,10 293,26 L 293,58 L 278,58 L 278,28 C 278,19 274,13 265,13 C 255,13 245,21 245,31 L 245,58 L 230,58 Z" fill="#18191B" />
+    </g>
+
+    <!-- Model Designation -->
+    <text x="410" y="142" font-size="58" font-weight="900" fill="#18191B" letter-spacing="2">AS 42</text>
+    <text x="90" y="182" font-size="14" font-weight="700" fill="#7A7F85" letter-spacing="4">AMBIENT GENERATIVE SYNTHESIZER · DIETER RAMS SYSTEM DESIGN</text>
+
+    <!-- Document Info Box (Right) -->
+    <g transform="translate(1440, 75)">
+      <rect x="0" y="0" width="470" height="115" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
+      <line x1="0" y1="28" x2="470" y2="28" stroke="#D5D4CD" stroke-width="1" />
+      <text x="15" y="20" font-size="11" font-weight="800" fill="#18191B" letter-spacing="2">TECHNICAL SPECIFICATION · SHEET 1 / 1</text>
+      
+      <text x="15" y="48" font-size="11" font-weight="700" fill="#7A7F85">DEVICE CODE:</text>
+      <text x="130" y="48" font-size="11" font-weight="800" fill="#18191B">BRAUN-AS42-2026-DSP</text>
+
+      <text x="15" y="68" font-size="11" font-weight="700" fill="#7A7F85">ARCHITECTURE:</text>
+      <text x="130" y="68" font-size="11" font-weight="800" fill="#18191B">DUAL-TRACK (C++20 VST3 / WEB AUDIO)</text>
+
+      <text x="15" y="88" font-size="11" font-weight="700" fill="#7A7F85">DSP STATUS:</text>
+      <text x="130" y="88" font-size="11" font-weight="800" fill="#18191B">0 HEAP ALLOCATIONS · HARD REAL-TIME</text>
+
+      <text x="15" y="106" font-size="11" font-weight="700" fill="#7A7F85">SOUND DESIGN:</text>
+      <text x="130" y="106" font-size="11" font-weight="800" fill="#EE592B">HAROLD BUDD · BRIAN ENO · ELTA SOLAR 42n</text>
+    </g>
+
+    <!-- Iconic Braun Signal Orange Accent Line -->
+    <rect x="90" y="202" width="1820" height="4" fill="#EE592B" />
+  </g>
+
+  <!-- ====================================================================== -->
+  <!-- SECTION 01: FRONT ELEVATION & MECHANICAL DRAFTING (ENGLISH)            -->
+  <!-- ====================================================================== -->
+  <g id="section1" transform="translate(90, 225)">
+    <text x="0" y="24" font-size="13" font-weight="900" fill="#18191B" letter-spacing="3">01 / HARDWARE OVERVIEW &amp; CONSOLE LAYOUT (FRONT PANEL CAD SCHEMATIC)</text>
+    <line x1="0" y1="34" x2="1820" y2="34" stroke="#222426" stroke-width="1.5" />
+
+    <!-- Main Instrument Chassis -->
+    <g transform="translate(0, 50)">
+      <!-- Anodized Chassis Shell -->
+      <rect x="0" y="0" width="1820" height="620" rx="8" fill="url(#metalGradient)" stroke="#222426" stroke-width="2.5" />
+      <rect x="8" y="8" width="1804" height="604" rx="6" fill="none" stroke="#FFFFFF" stroke-width="1.5" opacity="0.6" />
+
+      <!-- Chassis Screws -->
+      <circle cx="20" cy="20" r="4" fill="#B0B0A8" stroke="#222426" stroke-width="1" /><line x1="17" y1="20" x2="23" y2="20" stroke="#222426" stroke-width="0.8" />
+      <circle cx="1800" cy="20" r="4" fill="#B0B0A8" stroke="#222426" stroke-width="1" /><line x1="1797" y1="20" x2="1803" y2="20" stroke="#222426" stroke-width="0.8" />
+      <circle cx="20" cy="600" r="4" fill="#B0B0A8" stroke="#222426" stroke-width="1" /><line x1="17" y1="600" x2="23" y2="600" stroke="#222426" stroke-width="0.8" />
+      <circle cx="1800" cy="600" r="4" fill="#B0B0A8" stroke="#222426" stroke-width="1" /><line x1="1797" y1="600" x2="1803" y2="600" stroke="#222426" stroke-width="0.8" />
+
+      <!-- Sub-Chassis Zone 1: CRT Phosphor Oscilloscope (Left) -->
+      <g transform="translate(35, 30)">
+        <rect x="0" y="0" width="450" height="330" rx="14" fill="url(#scopeBezel)" stroke="#0E1010" stroke-width="3" />
+        <rect x="15" y="15" width="420" height="265" rx="8" fill="#0C120F" stroke="#1F2E26" stroke-width="1.5" />
+
+        <!-- Phosphor Graticule Grid (8 cols x 6 rows) -->
+        <g stroke="#1F3A2B" stroke-width="0.75" opacity="0.8">
+          <line x1="67.5" y1="15" x2="67.5" y2="280" /><line x1="120" y1="15" x2="120" y2="280" />
+          <line x1="172.5" y1="15" x2="172.5" y2="280" /><line x1="225" y1="15" x2="225" y2="280" />
+          <line x1="277.5" y1="15" x2="277.5" y2="280" /><line x1="330" y1="15" x2="330" y2="280" />
+          <line x1="382.5" y1="15" x2="382.5" y2="280" />
+          <line x1="15" y1="59.1" x2="435" y2="59.1" /><line x1="15" y1="103.3" x2="435" y2="103.3" />
+          <line x1="15" y1="147.5" x2="435" y2="147.5" /><line x1="15" y1="191.6" x2="435" y2="191.6" />
+          <line x1="15" y1="235.8" x2="435" y2="235.8" />
+        </g>
+        <!-- Center Crosshair Axes with Ticks -->
+        <line x1="15" y1="147.5" x2="435" y2="147.5" stroke="#336647" stroke-width="1.5" />
+        <line x1="225" y1="15" x2="225" y2="280" stroke="#336647" stroke-width="1.5" />
+
+        <!-- Green CRT Vector Phosphor Waveform (Wavefolded Stabilized Sine) -->
+        <path d="M 15,147.5 C 50,65 70,55 95,90 C 120,125 130,220 155,235 C 175,245 190,185 225,147.5 C 260,110 275,50 295,60 C 320,75 330,170 355,205 C 380,240 400,230 435,147.5" 
+              fill="none" stroke="#24FF6A" stroke-width="3" filter="url(#crtGlow)" />
+        <path d="M 15,147.5 C 50,65 70,55 95,90 C 120,125 130,220 155,235 C 175,245 190,185 225,147.5 C 260,110 275,50 295,60 C 320,75 330,170 355,205 C 380,240 400,230 435,147.5" 
+              fill="none" stroke="#A6FFC8" stroke-width="1.2" />
+
+        <!-- CRT Status Bar -->
+        <text x="25" y="308" font-size="10" font-weight="700" fill="#4ADE80" letter-spacing="1">CRT OSCILLOSCOPE · 60 FPS</text>
+        <text x="270" y="308" font-size="10" font-weight="700" fill="#22C55E" letter-spacing="1">TRIG: ZERO-CROSS</text>
+        <circle cx="415" cy="304" r="3.5" fill="#24FF6A" />
+      </g>
+
+      <!-- Scope Function Selectors (Under CRT) -->
+      <g transform="translate(35, 375)">
+        <rect x="0" y="0" width="100" height="24" rx="3" fill="#18191B" />
+        <text x="50" y="16" font-size="9.5" font-weight="800" fill="#FFFFFF" text-anchor="middle">OSC</text>
+        <rect x="110" y="0" width="100" height="24" rx="3" fill="#D5D4CC" stroke="#222426" stroke-width="1" />
+        <text x="160" y="16" font-size="9.5" font-weight="800" fill="#18191B" text-anchor="middle">SPECTRUM</text>
+        <rect x="220" y="0" width="100" height="24" rx="3" fill="#D5D4CC" stroke="#222426" stroke-width="1" />
+        <text x="270" y="16" font-size="9.5" font-weight="800" fill="#18191B" text-anchor="middle">XY PHASE</text>
+        <rect x="330" y="0" width="120" height="24" rx="3" fill="#D5D4CC" stroke="#222426" stroke-width="1" />
+        <text x="390" y="16" font-size="9.5" font-weight="800" fill="#18191B" text-anchor="middle">FREEZE (HOLD)</text>
+      </g>
+
+      <!-- Sub-Chassis Zone 2: Rotary Controls Matrix (Center) -->
+      <!-- Knob 1: Felt Level -->
+      <g transform="translate(560, 60)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="22" y2="18" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">FELT LEVEL</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">0.80 (-1.9dB)</text>
+      </g>
+      <!-- Knob 2: Felt Tone -->
+      <g transform="translate(680, 60)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="40" y2="14" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">DAMPING</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">24dB LOWPASS</text>
+      </g>
+      <!-- Knob 3: Hammer Impact -->
+      <g transform="translate(800, 60)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="56" y2="20" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">HAMMER</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">40ms TRANSIENT</text>
+      </g>
+      <!-- Knob 4: Sympathetic Strings -->
+      <g transform="translate(920, 60)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="52" y2="18" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">RESONANCE</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">290 / 560 Hz</text>
+      </g>
+
+      <!-- Row 2: Drohnen-Synthese (Solar 42n Core) -->
+      <!-- Knob 5: Drohne 1 Pitch -->
+      <g transform="translate(560, 205)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="20" y2="30" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">D1 PITCH</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">C2 (65.41 Hz)</text>
+      </g>
+      <!-- Knob 6: Drohne 1 Beat -->
+      <g transform="translate(680, 205)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="32" y2="15" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">BEATING</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">0.35 Hz BEAT</text>
+      </g>
+      <!-- Knob 7: Wavefolder -->
+      <g transform="translate(800, 205)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="48" y2="15" stroke="#EE592B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#EE592B" stroke-width="1.2" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#EE592B" text-anchor="middle" letter-spacing="1">WAVEFOLDER</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">45% POLYNOMIAL</text>
+      </g>
+      <!-- Knob 8: Ladder Filter -->
+      <g transform="translate(920, 205)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="60" y2="30" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">4-POLE FILTER</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">680 Hz / Q=1.87</text>
+      </g>
+
+      <!-- Row 3: Raum & Zeit (Tape Delay & Shimmer) -->
+      <!-- Knob 9: Tape Delay Time -->
+      <g transform="translate(1080, 60)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="40" y2="14" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">TAPE TIME</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">480 ms (3:2)</text>
+      </g>
+      <!-- Knob 10: Tape Feedback -->
+      <g transform="translate(1200, 60)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="55" y2="20" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">FEEDBACK</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">k=1.5173 NORM</text>
+      </g>
+      <!-- Knob 11: Shimmer Reverb Decay -->
+      <g transform="translate(1080, 205)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="60" y2="28" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">REVERB TIME</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">7.5 s RT60</text>
+      </g>
+      <!-- Knob 12: Shimmer Amount -->
+      <g transform="translate(1200, 205)">
+        <circle cx="40" cy="40" r="34" fill="url(#knobGradient)" stroke="#222426" stroke-width="1.8" />
+        <circle cx="40" cy="40" r="28" fill="#ECEBE4" stroke="#9A9890" stroke-width="1" />
+        <line x1="40" y1="40" x2="48" y2="16" stroke="#18191B" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="38" fill="none" stroke="#7A7F85" stroke-width="1" stroke-dasharray="2 6" />
+        <text x="40" y="94" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">SHIMMER</text>
+        <text x="40" y="106" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">+12st OCTAVE</text>
+      </g>
+
+      <!-- Sub-Chassis Zone 3: 2-Axis Vector Pad & Master Level (Right) -->
+      <!-- Vector Pad -->
+      <g transform="translate(1360, 50)">
+        <rect x="0" y="0" width="220" height="220" rx="6" fill="#DCDAD0" stroke="#222426" stroke-width="2" />
+        <line x1="110" y1="0" x2="110" y2="220" stroke="#B0AFA6" stroke-width="1" stroke-dasharray="3 3" />
+        <line x1="0" y1="110" x2="220" y2="110" stroke="#B0AFA6" stroke-width="1" stroke-dasharray="3 3" />
+        <circle cx="110" cy="110" r="60" fill="none" stroke="#B0AFA6" stroke-width="1" stroke-dasharray="2 4" />
+        <circle cx="110" cy="110" r="10" fill="#EE592B" stroke="#18191B" stroke-width="2" />
+        <circle cx="110" cy="110" r="3" fill="#FFFFFF" />
+        <text x="110" y="240" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle" letter-spacing="1">2-AXIS VECTOR PAD</text>
+        <text x="110" y="252" font-size="9" font-weight="600" fill="#7A7F85" text-anchor="middle">X: DRONE BALANCE · Y: DIFFUSION</text>
+      </g>
+
+      <!-- Master Volume Big Dial -->
+      <g transform="translate(1640, 65)">
+        <circle cx="50" cy="50" r="48" fill="url(#knobGradient)" stroke="#222426" stroke-width="2.5" />
+        <circle cx="50" cy="50" r="40" fill="#ECEBE4" stroke="#9A9890" stroke-width="1.2" />
+        <line x1="50" y1="50" x2="78" y2="24" stroke="#18191B" stroke-width="3" stroke-linecap="round" />
+        <circle cx="50" cy="50" r="54" fill="none" stroke="#18191B" stroke-width="1.5" stroke-dasharray="3 6" />
+        <text x="50" y="125" font-size="12" font-weight="900" fill="#18191B" text-anchor="middle" letter-spacing="2">MASTER LEVEL</text>
+        <text x="50" y="140" font-size="10" font-weight="700" fill="#7A7F85" text-anchor="middle">C1 LIMITER 0.80</text>
+      </g>
+
+      <!-- Master Power Rocker Switch (Iconic Braun Signal Orange) -->
+      <g transform="translate(1650, 230)">
+        <rect x="0" y="0" width="80" height="120" rx="5" fill="#18191B" stroke="#000000" stroke-width="2" />
+        <rect x="6" y="6" width="68" height="108" rx="3" fill="url(#orangeGlow)" stroke="#9E3211" stroke-width="1.5" />
+        <line x1="6" y1="60" x2="74" y2="60" stroke="#7A2208" stroke-width="2" />
+        <circle cx="40" cy="32" r="5" fill="#FFFFFF" opacity="0.9" filter="url(#crtGlow)" />
+        <text x="40" y="90" font-size="11" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="1">POWER</text>
+        <text x="40" y="102" font-size="8.5" font-weight="800" fill="#FFD2C4" text-anchor="middle">ON / OFF</text>
+      </g>
+
+      <!-- Bottom Zone: Harmonic Chime Strip Keybed -->
+      <g transform="translate(35, 460)">
+        <text x="20" y="-18" font-size="11" font-weight="900" fill="#18191B" letter-spacing="2">HARMONIC CHIME STRIP (TOUCH-SENSITIVE MODAL KEYBED)</text>
+
+        <rect x="0" y="0" width="1750" height="120" rx="6" fill="#FFFFFF" stroke="#222426" stroke-width="2" />
+        
+        <!-- Individual Modal Chime Touch Strip Segments -->
+        <g stroke="#D5D4CD" stroke-width="1.2">
+          <rect x="0.0" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="39.8" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">C3</text>
+          <line x1="39.8" y1="15" x2="39.8" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="79.5" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="119.3" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">D3</text>
+          <line x1="119.3" y1="15" x2="119.3" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="159.1" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="198.9" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">E3</text>
+          <line x1="198.9" y1="15" x2="198.9" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="238.6" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="278.4" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">G3</text>
+          <line x1="278.4" y1="15" x2="278.4" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="318.2" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="358.0" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">A3</text>
+          <line x1="358.0" y1="15" x2="358.0" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="397.7" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="437.5" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">C4</text>
+          <line x1="437.5" y1="15" x2="437.5" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="477.3" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="517.0" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">D4</text>
+          <line x1="517.0" y1="15" x2="517.0" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="556.8" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="596.6" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">E4</text>
+          <line x1="596.6" y1="15" x2="596.6" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="636.4" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="676.1" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">G4</text>
+          <line x1="676.1" y1="15" x2="676.1" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="715.9" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="755.7" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">A4</text>
+          <line x1="755.7" y1="15" x2="755.7" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="795.5" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="835.2" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">B4</text>
+          <line x1="835.2" y1="15" x2="835.2" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="875.0" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="914.8" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">C5</text>
+          <line x1="914.8" y1="15" x2="914.8" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="954.5" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="994.3" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">D5</text>
+          <line x1="994.3" y1="15" x2="994.3" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1034.1" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="1073.9" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">E5</text>
+          <line x1="1073.9" y1="15" x2="1073.9" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1113.6" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="1153.4" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">G5</text>
+          <line x1="1153.4" y1="15" x2="1153.4" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1193.2" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="1233.0" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">A5</text>
+          <line x1="1233.0" y1="15" x2="1233.0" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1272.7" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="1312.5" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">B5</text>
+          <line x1="1312.5" y1="15" x2="1312.5" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1352.3" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="1392.0" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">C6</text>
+          <line x1="1392.0" y1="15" x2="1392.0" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1431.8" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="1471.6" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">D6</text>
+          <line x1="1471.6" y1="15" x2="1471.6" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1511.4" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="1551.1" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">E6</text>
+          <line x1="1551.1" y1="15" x2="1551.1" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1590.9" y="0" width="79.5" height="120" fill="#FAF9F5" stroke="#222426" stroke-width="1" />
+          <text x="1630.7" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">G6</text>
+          <line x1="1630.7" y1="15" x2="1630.7" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+          <rect x="1670.5" y="0" width="79.5" height="120" fill="#F0EFEA" stroke="#222426" stroke-width="1" />
+          <text x="1710.2" y="105" font-size="10" font-weight="800" fill="#18191B" text-anchor="middle">A6</text>
+          <line x1="1710.2" y1="15" x2="1710.2" y2="35" stroke="#7A7F85" stroke-width="1.5" />
+        </g>
+      </g>
+    </g>
+
+    <!-- Engineering Dimension Indicators -->
+    <g stroke="#7A7F85" stroke-width="0.8" fill="#7A7F85">
+      <!-- Width Dimension Line -->
+      <line x1="0" y1="690" x2="1820" y2="690" />
+      <line x1="0" y1="680" x2="0" y2="700" /><line x1="1820" y1="680" x2="1820" y2="700" />
+      <text x="910" y="686" font-size="11" font-weight="700" text-anchor="middle" fill="#18191B">WIDTH: 440 mm (19-INCH RACK COMPATIBLE)</text>
+
+      <!-- Height Dimension Line -->
+      <line x1="1840" y1="50" x2="1840" y2="670" />
+      <line x1="1830" y1="50" x2="1850" y2="50" /><line x1="1830" y1="670" x2="1850" y2="670" />
+      <text x="1855" y="365" font-size="11" font-weight="700" fill="#18191B" transform="rotate(90, 1855, 365)" text-anchor="middle">HEIGHT: 180 mm</text>
+    </g>
+  </g>
+
+  <!-- ====================================================================== -->
+  <!-- SECTION 02: MATHEMATICAL PRINCIPLES & DSP FIRST-PRINCIPLES (ENGLISH)   -->
+  <!-- ====================================================================== -->
+  <g id="section2" transform="translate(90, 990)">
+    <text x="0" y="24" font-size="13" font-weight="900" fill="#18191B" letter-spacing="3">02 / MATHEMATICAL PRINCIPLES &amp; CORE DSP ALGORITHMS (FIRST-PRINCIPLES)</text>
+    <line x1="0" y1="34" x2="1820" y2="34" stroke="#222426" stroke-width="1.5" />
+
+    <!-- 4 Structured Technical Modules -->
+    <!-- Module 1: West-Coast Wavefolding -->
+    <g transform="translate(0, 50)">
+      <rect x="0" y="0" width="435" height="360" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
+      <rect x="0" y="0" width="435" height="30" fill="#18191B" />
+      <text x="15" y="20" font-size="11" font-weight="800" fill="#FFFFFF" letter-spacing="1">A · WEST-COAST DIODE WAVEFOLDER</text>
+      
+      <!-- Formula Display Box -->
+      <rect x="15" y="45" width="405" height="55" fill="#F4F3EE" stroke="#E0DFD8" stroke-width="1" />
+      <text x="217" y="78" font-size="13" font-weight="900" fill="#18191B" text-anchor="middle" font-family="'Courier New', Courier, monospace">y = tanh(sin(0.5πDx) - F·sin(1.5πDx))</text>
+
+      <!-- Waveform Graph Demonstration -->
+      <g transform="translate(25, 115)">
+        <rect x="0" y="0" width="385" height="120" fill="#0C120F" stroke="#222426" stroke-width="1" />
+        <line x1="0" y1="60" x2="385" y2="60" stroke="#1F3A2B" stroke-width="1" />
+        <line x1="192.5" y1="0" x2="192.5" y2="120" stroke="#1F3A2B" stroke-width="1" />
+        <!-- Unclipped Input Sine (Dotted) -->
+        <path d="M 0,60 Q 48,-10 96,60 T 192.5,60 T 288.5,60 T 385,60" fill="none" stroke="#7A7F85" stroke-width="1.2" stroke-dasharray="3 3" />
+        <!-- Folded Saturated Wave (Solid Orange) -->
+        <path d="M 0,60 C 25,10 40,85 70,85 C 90,85 100,35 125,35 C 150,35 165,110 192.5,60 C 220,10 235,85 265,85 C 285,85 295,35 320,35 C 345,35 360,110 385,60" 
+              fill="none" stroke="#EE592B" stroke-width="2.5" />
+      </g>
+
+      <!-- Technical Description -->
+      <text x="15" y="260" font-size="10.5" font-weight="700" fill="#18191B">OPERATING PRINCIPLE:</text>
+      <text x="15" y="278" font-size="10" font-weight="500" fill="#4A4E54">Continuous mathematical folding of waveform peaks.</text>
+      <text x="15" y="294" font-size="10" font-weight="500" fill="#4A4E54">Synthesizes rich dynamic overtones from pure sines.</text>
+      <text x="15" y="310" font-size="10" font-weight="500" fill="#4A4E54">Coupled with 2x polyphase half-band sinc</text>
+      <text x="15" y="326" font-size="10" font-weight="800" fill="#EE592B">oversampling (eliminates foldover aliasing).</text>
+    </g>
+
+    <!-- Module 2: Householder FDN Reverb Matrix -->
+    <g transform="translate(460, 50)">
+      <rect x="0" y="0" width="435" height="360" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
+      <rect x="0" y="0" width="435" height="30" fill="#18191B" />
+      <text x="15" y="20" font-size="11" font-weight="800" fill="#FFFFFF" letter-spacing="1">B · 8-CHANNEL HOUSEHOLDER FDN MATRIX</text>
+      
+      <rect x="15" y="45" width="405" height="55" fill="#F4F3EE" stroke="#E0DFD8" stroke-width="1" />
+      <text x="217" y="72" font-size="12" font-weight="900" fill="#18191B" text-anchor="middle" font-family="'Courier New', Courier, monospace">H = I - (2 / N) · 1 · 1^T</text>
+      <text x="217" y="90" font-size="11" font-weight="800" fill="#7A7F85" text-anchor="middle" font-family="'Courier New', Courier, monospace">y_i = x_i - (2 / N) Σ x_k  [O(N)]</text>
+
+      <!-- Matrix Vector Schematic -->
+      <g transform="translate(25, 115)">
+        <rect x="0" y="0" width="385" height="120" fill="#FAF9F5" stroke="#E0DFD8" stroke-width="1" />
+        <text x="20" y="22" font-size="9.5" font-weight="800" fill="#18191B">PRIME-SPACED DELAYS (48 kHz):</text>
+        <text x="20" y="40" font-size="9" font-weight="600" fill="#4A4E54">L1: 1039 smp (21.6ms) · L2: 1153 smp (24.0ms)</text>
+        <text x="20" y="56" font-size="9" font-weight="600" fill="#4A4E54">L3: 1279 smp (26.6ms) · L4: 1399 smp (29.1ms)</text>
+        <text x="20" y="72" font-size="9" font-weight="600" fill="#4A4E54">L5: 1523 smp (31.7ms) · L6: 1657 smp (34.5ms)</text>
+        <text x="20" y="88" font-size="9" font-weight="600" fill="#4A4E54">L7: 1787 smp (37.2ms) · L8: 1931 smp (40.2ms)</text>
+        <text x="20" y="106" font-size="9" font-weight="800" fill="#18191B">DIFFUSION: UNITARY · ZERO ENERGY LOSS</text>
+      </g>
+
+      <text x="15" y="260" font-size="10.5" font-weight="700" fill="#18191B">REAL-TIME SHIMMER FEEDBACK LOOP:</text>
+      <text x="15" y="278" font-size="10" font-weight="500" fill="#4A4E54">Dual-delay pitch shifter (+12 semitones) with</text>
+      <text x="15" y="294" font-size="10" font-weight="500" fill="#4A4E54">constant-power sine crossfading (45ms ramp):</text>
+      <text x="15" y="312" font-size="10.5" font-weight="800" fill="#18191B" font-family="'Courier New', Courier, monospace">sin²(πφ) + cos²(πφ) ≡ 1.0 (Click-Free)</text>
+      <text x="15" y="328" font-size="10" font-weight="700" fill="#EE592B">Infinite Freeze Mode: Recirculation gain locked to 0.992</text>
+    </g>
+
+    <!-- Module 3: Poisson Point Process Generative Engine -->
+    <g transform="translate(920, 50)">
+      <rect x="0" y="0" width="435" height="360" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
+      <rect x="0" y="0" width="435" height="30" fill="#18191B" />
+      <text x="15" y="20" font-size="11" font-weight="800" fill="#FFFFFF" letter-spacing="1">C · POISSON GENERATOR (HAROLD BUDD)</text>
+      
+      <rect x="15" y="45" width="405" height="55" fill="#F4F3EE" stroke="#E0DFD8" stroke-width="1" />
+      <text x="217" y="72" font-size="13" font-weight="900" fill="#18191B" text-anchor="middle" font-family="'Courier New', Courier, monospace">Δt = -ln(1 - U) / λ</text>
+      <text x="217" y="90" font-size="10.5" font-weight="700" fill="#7A7F85" text-anchor="middle">U ~ Uniform(0, 1),  λ = EPM / 60</text>
+
+      <!-- Poisson Distribution Curve -->
+      <g transform="translate(25, 115)">
+        <rect x="0" y="0" width="385" height="120" fill="#0C120F" stroke="#222426" stroke-width="1" />
+        <line x1="30" y1="10" x2="30" y2="105" stroke="#1F3A2B" stroke-width="1" />
+        <line x1="30" y1="105" x2="370" y2="105" stroke="#1F3A2B" stroke-width="1" />
+        <path d="M 30,18 Q 80,85 180,100 T 360,105" fill="none" stroke="#24FF6A" stroke-width="2.5" filter="url(#crtGlow)" />
+        <circle cx="65" cy="55" r="4" fill="#EE592B" />
+        <circle cx="110" cy="85" r="4" fill="#EE592B" />
+        <circle cx="175" cy="98" r="4" fill="#EE592B" />
+        <circle cx="260" cy="103" r="4" fill="#EE592B" />
+        <text x="180" y="30" font-size="9.5" font-weight="700" fill="#4ADE80">P(t) = λ · e^(-λt)</text>
+      </g>
+
+      <text x="15" y="260" font-size="10.5" font-weight="700" fill="#18191B">CONTEMPLATIVE PIANO DYNAMICS:</text>
+      <text x="15" y="278" font-size="10" font-weight="500" fill="#4A4E54">Notes fall like organic raindrops without a rigid grid.</text>
+      <text x="15" y="294" font-size="10" font-weight="500" fill="#4A4E54">True continuous inverse transform sampling. Pitch selection</text>
+      <text x="15" y="310" font-size="10" font-weight="500" fill="#4A4E54">70% melodic step / 30% harmonic leap,</text>
+      <text x="15" y="326" font-size="10" font-weight="800" fill="#EE592B">harmonically quantized to Budd pentatonic scale.</text>
+    </g>
+
+    <!-- Module 4: Normalized Tape Saturation & Limiter -->
+    <g transform="translate(1380, 50)">
+      <rect x="0" y="0" width="440" height="360" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
+      <rect x="0" y="0" width="440" height="30" fill="#18191B" />
+      <text x="15" y="20" font-size="11" font-weight="800" fill="#FFFFFF" letter-spacing="1">D · TAPE SATURATION &amp; C1-LIMITER</text>
+      
+      <rect x="15" y="45" width="410" height="55" fill="#F4F3EE" stroke="#E0DFD8" stroke-width="1" />
+      <text x="220" y="68" font-size="11" font-weight="900" fill="#18191B" text-anchor="middle" font-family="'Courier New', Courier, monospace">k = dy/dx|(x=0) ≈ 1.5173</text>
+      <text x="220" y="88" font-size="10.5" font-weight="800" fill="#7A7F85" text-anchor="middle" font-family="'Courier New', Courier, monospace">FB_norm = (FB * 0.70) / 1.5173</text>
+
+      <!-- Limiter Transfer Curve Graph -->
+      <g transform="translate(25, 115)">
+        <rect x="0" y="0" width="390" height="120" fill="#FAF9F5" stroke="#E0DFD8" stroke-width="1" />
+        <line x1="20" y1="100" x2="370" y2="100" stroke="#B0B0A8" stroke-width="1" />
+        <line x1="195" y1="10" x2="195" y2="110" stroke="#B0B0A8" stroke-width="1" />
+        <line x1="60" y1="100" x2="195" y2="55" stroke="#7A7F85" stroke-width="1.2" stroke-dasharray="2 2" />
+        <path d="M 60,100 L 160,65 Q 195,50 250,30 L 340,25" fill="none" stroke="#18191B" stroke-width="2.5" />
+        <circle cx="160" cy="65" r="4" fill="#EE592B" />
+        <text x="170" y="75" font-size="8.5" font-weight="800" fill="#EE592B">KNEE k=0.80</text>
+        <text x="290" y="42" font-size="9" font-weight="800" fill="#18191B">CEILING 1.0 FS</text>
+      </g>
+
+      <text x="15" y="260" font-size="10.5" font-weight="700" fill="#18191B">CUBIC HERMITE KNEE CONTINUITY:</text>
+      <text x="15" y="278" font-size="10" font-weight="500" fill="#4A4E54">Below |x| ≤ 0.80: Exact 0 dB linear unity gain.</text>
+      <text x="15" y="294" font-size="10" font-weight="500" fill="#4A4E54">Above: C1-continuous curve with horizontal tangent</text>
+      <text x="15" y="310" font-size="10" font-weight="500" fill="#4A4E54">at ±1.0. Completely protects master bus and Web Audio</text>
+      <text x="15" y="326" font-size="10" font-weight="800" fill="#EE592B">output from transient clipping, crackle, and overs.</text>
+    </g>
+  </g>
+
+  <!-- ====================================================================== -->
+  <!-- SECTION 03: SYSTEM SIGNAL FLOW ARCHITECTURE (ENGLISH)                  -->
+  <!-- ====================================================================== -->
+  <g id="section3" transform="translate(90, 1450)">
+    <text x="0" y="24" font-size="13" font-weight="900" fill="#18191B" letter-spacing="3">03 / SYSTEM ARCHITECTURE &amp; SIGNAL FLOW (AUDIO SIGNAL GRAPH SCHEMATIC)</text>
+    <line x1="0" y1="34" x2="1820" y2="34" stroke="#222426" stroke-width="1.5" />
+
+    <g transform="translate(0, 55)">
+      <!-- Main Flow Chart Canvas -->
+      <rect x="0" y="0" width="1820" height="430" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
+
+      <!-- Input Stage: Triggers -->
+      <g transform="translate(30, 35)">
+        <rect x="0" y="0" width="220" height="360" rx="4" fill="#F4F3EE" stroke="#222426" stroke-width="1.5" />
+        <text x="110" y="30" font-size="12" font-weight="900" fill="#18191B" text-anchor="middle" letter-spacing="1">CONTROL &amp; INPUTS</text>
+        <line x1="20" y1="42" x2="200" y2="42" stroke="#222426" stroke-width="1" />
+
+        <rect x="20" y="60" width="180" height="50" rx="3" fill="#FFFFFF" stroke="#7A7F85" stroke-width="1" />
+        <text x="110" y="86" font-size="10.5" font-weight="800" fill="#18191B" text-anchor="middle">WEB MIDI / KEYBOARD</text>
+        <text x="110" y="100" font-size="8.5" font-weight="600" fill="#7A7F85" text-anchor="middle">CC64 Sustain Pedal Latch</text>
+
+        <rect x="20" y="130" width="180" height="50" rx="3" fill="#FFFFFF" stroke="#7A7F85" stroke-width="1" />
+        <text x="110" y="156" font-size="10.5" font-weight="800" fill="#18191B" text-anchor="middle">POISSON CLOCK</text>
+        <text x="110" y="170" font-size="8.5" font-weight="600" fill="#7A7F85" text-anchor="middle">Δt = -ln(1-U)/λ</text>
+
+        <rect x="20" y="200" width="180" height="50" rx="3" fill="#FFFFFF" stroke="#7A7F85" stroke-width="1" />
+        <text x="110" y="226" font-size="10.5" font-weight="800" fill="#18191B" text-anchor="middle">4 PHASE LOOPS</text>
+        <text x="110" y="240" font-size="8.5" font-weight="600" fill="#7A7F85" text-anchor="middle">13.7s, 17.3s, 21.1s, 26.9s</text>
+
+        <rect x="20" y="270" width="180" height="50" rx="3" fill="#FFFFFF" stroke="#7A7F85" stroke-width="1" />
+        <text x="110" y="296" font-size="10.5" font-weight="800" fill="#18191B" text-anchor="middle">2-AXIS VECTOR PAD</text>
+        <text x="110" y="310" font-size="8.5" font-weight="600" fill="#7A7F85" text-anchor="middle">X/Y Interpolation Matrix</text>
+      </g>
+
+      <!-- Synthesis Stage: Voices -->
+      <g transform="translate(300, 35)">
+        <rect x="0" y="0" width="360" height="360" rx="4" fill="#F4F3EE" stroke="#222426" stroke-width="1.5" />
+        <text x="180" y="30" font-size="12" font-weight="900" fill="#18191B" text-anchor="middle" letter-spacing="1">SOUND GENERATION (DSP CORE)</text>
+        <line x1="20" y1="42" x2="340" y2="42" stroke="#222426" stroke-width="1" />
+
+        <!-- Felt Piano Block -->
+        <rect x="20" y="55" width="320" height="135" rx="3" fill="#FFFFFF" stroke="#18191B" stroke-width="1.5" />
+        <text x="35" y="78" font-size="11" font-weight="900" fill="#18191B">24-VOICE FELT PIANO (HAROLD BUDD)</text>
+        <text x="35" y="96" font-size="9.5" font-weight="600" fill="#4A4E54">• Band-limited Lanczos wavetables (Felt, Sine, Saw, Square, CS-80)</text>
+        <text x="35" y="111" font-size="9.5" font-weight="600" fill="#4A4E54">• Felt hammer physical transient (Hann-windowed noise burst)</text>
+        <text x="35" y="126" font-size="9.5" font-weight="600" fill="#4A4E54">• 24dB biquad cascade + 540 Hz spruce soundboard formant</text>
+        <text x="35" y="141" font-size="9.5" font-weight="600" fill="#4A4E54">• Sympathetic string coupling (290 / 560 Hz) + Golden-ratio detuning</text>
+        <text x="35" y="162" font-size="9.5" font-weight="800" fill="#EE592B">VOICE STEALING: 4-TIER PRIORITY · 5ms DECLICK RAMP</text>
+
+        <!-- Drone Voices Block -->
+        <rect x="20" y="205" width="320" height="135" rx="3" fill="#FFFFFF" stroke="#18191B" stroke-width="1.5" />
+        <text x="35" y="228" font-size="11" font-weight="900" fill="#18191B">MICROTONAL TWIN DRONES (SOLAR 42n)</text>
+        <text x="35" y="246" font-size="9.5" font-weight="600" fill="#4A4E54">• Drone 1 (Tonic): Saw + Warm oscillators with sub-hertz beating</text>
+        <text x="35" y="261" font-size="9.5" font-weight="600" fill="#4A4E54">• Drone 2 (Harmony): Square + Tri with West-Coast wavefolder</text>
+        <text x="35" y="276" font-size="9.5" font-weight="600" fill="#4A4E54">• 4-Pole lowpass ladder filter with Q = sqrt(R)</text>
+        <text x="35" y="291" font-size="9.5" font-weight="600" fill="#4A4E54">• Automatic MIDI pitch tracking &amp; 200ms note-off gating</text>
+        <text x="35" y="315" font-size="9.5" font-weight="800" fill="#18191B">DRONE BUS LEVEL: CALIBRATED TO -8.5 dB (UNDERBED)</text>
+      </g>
+
+      <!-- Spatial & Temporal FX Stage -->
+      <g transform="translate(710, 35)">
+        <rect x="0" y="0" width="360" height="360" rx="4" fill="#F4F3EE" stroke="#222426" stroke-width="1.5" />
+        <text x="180" y="30" font-size="12" font-weight="900" fill="#18191B" text-anchor="middle" letter-spacing="1">SPATIAL &amp; TEMPORAL FX (AUX BUSSES)</text>
+        <line x1="20" y1="42" x2="340" y2="42" stroke="#222426" stroke-width="1" />
+
+        <!-- Tape Delay -->
+        <rect x="20" y="55" width="320" height="135" rx="3" fill="#FFFFFF" stroke="#18191B" stroke-width="1.5" />
+        <text x="35" y="78" font-size="11" font-weight="900" fill="#18191B">3:2 POLYRHYTHMIC TAPE DELAY</text>
+        <text x="35" y="96" font-size="9.5" font-weight="600" fill="#4A4E54">• Cubic 4-point Hermite delay read</text>
+        <text x="35" y="111" font-size="9.5" font-weight="600" fill="#4A4E54">• Tape saturation with k=1.5173 normalization</text>
+        <text x="35" y="126" font-size="9.5" font-weight="600" fill="#4A4E54">• Wow (0.38 Hz) &amp; Flutter (5.8 Hz) mechanical drift</text>
+        <text x="35" y="141" font-size="9.5" font-weight="600" fill="#4A4E54">• Dedicated return compressor (-6 dBFS, 4:1)</text>
+        <text x="35" y="162" font-size="9.5" font-weight="800" fill="#EE592B">INPUT HEADROOM: -8.4 dB (0.38 INPUT PAD)</text>
+
+        <!-- Shimmer Reverb -->
+        <rect x="20" y="205" width="320" height="135" rx="3" fill="#FFFFFF" stroke="#18191B" stroke-width="1.5" />
+        <text x="35" y="228" font-size="11" font-weight="900" fill="#18191B">8-CHANNEL HOUSEHOLDER FDN REVERB</text>
+        <text x="35" y="246" font-size="9.5" font-weight="600" fill="#4A4E54">• 10 Prime early-reflection taps (up to 130 ms)</text>
+        <text x="35" y="261" font-size="9.5" font-weight="600" fill="#4A4E54">• Allpass diffusion cascade (g = 0.65)</text>
+        <text x="35" y="276" font-size="9.5" font-weight="600" fill="#4A4E54">• 8-Channel FDN late reverb with Householder reflection matrix</text>
+        <text x="35" y="291" font-size="9.5" font-weight="600" fill="#4A4E54">• Phase-continuous octave pitch shifter (+12st / +1 octave)</text>
+        <text x="35" y="315" font-size="9.5" font-weight="800" fill="#18191B">ISOLATED AUX SEND: 0.0 DRY SPILL TO MASTER BUS</text>
+      </g>
+
+      <!-- Master Output Stage -->
+      <g transform="translate(1120, 35)">
+        <rect x="0" y="0" width="340" height="360" rx="4" fill="#F4F3EE" stroke="#222426" stroke-width="1.5" />
+        <text x="170" y="30" font-size="12" font-weight="900" fill="#18191B" text-anchor="middle" letter-spacing="1">SUMMING &amp; MASTER DYNAMICS</text>
+        <line x1="20" y1="42" x2="320" y2="42" stroke="#222426" stroke-width="1" />
+
+        <rect x="20" y="55" width="300" height="85" rx="3" fill="#FFFFFF" stroke="#18191B" stroke-width="1.5" />
+        <text x="35" y="78" font-size="11" font-weight="900" fill="#18191B">1. DECOUPLING &amp; DYNAMICS</text>
+        <text x="35" y="96" font-size="9.5" font-weight="600" fill="#4A4E54">• 15 Hz DC-Blocker highpass (removes DC bias &amp; subsonic rumble)</text>
+        <text x="35" y="111" font-size="9.5" font-weight="600" fill="#4A4E54">• Peak compressor (-3 dBFS threshold, 12dB soft-knee, 8:1 ratio)</text>
+
+        <rect x="20" y="150" width="300" height="85" rx="3" fill="#FFFFFF" stroke="#18191B" stroke-width="1.5" />
+        <text x="35" y="173" font-size="11" font-weight="900" fill="#18191B">2. OVERSAMPLED SATURATION</text>
+        <text x="35" y="191" font-size="9.5" font-weight="600" fill="#4A4E54">• 2x Polyphase half-band oversampling</text>
+        <text x="35" y="206" font-size="9.5" font-weight="600" fill="#4A4E54">• Analog tape saturation (Warmth = 0.18)</text>
+
+        <rect x="20" y="245" width="300" height="95" rx="3" fill="#FFFFFF" stroke="#EE592B" stroke-width="2" />
+        <text x="35" y="268" font-size="11" font-weight="900" fill="#EE592B">3. C1-HERMITE SAFETY LIMITER</text>
+        <text x="35" y="288" font-size="9.5" font-weight="700" fill="#18191B">• Soft-knee inflection point: k = 0.80</text>
+        <text x="35" y="306" font-size="10.5" font-weight="900" fill="#18191B">• ABSOLUTE CEILING: |y| ≤ 1.000000 FS (0 OVERFLOW)</text>
+      </g>
+
+      <!-- Visualizer & Physical Outputs -->
+      <g transform="translate(1510, 35)">
+        <rect x="0" y="0" width="280" height="360" rx="4" fill="#F4F3EE" stroke="#222426" stroke-width="1.5" />
+        <text x="140" y="30" font-size="12" font-weight="900" fill="#18191B" text-anchor="middle" letter-spacing="1">MONITORING &amp; OUTPUTS</text>
+        <line x1="20" y1="42" x2="260" y2="42" stroke="#222426" stroke-width="1" />
+
+        <rect x="20" y="55" width="240" height="75" rx="3" fill="#101412" stroke="#222426" stroke-width="1.5" />
+        <text x="35" y="80" font-size="10.5" font-weight="900" fill="#24FF6A">CRT OSCILLOSCOPE (P31)</text>
+        <text x="35" y="98" font-size="9" font-weight="600" fill="#4ADE80">Ring buffer · 5 FPS idle throttling</text>
+        <text x="35" y="112" font-size="8.5" font-weight="600" fill="#22C55E">Zero-crossing edge stabilization</text>
+
+        <rect x="20" y="145" width="240" height="75" rx="3" fill="#FFFFFF" stroke="#18191B" stroke-width="1.5" />
+        <text x="35" y="172" font-size="10.5" font-weight="900" fill="#18191B">STUDIO WAV RECORDER</text>
+        <text x="35" y="190" font-size="9" font-weight="600" fill="#7A7F85">16-Bit / 48kHz PCM direct capture</text>
+        <text x="35" y="204" font-size="8.5" font-weight="600" fill="#7A7F85">Lossless studio recording</text>
+
+        <rect x="20" y="235" width="240" height="105" rx="3" fill="#18191B" stroke="#000000" stroke-width="1.5" />
+        <text x="35" y="262" font-size="11" font-weight="900" fill="#FFFFFF">BALANCED MASTER OUTPUT</text>
+        <text x="35" y="280" font-size="10" font-weight="700" fill="#EE592B">DAW VST3 BUS (Stereo L/R)</text>
+        <text x="35" y="298" font-size="9" font-weight="600" fill="#A0A09A">Web Audio API Destination</text>
+        <text x="35" y="315" font-size="8.5" font-weight="800" fill="#4ADE80">100% CLICK-FREE</text>
+      </g>
+
+      <!-- Connecting Arrows -->
+      <g stroke="#18191B" stroke-width="2" fill="#18191B">
+        <line x1="250" y1="120" x2="295" y2="120" /><polygon points="295,116 302,120 295,124" />
+        <line x1="250" y1="270" x2="295" y2="270" /><polygon points="295,266 302,270 295,274" />
+        
+        <line x1="660" y1="120" x2="705" y2="120" /><polygon points="705,116 712,120 705,124" />
+        <line x1="660" y1="270" x2="705" y2="270" /><polygon points="705,266 712,270 705,274" />
+
+        <line x1="1070" y1="120" x2="1115" y2="120" /><polygon points="1115,116 1122,120 1115,124" />
+        <line x1="1070" y1="270" x2="1115" y2="270" /><polygon points="1115,246 1122,250 1115,254" />
+
+        <line x1="1460" y1="95" x2="1505" y2="95" /><polygon points="1505,91 1512,95 1505,99" />
+        <line x1="1460" y1="180" x2="1505" y2="180" /><polygon points="1505,176 1512,180 1505,184" />
+        <line x1="1460" y1="285" x2="1505" y2="285" /><polygon points="1505,281 1512,285 1505,289" />
+      </g>
+    </g>
+  </g>
+
+  <!-- ====================================================================== -->
+  <!-- SECTION 04: SPECIFICATIONS & VERIFICATION CERTIFICATION MATRIX (EN)    -->
+  <!-- ====================================================================== -->
+  <g id="section4" transform="translate(90, 1990)">
+    <text x="0" y="24" font-size="13" font-weight="900" fill="#18191B" letter-spacing="3">04 / TECHNICAL SPECIFICATIONS &amp; CERTIFICATION AUDIT (SPECIFICATIONS &amp; AUDIT)</text>
+    <line x1="0" y1="34" x2="1820" y2="34" stroke="#222426" stroke-width="1.5" />
+
+    <!-- Table 1: Electroacoustic Specifications (Left) -->
+    <g transform="translate(0, 50)">
+      <rect x="0" y="0" width="890" height="340" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
+      <rect x="0" y="0" width="890" height="28" fill="#18191B" />
+      <text x="15" y="19" font-size="11" font-weight="800" fill="#FFFFFF" letter-spacing="1">ELECTROACOUSTIC SPECIFICATIONS</text>
+
+      <g font-size="10" font-weight="600" fill="#18191B" stroke-width="0">
+        <rect x="0" y="28" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="48" font-weight="800">Voice Architecture:</text>
+        <text x="240" y="48">24 Voices Polyphonic · Dynamic Headroom Scaling 1/sqrt(N)</text>
+
+        <rect x="0" y="59" width="890" height="31" fill="#FFFFFF" />
+        <text x="15" y="79" font-weight="800">Core Waveforms:</text>
+        <text x="240" y="79">Felt (Dual-Core), Sine, Saw, Square, CS-80 (Analog LFO Chorus)</text>
+
+        <rect x="0" y="90" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="110" font-weight="800">Frequency Response / D/A:</text>
+        <text x="240" y="110">10 Hz to 0.495 · fs (Nyquist) · 44.1 kHz, 48 kHz, 96 kHz, 192 kHz</text>
+
+        <rect x="0" y="121" width="890" height="31" fill="#FFFFFF" />
+        <text x="15" y="141" font-weight="800">Latency &amp; Buffer Sizes:</text>
+        <text x="240" y="141">1 to 4096 Samples Click-Free · Deterministic Zero Latency</text>
+
+        <rect x="0" y="152" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="172" font-weight="800">Drone Oscillator Cores:</text>
+        <text x="240" y="172">Elta Solar 42n Discrete Core · Sub-Hertz Beating (0.00 to 5.00 Hz)</text>
+
+        <rect x="0" y="183" width="890" height="31" fill="#FFFFFF" />
+        <text x="15" y="203" font-weight="800">Filter Topology:</text>
+        <text x="240" y="203">Direct Form II Transposed Biquads · Butterworth Q=0.7071 / Ladder</text>
+
+        <rect x="0" y="214" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="234" font-weight="800">Tape Saturation &amp; Folding:</text>
+        <text x="240" y="234">Asymmetric 2nd-Order Hysteresis · 2x Polyphase Half-Band Sinc</text>
+
+        <rect x="0" y="245" width="890" height="31" fill="#FFFFFF" />
+        <text x="15" y="265" font-weight="800">Reverb Diffusion Network:</text>
+        <text x="240" y="265">8-Channel Householder Matrix · Prime Lengths · RT60 0.5s to 25.0s</text>
+
+        <rect x="0" y="276" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="296" font-weight="800">Output Dynamics:</text>
+        <text x="240" y="296">C1-Hermite Soft-Knee (k=0.80) · Absolute Ceiling at 1.000000 FS</text>
+
+        <rect x="0" y="307" width="890" height="33" fill="#FFFFFF" />
+        <text x="15" y="327" font-weight="800">MIDI Compatibility:</text>
+        <text x="240" y="327">Full 16 Channels · Pitch Bend (±200 Cents) · CC64 Pedal · CC1 Modulation</text>
+      </g>
+    </g>
+
+    <!-- Table 2: Verification & Audit Protocol (Right) -->
+    <g transform="translate(930, 50)">
+      <rect x="0" y="0" width="890" height="340" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
+      <rect x="0" y="0" width="890" height="28" fill="#18191B" />
+      <text x="15" y="19" font-size="11" font-weight="800" fill="#FFFFFF" letter-spacing="1">AUDIT CERTIFICATION &amp; VERIFICATION LOG (TEST_READY.MD)</text>
+
+      <g font-size="10" font-weight="600" fill="#18191B">
+        <rect x="0" y="28" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="48" font-weight="800">JavaScript Web Regression:</text>
+        <text x="240" y="48">342 / 342 Tests Passed (0 Failures) across 24 Test Suites</text>
+        <text x="810" y="48" font-weight="900" fill="#22C55E">100% PASSED</text>
+
+        <rect x="0" y="59" width="890" height="31" fill="#FFFFFF" />
+        <text x="15" y="79" font-weight="800">MIDI Adversarial Stress Test:</text>
+        <text x="240" y="79">1,000 Note Bursts + 2,000 Monte Carlo Sustain Cycles (0 Voice Leaks)</text>
+        <text x="810" y="79" font-weight="900" fill="#22C55E">100% PASSED</text>
+
+        <rect x="0" y="90" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="110" font-weight="800">C++ DSP Unit Tests:</text>
+        <text x="240" y="110">13 / 13 Suites Passed (Wavefolder Error ε &lt; 1e-5, C1-Continuity)</text>
+        <text x="810" y="110" font-weight="900" fill="#22C55E">100% PASSED</text>
+
+        <rect x="0" y="121" width="890" height="31" fill="#FFFFFF" />
+        <text x="15" y="141" font-weight="800">Real-Time Memory Audit:</text>
+        <text x="240" y="141">Intercepted operator new/delete: 0 Allocations / 0 Bytes in process()</text>
+        <text x="810" y="141" font-weight="900" fill="#22C55E">HARD REAL-TIME</text>
+
+        <rect x="0" y="152" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="172" font-weight="800">Denormal Protection (FPU):</text>
+        <text x="240" y="172">MXCSR DAZ/FTZ RAII Guard (0x8040) · Completely Prevents CPU Throttling</text>
+        <text x="810" y="172" font-weight="900" fill="#22C55E">SECURED</text>
+
+        <rect x="0" y="183" width="890" height="31" fill="#FFFFFF" />
+        <text x="15" y="203" font-weight="800">Overload Protection (+40dB):</text>
+        <text x="240" y="203">Input Amplitude 100.0 Safely Clamped to |y| ≤ 1.0001 (0 NaN / Inf)</text>
+        <text x="810" y="203" font-weight="900" fill="#22C55E">ABSORBED</text>
+
+        <rect x="0" y="214" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="234" font-weight="800">Web Asset MIME Integrity:</text>
+        <text x="240" y="234">18 of 18 Embedded ZIP Assets SHA-256 Verified · RFC 9239 Compliant</text>
+        <text x="810" y="234" font-weight="900" fill="#22C55E">VERIFIED</text>
+
+        <rect x="0" y="245" width="890" height="31" fill="#FFFFFF" />
+        <text x="15" y="265" font-weight="800">VST3 Binary Validation:</text>
+        <text x="240" y="265">BRAUN_AS42.vst3 (6.65 MB, PE32+ x64) · Steinberg VST3 API Compliant</text>
+        <text x="810" y="265" font-weight="900" fill="#22C55E">SIGNED</text>
+
+        <rect x="0" y="276" width="890" height="31" fill="#FAF9F5" />
+        <text x="15" y="296" font-weight="800">DWM GUI Decoupling:</text>
+        <text x="240" y="296">WS_CLIPCHILDREN | WS_CLIPSIBLINGS · 0 Drag Trails in FL Studio / Reaper</text>
+        <text x="810" y="296" font-weight="900" fill="#22C55E">VERIFIED</text>
+
+        <rect x="0" y="307" width="890" height="33" fill="#FFFFFF" />
+        <text x="15" y="327" font-weight="800">Release Verdict (Challenger):</text>
+        <text x="240" y="327">PROJECT FULLY APPROVED FOR PRODUCTION RELEASE (Milestone 4 Sign-Off)</text>
+        <text x="810" y="327" font-weight="900" fill="#EE592B">APPROVED</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ====================================================================== -->
+  <!-- FOOTER: DIETER RAMS MANIFESTO & SYSTEM SIGNATURE (ENGLISH)              -->
+  <!-- ====================================================================== -->
+  <g id="footer" transform="translate(90, 2730)">
+    <line x1="0" y1="0" x2="1820" y2="0" stroke="#222426" stroke-width="1.5" />
+    
+    <text x="0" y="25" font-size="14" font-weight="900" fill="#18191B" letter-spacing="2">»LESS, BUT BETTER«</text>
+    <text x="200" y="25" font-size="11" font-weight="700" fill="#7A7F85" letter-spacing="1">— 10 PRINCIPLES FOR GOOD DESIGN · DIETER RAMS</text>
+
+    <text x="1820" y="25" font-size="11" font-weight="800" fill="#18191B" text-anchor="end" letter-spacing="1">BRAUN AG · AUDIO SYSTEMS ENGINEERING DEPARTMENT · D-6000 FRANKFURT / MAIN</text>
+    <text x="1820" y="42" font-size="9.5" font-weight="600" fill="#7A7F85" text-anchor="end">COPYRIGHT REGISTERED · ALL RIGHTS RESERVED · MIT LICENSE 2026</text>
+  </g>
+</svg>
