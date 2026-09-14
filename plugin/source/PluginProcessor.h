@@ -71,7 +71,7 @@ private:
     std::atomic<bool> drone1StateDirty { false };
     std::atomic<bool> drone2Active { false };
     std::atomic<bool> drone2StateDirty { false };
-    std::atomic<bool> droneTrackMidi { true };
+    std::atomic<bool> droneTrackMidi { false };
     std::atomic<bool> droneTrackMidiDirty { false };
 
     // Cached raw atomic parameter pointers for lock-free, zero-overhead audio thread reads

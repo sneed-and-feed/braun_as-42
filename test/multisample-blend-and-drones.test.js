@@ -516,6 +516,15 @@ describe('Drone MIDI Note-Off Gating in MIDI Track Mode', () => {
     assert.strictEqual(engine.droneGateNode.gain.tau, 0.040);
   });
 
+  it('defaults to classic drone mode with MIDI track toggled off', async () => {
+    const ctx = createGatingMockCtx();
+    const engine = new AudioEngine(ctx);
+    await engine.init();
+
+    assert.strictEqual(engine.droneTrackMidi, false, 'droneTrackMidi must be false by default');
+    assert.strictEqual(engine.droneGateNode.gain.value, 1.0, 'drone gate gain must initialize to 1.0 by default');
+  });
+
   it('keeps drone gate continuously open at 1.0 when classic drone mode is active', async () => {
     const ctx = createGatingMockCtx();
     const engine = new AudioEngine(ctx);

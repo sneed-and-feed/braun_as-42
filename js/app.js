@@ -232,7 +232,7 @@ export class AmbientApp {
     this.knobs = {};
     this.midiManager = new BraunMidiManager(this.engine, this);
     this.isPowerOn = false;
-    this.droneTrackMidi = true;
+    this.droneTrackMidi = false;
     this._isJuce = Boolean(
       typeof window !== 'undefined' &&
       (window.__IS_JUCE__ || window.__JUCE__?.backend || window.location?.hostname === 'juce.backend')

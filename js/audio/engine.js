@@ -62,7 +62,7 @@ export class AudioEngine {
       1: 'deep-tonic',
       2: 'perfect-5th'
     };
-    this.droneTrackMidi = true;
+    this.droneTrackMidi = false;
     this._heldNotes = new Set();
     this._latchedNotes = new Set();
     this._isSustainPedalDown = false;

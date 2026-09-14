@@ -160,7 +160,7 @@ private:
     float mCurrentModWheel { 0.0f };
 
     // Drone Note Tracking State
-    bool mDroneTrackMidi { true };
+    bool mDroneTrackMidi { false };
     int mLastTrackedMidiNote { -1 };
     float mTrackedDrone1Freq { 65.41f };
     float mTrackedDrone2Freq { 98.00f };
