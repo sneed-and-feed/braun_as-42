@@ -72,6 +72,9 @@ export class BraunKnob {
     this.fillCircle = this.element.querySelector('.braun-knob-fill');
     this.valueText = this.element.querySelector('.braun-knob-value-text');
     this.directInput = this.element.querySelector('.braun-knob-direct-input');
+    this.assembly = this.element.querySelector('.braun-knob-assembly');
+    this.labelEl = this.element.querySelector('.braun-knob-label');
+    this.valueDisplay = this.element.querySelector('.braun-knob-value-display');
 
     // Arc length for SVG fill: radius 42 -> circumference ~ 263.89
     // Angle range is 280 out of 360 deg = 0.7777 of circle ~ 205.25
@@ -96,6 +99,40 @@ export class BraunKnob {
     const onPointerDown = (e) => {
       if (e.target === this.directInput) return;
       if (isDragging) return;
+
+      // Disambiguate touch targets: labels, numeric displays, and inputs must not block page scrolling
+      const isLabelOrValue = Boolean(
+        e.target && (
+          (typeof e.target.closest === 'function' && (
+            e.target.closest('.braun-knob-label') ||
+            e.target.closest('.braun-knob-value-display') ||
+            e.target.closest('.braun-knob-direct-input')
+          )) ||
+          (e.target.classList && (
+            e.target.classList.contains('braun-knob-label') ||
+            e.target.classList.contains('braun-knob-value-display') ||
+            e.target.classList.contains('braun-knob-direct-input')
+          ))
+        )
+      );
+
+      if (isLabelOrValue) {
+        return; // Allow native vertical page scrolling to bubble unhindered
+      }
+
+      // Disambiguate rotary dial assembly vs wrapper padding / margin
+      const isKnobAssembly = Boolean(
+        (e.target && typeof e.target.closest === 'function' && e.target.closest('.braun-knob-assembly')) ||
+        (e.target && e.target.classList && e.target.classList.contains('braun-knob-assembly')) ||
+        (this.assembly && (e.target === this.assembly || (typeof this.assembly.contains === 'function' && this.assembly.contains(e.target)))) ||
+        // Defensive fallback for mock DOM test environments lacking closest/contains
+        (!e.target || (e.target === this.element && typeof e.target.closest !== 'function' && (!e.target.classList?.contains('braun-knob-label') && !e.target.classList?.contains('braun-knob-value-display'))))
+      );
+
+      if (!isKnobAssembly) {
+        return; // Touch on wrapper padding or outside assembly allows vertical scrolling
+      }
+
       if (typeof e.preventDefault === 'function') {
         e.preventDefault();
       }
@@ -260,6 +297,12 @@ export class BraunKnob {
         window.addEventListener('touchcancel', onTouchCancel);
       }
     };
+
+    if (this.assembly && typeof this.assembly.addEventListener === 'function') {
+      this.assembly.addEventListener('mousedown', onPointerDown);
+      this.assembly.addEventListener('touchstart', onPointerDown, { passive: false });
+      this.assembly.addEventListener('pointerdown', onPointerDown);
+    }
 
     this.element.addEventListener('mousedown', onPointerDown);
     this.element.addEventListener('touchstart', onPointerDown, { passive: false });

@@ -55,9 +55,9 @@ Every feature defined in `PROJECT.md` and derived from `ORIGINAL_REQUEST.md` has
 ### 3.1 Full Web Regression Runner (`npm test`)
 - **Execution Command:** `npm test`
 - **Output:**
-  - Total Test Files: 24
-  - Total Suites: 68
-  - Total Tests: **342 passed, 0 failed, 0 skipped**
+  - Total Test Files: 25
+  - Total Suites: 78
+  - Total Tests: **399 passed, 0 failed, 0 skipped**
   - Total Execution Duration: ~23.1 seconds
 - **Verification Highlights:**
   - Full browser audio math, filter frequency responses, wavetable interpolation, and saturation bounds confirmed.

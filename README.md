@@ -180,8 +180,8 @@ The project maintains comprehensive verification across both JavaScript Web Audi
 ```bash
 npm test
 ```
-* **347 unit and integration tests across 69 test suites** running via Node.js native test runner.
-* Validates Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, full-width CRT oscilloscope edge-to-edge drawing, 48-bar FFT spectrum, and anti-clipping bus headroom staging.
+* **399 unit and integration tests across 78 test suites** running via Node.js native test runner.
+* Validates Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, full-width CRT oscilloscope edge-to-edge drawing, 48-bar FFT spectrum, iPadOS WebKit/Brave momentum vertical scrolling, rotary knob touch disambiguation, responsive tablet layout across iOS and Android (16:10 / 4:3), and anti-clipping bus headroom staging.
 
 ### 5.2 Native C++ DSP & Real-Time Safety Tests
 * **DSP Unit Tests (`test\cpp\dsp_tests.exe`):** 13 passed, 0 failed. Validates Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, oscilloscope visualizer ring buffer bounds, and zero idle output.

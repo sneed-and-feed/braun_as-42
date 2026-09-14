@@ -67,31 +67,44 @@
 
 html {
   overscroll-behavior: none;
+  overscroll-behavior-y: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  height: 100%;
 }
 
 body {
   overscroll-behavior: none;
+  overscroll-behavior-y: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--bg-app);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.4;
   letter-spacing: -0.01em;
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 16px 40px;
+  padding: max(24px, env(safe-area-inset-top))
+           max(16px, env(safe-area-inset-right))
+           max(40px, env(safe-area-inset-bottom))
+           max(16px, env(safe-area-inset-left));
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 main {
-  overscroll-behavior: none;
+  touch-action: pan-y;
 }
 
 /* --- Chassis Frame --- */
 .braun-chassis {
-  overscroll-behavior: none;
+  touch-action: pan-y;
   width: 100%;
   max-width: 1240px;
   background-color: var(--bg-panel);
@@ -99,8 +112,24 @@ main {
   border-radius: var(--panel-radius);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
   overflow: hidden;
+  overflow-y: visible;
   display: flex;
   flex-direction: column;
+}
+
+/* Structural cards and section headers permit vertical page scrolling */
+.braun-drone-card,
+.braun-section,
+.braun-scope-container,
+.braun-left-column,
+.braun-right-column,
+.braun-card-header,
+.braun-deck-header,
+.braun-section-header,
+.braun-chord-deck,
+.braun-vector-deck,
+.braun-chime-deck {
+  touch-action: pan-y;
 }
 
 /* --- Header / Top Bar --- */
@@ -473,6 +502,12 @@ main {
     border-right: none;
     border-bottom: 1px solid var(--border-line);
   }
+  .braun-scope-container,
+  .braun-scope-bezel {
+    max-width: 540px;
+    margin: 0 auto;
+    width: 100%;
+  }
 }
 
 /* --- Left Column: Scope & System --- */
@@ -599,7 +634,7 @@ main {
   gap: 16px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 834px) {
   .braun-drones-grid {
     grid-template-columns: 1fr;
   }
@@ -674,6 +709,7 @@ main {
 .braun-snap-toggles {
   display: flex;
   gap: 4px;
+  flex-wrap: wrap;
 }
 
 .braun-snap-btn {
@@ -793,6 +829,60 @@ main {
   text-align: right;
 }
 
+/* --- Brian Eno Generative Audio Processing Sub-Panels --- */
+.braun-eno-panels {
+  display: grid;
+  grid-template-columns: 1.22fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .braun-eno-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+.braun-eno-subpanel {
+  background-color: var(--bg-panel-inset);
+  border: 1px solid var(--border-line);
+  border-radius: 3px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  touch-action: pan-y;
+}
+
+.braun-subpanel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--border-line);
+  padding-bottom: 4px;
+}
+
+.braun-subpanel-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.braun-subpanel-subtitle {
+  font-size: 9px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.braun-eno-knobs-row {
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* --- Performance Deck: 2x5 Chords Matrix & Braun AS 42 Vector Touchpad --- */
 .braun-play-section {
   padding: 16px 24px;
@@ -812,6 +902,12 @@ main {
 @media (max-width: 1040px) {
   .braun-performance-split {
     grid-template-columns: 1fr;
+  }
+  .braun-vector-deck,
+  .braun-vector-surface-box {
+    max-width: 540px;
+    margin: 0 auto;
+    width: 100%;
   }
 }
 
@@ -1431,6 +1527,7 @@ main {
   outline: none;
   cursor: pointer;
   touch-action: none;
+  touch-action: pan-y;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -1447,6 +1544,8 @@ main {
   text-transform: uppercase;
   color: var(--text-secondary);
   text-align: center;
+  touch-action: pan-y;
+  cursor: default;
 }
 
 .braun-knob-assembly {
@@ -1456,6 +1555,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none;
 }
 
 .braun-knob-small .braun-knob-assembly {
@@ -1538,6 +1638,8 @@ main {
   color: var(--text-primary);
   text-align: center;
   min-width: 44px;
+  touch-action: pan-y;
+  cursor: default;
 }
 
 .braun-knob-unit {
