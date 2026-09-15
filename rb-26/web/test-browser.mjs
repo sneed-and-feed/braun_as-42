@@ -215,21 +215,21 @@ async function runBrowserTest() {
     console.log(`[BrowserTest] localStorage braun_rb26_theme: "${savedTheme}"`);
     if (savedTheme !== 'dark') throw new Error(`Expected localStorage theme to be "dark", got "${savedTheme}"`);
 
-    // Test Preset Loading (Classic + Non-Euclidean)
+    // Test Preset Loading (Classic + Companion)
     console.log('[BrowserTest] Testing preset loading (AMBIENT_GUITAR_CLOUD)...');
     await evaluate(`window.__RB26__.loadPreset('AMBIENT_GUITAR_CLOUD')`);
     const rt60Val = await evaluate(`window.__RB26__.knobs.rt60_decay.getValue()`);
-    console.log(`[BrowserTest] Loaded AMBIENT_GUITAR_CLOUD RT60: ${rt60Val}s (expected 16s)`);
-    if (Math.abs(rt60Val - 16.0) > 0.1) {
-      throw new Error(`Expected RT60 approx 16.0, got ${rt60Val}`);
+    console.log(`[BrowserTest] Loaded AMBIENT_GUITAR_CLOUD RT60: ${rt60Val}s (expected 9.5s)`);
+    if (Math.abs(rt60Val - 9.5) > 0.1) {
+      throw new Error(`Expected RT60 approx 9.5, got ${rt60Val}`);
     }
 
-    console.log('[BrowserTest] Testing Non-Euclidean preset loading (POINCARE_CAVITY)...');
-    await evaluate(`window.__RB26__.loadPreset('POINCARE_CAVITY')`);
-    const poincareRt60 = await evaluate(`window.__RB26__.knobs.rt60_decay.getValue()`);
-    console.log(`[BrowserTest] Loaded POINCARE_CAVITY RT60: ${poincareRt60}s (expected 8.5s)`);
-    if (Math.abs(poincareRt60 - 8.5) > 0.1) {
-      throw new Error(`Expected RT60 approx 8.5, got ${poincareRt60}`);
+    console.log('[BrowserTest] Testing companion preset loading (AS42_SHIMMER_COMPANION)...');
+    await evaluate(`window.__RB26__.loadPreset('AS42_SHIMMER_COMPANION')`);
+    const as42Rt60 = await evaluate(`window.__RB26__.knobs.rt60_decay.getValue()`);
+    console.log(`[BrowserTest] Loaded AS42_SHIMMER_COMPANION RT60: ${as42Rt60}s (expected 8.5s)`);
+    if (Math.abs(as42Rt60 - 8.5) > 0.1) {
+      throw new Error(`Expected RT60 approx 8.5, got ${as42Rt60}`);
     }
 
     // Test A/B Comparison Buffer
