@@ -411,10 +411,6 @@ export class BraunVectorPad {
     // X Axis: Filter Cutoff / Felt Piano Tone (0.15 to 0.95)
     const feltTone = 0.15 + this.x * 0.80;
 
-    // Drone cutoff tracking:
-    const drone1Cutoff = 200 + this.x * 3200;
-    const drone2Cutoff = 350 + this.x * 3800;
-
     // Y Axis: Space & Shimmer Wash (Decoupled from Tape Delay Time to eliminate record scratch crunch)
     // Delay Wet Mix (0% to 75%)
     const delayWet = this.y * 0.75;
@@ -431,10 +427,6 @@ export class BraunVectorPad {
     if (this.engine) {
       if (typeof this.engine.setFeltTone === 'function') {
         this.engine.setFeltTone(feltTone);
-      }
-      if (typeof this.engine.setDroneCutoff === 'function') {
-        this.engine.setDroneCutoff(1, drone1Cutoff);
-        this.engine.setDroneCutoff(2, drone2Cutoff);
       }
       if (typeof this.engine.setDelayWet === 'function') {
         this.engine.setDelayWet(delayWet);
@@ -455,8 +447,6 @@ export class BraunVectorPad {
         x: this.x,
         y: this.y,
         feltTone,
-        drone1Cutoff,
-        drone2Cutoff,
         cutoffHz: Math.round(250 * Math.pow(5500 / 250, this.x)),
         delayWet,
         delayFeedback,

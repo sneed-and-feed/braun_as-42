@@ -1345,20 +1345,6 @@ export class AmbientApp {
       }
       this._emitJuceParamChange('delayFeedback', val);
     }
-    if (data.drone1Cutoff !== undefined) {
-      const val = Math.round(data.drone1Cutoff);
-      if (this.knobs?.drone1Cutoff) {
-        this.knobs.drone1Cutoff.setValue(val, false);
-      }
-      this._emitJuceParamChange('drone1Cutoff', val);
-    }
-    if (data.drone2Cutoff !== undefined) {
-      const val = Math.round(data.drone2Cutoff);
-      if (this.knobs?.drone2Cutoff) {
-        this.knobs.drone2Cutoff.setValue(val, false);
-      }
-      this._emitJuceParamChange('drone2Cutoff', val);
-    }
   }
 
   _renderLoopRows() {
