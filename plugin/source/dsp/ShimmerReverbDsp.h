@@ -9,10 +9,10 @@
 namespace braun {
 
 struct ShimmerReverbParams {
-    float decaySec { 7.5f };       // RT60 in seconds (0.5 to 25.0)
-    float damping { 0.65f };       // Air absorption (0.05 to 0.98)
+    float decaySec { 8.5f };       // RT60 in seconds (0.5 to 25.0)
+    float damping { 0.60f };       // Air absorption (0.05 to 0.98)
     float shimmer { 0.45f };       // Octave-up shimmer amount (0.0 to 1.0)
-    float mix { 0.40f };           // Wet level (0.0 to 1.0)
+    float mix { 0.45f };           // Wet level (0.0 to 1.0)
     bool freeze { false };         // Infinite freeze hold
 };
 
@@ -98,6 +98,9 @@ private:
 // ============================================================================
 class ShimmerReverbDsp {
 public:
+    static constexpr size_t kNumFdnLines = 8;
+    static constexpr size_t kNumAllpass = 4;
+
     void prepare(double sampleRate) {
         mSampleRate = static_cast<float>(sampleRate > 100.0 ? sampleRate : 48000.0);
 
@@ -108,7 +111,7 @@ public:
         mShimmerBandpass.configure(Biquad::Type::Bandpass, mSampleRate, 1600.0f, 0.85f);
 
         // 3. Prepare Real-Time Air Damping Filter (Butterworth 0.7071)
-        const float initDampingHz = calculateDampingCutoff(0.65f);
+        const float initDampingHz = calculateDampingCutoff(0.60f);
         mAirDampingFilterL.configure(Biquad::Type::Lowpass, mSampleRate, initDampingHz, 0.7071f);
         mAirDampingFilterR.configure(Biquad::Type::Lowpass, mSampleRate, initDampingHz, 0.7071f);
 
@@ -168,7 +171,7 @@ public:
 
         mShimmerFeedbackSmoother.setSampleRate(mSampleRate);
         mShimmerFeedbackSmoother.setTimeConstant(0.025f);
-        mShimmerFeedbackSmoother.reset(0.45f);
+        mShimmerFeedbackSmoother.reset(0.38f);
 
         reset();
     }
@@ -214,9 +217,9 @@ public:
         mAirDampingFilterR.configure(Biquad::Type::Lowpass, mSampleRate, curDampingHz, 0.7071f);
 
         // 2. Shimmer feedback parameter computation
-        const float decayScale = std::clamp(params.decaySec / 8.5f, 0.70f, 1.35f);
+        const float decayScale = std::clamp(params.decaySec / 8.5f, 0.70f, 1.25f);
         const float targetShimmerSend = params.shimmer * 0.90f;
-        const float targetShimmerFb = std::min(0.75f, (0.20f + params.shimmer * 0.45f) * decayScale);
+        const float targetShimmerFb = std::min(0.70f, (0.20f + params.shimmer * 0.40f) * decayScale);
         mShimmerSendSmoother.setTarget(targetShimmerSend);
         mShimmerFeedbackSmoother.setTarget(targetShimmerFb);
         const float curShimmerSend = mShimmerSendSmoother.next();
@@ -231,14 +234,14 @@ public:
         const float freezeWet = mFreezeWetSmoother.next();
         const float freezeInGain = mFreezeInputSmoother.next();
 
-        // 4. Input mixing: input audio + shimmer feedback loop
+        // 4. Input mixing: input audio + shimmer feedback loop with true stereo separation
         constexpr float kPreGain = 0.85f;
-        const float monoIn = (inL + inR) * 0.5f;
-        const float reverbInput = (monoIn * kPreGain + mShimmerFeedbackSample) * freezeInGain;
+        const float reverbInputL = (inL * kPreGain + mShimmerFeedbackSample) * freezeInGain;
+        const float reverbInputR = (inR * kPreGain + mShimmerFeedbackSample) * freezeInGain;
 
-        // 5. Early Reflection Network (10 prime taps)
-        mEarlyBufferL[mEarlyWriteIndex] = reverbInput;
-        mEarlyBufferR[mEarlyWriteIndex] = reverbInput;
+        // 5. Early Reflection Network (10 prime taps with true stereo input)
+        mEarlyBufferL[mEarlyWriteIndex] = reverbInputL;
+        mEarlyBufferR[mEarlyWriteIndex] = reverbInputR;
 
         float earlyL = 0.0f;
         float earlyR = 0.0f;
@@ -246,33 +249,35 @@ public:
         for (size_t k = 0; k < kNumEarlyTaps; ++k) {
             const size_t tapDelay = static_cast<size_t>(kEarlyTapTimes[k] * mSampleRate);
             const size_t readIdx = (mEarlyWriteIndex + mEarlyDelaySamples - tapDelay) % mEarlyDelaySamples;
-            const float tapSample = mEarlyBufferL[readIdx] * kEarlyGains[k];
+            const float tapL = mEarlyBufferL[readIdx] * (kEarlyGains[k] * 0.18f);
+            const float tapR = mEarlyBufferR[readIdx] * (kEarlyGains[k] * 0.18f);
             const float pan = (k % 2 == 0) ? 0.70f : -0.70f;
-            earlyL += tapSample * (1.0f - pan * 0.5f);
-            earlyR += tapSample * (1.0f + pan * 0.5f);
+            earlyL += tapL * (1.0f - pan * 0.5f);
+            earlyR += tapR * (1.0f + pan * 0.5f);
         }
 
         mEarlyWriteIndex = (mEarlyWriteIndex + 1) % mEarlyDelaySamples;
 
-        // 6. Allpass Diffuser Chain
-        float diffused = reverbInput;
-        for (size_t i = 0; i < kNumAllpass; ++i) {
-            diffused = processAllpass(i, diffused);
-        }
+        // 6. Allpass Diffuser Chain with stereo decorrelation
+        float diffusedL = processAllpass(0, reverbInputL);
+        diffusedL = processAllpass(2, diffusedL);
+        float diffusedR = processAllpass(1, reverbInputR);
+        diffusedR = processAllpass(3, diffusedR);
 
-        // 7. Late Diffuse Tail FDN (8 Feedback Delay Lines with Householder matrix)
+        // 7. Late Diffuse Tail FDN (8 Feedback Delay Lines with Fast Walsh-Hadamard Transform)
         // Decay time constant tau = decaySec / ln(1000) ~ decaySec / 6.91
         const float tau = std::max(0.1f, params.decaySec / 6.907755f);
 
-        // Read delay lines and apply one-pole lowpass damping
+        // Read delay lines and apply one-pole high-frequency shelf damping with acoustic absorption floor.
+        // Floor of 0.14f ensures high-frequency comb modes and standing waves are absorbed
+        // even when damping knob is set to minimum (0.0).
         std::array<float, kNumFdnLines> fdnOutputs;
-        float fdnSum = 0.0f;
+        const float damp = std::clamp(0.14f + params.damping * 0.38f, 0.14f, 0.58f);
 
         for (size_t i = 0; i < kNumFdnLines; ++i) {
             const float delayed = mFdnBuffers[i][mFdnWriteIndices[i]];
-            // One-pole air absorption filter per delay line
-            const float dampCoeff = std::clamp(params.damping * 0.65f, 0.02f, 0.85f);
-            mFdnFilterStates[i] += dampCoeff * (delayed - mFdnFilterStates[i]);
+            // Gentle high-frequency one-pole shelf: y[n] = (1-d)*x[n] + d*y[n-1]
+            mFdnFilterStates[i] = (1.0f - damp) * delayed + damp * mFdnFilterStates[i];
             const float filtered = flushDenormal(mFdnFilterStates[i]);
 
             // Exponential decay multiplier for this delay length
@@ -280,23 +285,33 @@ public:
             const float decayMul = std::exp(-delayTimeSec / tau);
 
             fdnOutputs[i] = filtered * decayMul;
-            fdnSum += fdnOutputs[i];
         }
 
-        // Householder matrix mixing: y_i = fdnOutputs_i - 2/N * sum(fdnOutputs)
-        constexpr float kTwoOverN = 2.0f / static_cast<float>(kNumFdnLines);
-        const float householderOffset = fdnSum * kTwoOverN;
+        // Apply 8-point Fast Walsh-Hadamard Transform for unitary, lossless all-to-all diffusion
+        fwht8(fdnOutputs);
+
+        // Balanced orthogonal Hadamard input distribution vector with 1/sqrt(8) energy preservation
+        constexpr float kInvSqrt8 = 0.35355339f;
+        const float inL_norm = diffusedL * kInvSqrt8;
+        const float inR_norm = diffusedR * kInvSqrt8;
+        const std::array<float, kNumFdnLines> inVector = {
+            inL_norm, inR_norm, -inL_norm, -inR_norm, inL_norm, inR_norm, -inL_norm, -inR_norm
+        };
 
         for (size_t i = 0; i < kNumFdnLines; ++i) {
-            const float mixed = fdnOutputs[i] - householderOffset;
-            const float nextIn = diffused + mixed;
-            mFdnBuffers[i][mFdnWriteIndices[i]] = flushDenormal(nextIn);
+            const float nextIn = inVector[i] + fdnOutputs[i];
+            // Soft saturation in feedback loop prevents transient modal build-ups
+            const float saturatedIn = softLimit(nextIn, 0.85f);
+            mFdnBuffers[i][mFdnWriteIndices[i]] = flushDenormal(saturatedIn);
             mFdnWriteIndices[i] = (mFdnWriteIndices[i] + 1) % mFdnLengths[i];
         }
 
-        // Sum FDN into stereo channels (decorrelated alternate polarity sum)
-        float lateL = (fdnOutputs[0] + fdnOutputs[2] - fdnOutputs[4] - fdnOutputs[6]) * 0.35f;
-        float lateR = (fdnOutputs[1] - fdnOutputs[3] + fdnOutputs[5] - fdnOutputs[7]) * 0.35f;
+        // Sum FDN into stereo channels (decorrelated alternate Hadamard polarity sum with energy normalization)
+        constexpr float kOutScale = 0.35355339f * 1.05f;
+        const float lateL = (fdnOutputs[0] + fdnOutputs[1] + fdnOutputs[2] + fdnOutputs[3]
+                           - fdnOutputs[4] - fdnOutputs[5] - fdnOutputs[6] - fdnOutputs[7]) * kOutScale;
+        const float lateR = (fdnOutputs[0] - fdnOutputs[1] + fdnOutputs[2] - fdnOutputs[3]
+                           + fdnOutputs[4] - fdnOutputs[5] + fdnOutputs[6] - fdnOutputs[7]) * kOutScale;
 
         // 8. Total Reverb Bus = Early + Late
         const float wetRawL = earlyL + lateL;
@@ -314,8 +329,8 @@ public:
         const float freezeFiltL = mFreezeFilterL.process(freezeDelayedL);
         const float freezeFiltR = mFreezeFilterR.process(freezeDelayedR);
 
-        const float freezeInL = monoIn * freezeInGain + freezeFiltR * freezeFb;
-        const float freezeInR = monoIn * freezeInGain + freezeFiltL * freezeFb;
+        const float freezeInL = inL * freezeInGain + freezeFiltR * freezeFb;
+        const float freezeInR = inR * freezeInGain + freezeFiltL * freezeFb;
 
         mFreezeBufferL[mFreezeWriteIndexL] = flushDenormal(freezeInL);
         mFreezeBufferR[mFreezeWriteIndexR] = flushDenormal(freezeInR);
@@ -327,7 +342,8 @@ public:
         const float shimmerIn = ((dampedL + dampedR) * 0.5f) * curShimmerSend;
         const float shimmerBandpassed = mShimmerBandpass.process(shimmerIn);
         const float pitchShifted = mPitchShifter.processSample(shimmerBandpassed);
-        mShimmerFeedbackSample = flushDenormal(pitchShifted * curShimmerFb);
+        // Strictly bounded soft limiter prevents runaway pitch-shift feedback whistle
+        mShimmerFeedbackSample = flushDenormal(softLimit(pitchShifted * curShimmerFb, 0.70f));
 
         // 12. Combine Final Wet Output with Freeze and Wet Gain
         const float finalWetL = (dampedL + freezeFiltL * freezeWet) * params.mix;
@@ -338,6 +354,40 @@ public:
     }
 
 private:
+    // 8-point Fast Walsh-Hadamard Transform for unitary, all-to-all lossless diffusion
+    static inline void fwht8(std::array<float, kNumFdnLines>& a) noexcept {
+        // Stage 1
+        const float a0 = a[0] + a[1];
+        const float a1 = a[0] - a[1];
+        const float a2 = a[2] + a[3];
+        const float a3 = a[2] - a[3];
+        const float a4 = a[4] + a[5];
+        const float a5 = a[4] - a[5];
+        const float a6 = a[6] + a[7];
+        const float a7 = a[6] - a[7];
+
+        // Stage 2
+        const float b0 = a0 + a2;
+        const float b1 = a1 + a3;
+        const float b2 = a0 - a2;
+        const float b3 = a1 - a3;
+        const float b4 = a4 + a6;
+        const float b5 = a5 + a7;
+        const float b6 = a4 - a6;
+        const float b7 = a5 - a7;
+
+        // Stage 3 & unitary normalization by 1/sqrt(8) = 0.35355339f
+        constexpr float kNorm = 0.35355339f;
+        a[0] = (b0 + b4) * kNorm;
+        a[1] = (b1 + b5) * kNorm;
+        a[2] = (b2 + b6) * kNorm;
+        a[3] = (b3 + b7) * kNorm;
+        a[4] = (b0 - b4) * kNorm;
+        a[5] = (b1 - b5) * kNorm;
+        a[6] = (b2 - b6) * kNorm;
+        a[7] = (b3 - b7) * kNorm;
+    }
+
     inline float calculateDampingCutoff(float damping) const noexcept {
         const float d = std::clamp(damping, 0.05f, 0.98f);
         constexpr float minCutoff = 1200.0f;
@@ -350,8 +400,8 @@ private:
         const size_t wIdx = mAllpassWriteIndices[index];
         const float delayed = mAllpassBuffers[index][wIdx];
 
-        constexpr float g = 0.65f; // Allpass diffusion gain
-        const float v = input - g * delayed;
+        constexpr float g = 0.60f; // Allpass diffusion gain
+        const float v = softLimit(input - g * delayed, 0.95f);
         const float out = delayed + g * v;
 
         mAllpassBuffers[index][wIdx] = flushDenormal(v);
@@ -385,7 +435,6 @@ private:
     size_t mEarlyWriteIndex { 0 };
 
     // FDN Delay Lines (8 prime lengths at 48kHz)
-    static constexpr size_t kNumFdnLines = 8;
     static constexpr std::array<size_t, kNumFdnLines> kBaseFdnLengths = {
         1133, 1381, 1619, 1949, 2137, 2477, 2749, 3121
     };
@@ -395,7 +444,6 @@ private:
     std::array<float, kNumFdnLines> mFdnFilterStates;
 
     // Allpass Diffusers (4 stages)
-    static constexpr size_t kNumAllpass = 4;
     static constexpr std::array<size_t, kNumAllpass> kBaseAllpassLengths = {
         227, 337, 449, 563
     };

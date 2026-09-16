@@ -185,7 +185,7 @@ From Developer Command Prompt (x64) on Windows:
 
 ```powershell
 # 1. Navigate to tests directory
-cd c:\Users\x\Documents\antigravity\audio-engineering\rb-26\source\tests
+cd c:\Users\x\Documents\antigravity\braun_as-42\rb-26\source\tests
 
 # 2. Compile standalone headless runner with MSVC (C++20, /O2 optimization)
 cl.exe /std:c++20 /EHsc /O2 /I. /I..\dsp `

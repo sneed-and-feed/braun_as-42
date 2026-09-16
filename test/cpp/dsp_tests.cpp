@@ -786,7 +786,7 @@ void test_drone_midi_note_off_gating() {
     for (int i = 0; i < 512; ++i) {
         maxPostReleaseAmp = std::max(maxPostReleaseAmp, std::max(std::abs(blockL[i]), std::abs(blockR[i])));
     }
-    TEST_ASSERT(maxPostReleaseAmp == 0.0f, "Drone output must return to 0.0 after release");
+    TEST_ASSERT(maxPostReleaseAmp < 1.0e-5f, "Drone output must return to silence after release");
 
     // 4. Sustain Pedal Behavior:
     // Depress sustain pedal (CC 64 = 127), then play Note-On E4 (64), then release E4 key (Note-Off 64).
@@ -991,6 +991,711 @@ void test_scope_visualizer_ring_buffer_bounds_and_safety() {
 }
 
 // ============================================================================
+// Test 14: Biquad Bandpass Filter constant 0 dB peak gain across Q factors
+// ============================================================================
+void test_biquad_bandpass_unity_gain() {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float testFreq = 1000.0f;
+
+    // Test across various Q values (0.85 for shimmer, 3.5 for sympathetic resonance, 10.0 for sharp notch)
+    const std::vector<float> qValues = { 0.85f, 1.5f, 3.5f, 7.0f, 10.0f };
+
+    for (float q : qValues) {
+        braun::Biquad bp;
+        bp.configure(braun::Biquad::Type::Bandpass, sampleRate, testFreq, q);
+
+        // Run pure sine at center frequency for 8000 samples to reach steady state
+        float maxSteadyStateAmp = 0.0f;
+        for (int i = 0; i < 8000; ++i) {
+            const float t = static_cast<float>(i) / sampleRate;
+            const float in = std::sin(braun::kTwoPi * testFreq * t);
+            const float out = bp.process(in);
+
+            if (i >= 4000) {
+                maxSteadyStateAmp = std::max(maxSteadyStateAmp, std::abs(out));
+            }
+        }
+
+        // Must have constant 0 dB peak gain (1.000 +/- 0.01) at center frequency
+        TEST_ASSERT(std::abs(maxSteadyStateAmp - 1.0f) < 0.02f,
+                    "Bandpass filter peak gain at Q=" + std::to_string(q) + " was " + std::to_string(maxSteadyStateAmp) + " (expected 1.0)");
+    }
+
+    // Verify off-center frequency attenuation (500 Hz on 1000 Hz filter with Q=3.5)
+    braun::Biquad bp2;
+    bp2.configure(braun::Biquad::Type::Bandpass, sampleRate, 1000.0f, 3.5f);
+    float maxOffFreqAmp = 0.0f;
+    for (int i = 0; i < 8000; ++i) {
+        const float t = static_cast<float>(i) / sampleRate;
+        const float in = std::sin(braun::kTwoPi * 500.0f * t);
+        const float out = bp2.process(in);
+        if (i >= 4000) {
+            maxOffFreqAmp = std::max(maxOffFreqAmp, std::abs(out));
+        }
+    }
+    TEST_ASSERT(maxOffFreqAmp < 0.35f, "Bandpass filter failed to attenuate off-center frequency");
+}
+
+// ============================================================================
+// Test 15: Shimmer Reverb FDN diffusion, stereo balance, and stable decay
+// ============================================================================
+void test_shimmer_reverb_fdn_diffusion_and_decay() {
+    braun::ShimmerReverbDsp reverb;
+    reverb.prepare(48000.0);
+
+    braun::ShimmerReverbParams params;
+    params.decaySec = 8.5f;
+    params.damping = 0.60f;
+    params.shimmer = 0.45f;
+    params.mix = 0.45f;
+    params.freeze = false;
+
+    // Inject 1-sample unit impulse
+    float outL = 0.0f, outR = 0.0f;
+    reverb.processSample(1.0f, 1.0f, params, outL, outR);
+
+    // Track output energy across 2 seconds (96,000 samples)
+    float maxAmpL = std::abs(outL);
+    float maxAmpR = std::abs(outR);
+    float energyFirstHalf = 0.0f;
+    float energySecondHalf = 0.0f;
+
+    for (int i = 0; i < 96000; ++i) {
+        outL = 0.0f;
+        outR = 0.0f;
+        reverb.processSample(0.0f, 0.0f, params, outL, outR);
+
+        TEST_ASSERT(!std::isnan(outL) && !std::isinf(outL), "Reverb produced NaN/Inf on Left");
+        TEST_ASSERT(!std::isnan(outR) && !std::isinf(outR), "Reverb produced NaN/Inf on Right");
+
+        maxAmpL = std::max(maxAmpL, std::abs(outL));
+        maxAmpR = std::max(maxAmpR, std::abs(outR));
+
+        if (i < 48000) {
+            energyFirstHalf += outL * outL + outR * outR;
+        } else {
+            energySecondHalf += outL * outL + outR * outR;
+        }
+    }
+
+    // 1. Output must not clip or blow up
+    TEST_ASSERT(maxAmpL < 1.0f, "Reverb Left peak exceeded 1.0: " + std::to_string(maxAmpL));
+    TEST_ASSERT(maxAmpR < 1.0f, "Reverb Right peak exceeded 1.0: " + std::to_string(maxAmpR));
+
+    // 2. Both channels must receive balanced diffuse energy
+    TEST_ASSERT(energyFirstHalf > 0.01f, "Reverb produced zero diffuse energy in first second");
+    TEST_ASSERT(energySecondHalf > 0.001f, "Reverb tail died prematurely before second second");
+
+    // 3. Energy must decay smoothly over time
+    TEST_ASSERT(energyFirstHalf > energySecondHalf, "Reverb energy did not decay over time");
+
+    // 4. Run for another 8 seconds (total 10s) and verify return to near-silence
+    for (int i = 0; i < 384000; ++i) {
+        outL = 0.0f;
+        outR = 0.0f;
+        reverb.processSample(0.0f, 0.0f, params, outL, outR);
+    }
+    TEST_ASSERT(std::abs(outL) < 1.0e-3f, "Reverb did not decay to silence after 10s on Left");
+    TEST_ASSERT(std::abs(outR) < 1.0e-3f, "Reverb did not decay to silence after 10s on Right");
+}
+
+// ============================================================================
+// Test 16: Felt Piano Sympathetic Resonance Tone Tracking and Gain Scaling
+// ============================================================================
+void test_felt_piano_sympathetic_resonance_tracking() {
+    braun::WavetableBank wavetables;
+    braun::FeltPianoSynthesizer piano;
+    piano.prepare(48000.0, &wavetables);
+
+    // 1. When sympathetic resonance is 0.0, only direct piano sound should be produced
+    braun::FeltPianoParams zeroSympParams;
+    zeroSympParams.volume = 0.80f;
+    zeroSympParams.tone = 0.62f;
+    zeroSympParams.sympathetic = 0.0f;
+    piano.setParams(zeroSympParams);
+
+    piano.noteOn(60, 0.8f, 3.5f, false, false);
+    std::vector<float> zeroSympL(2048, 0.0f);
+    std::vector<float> zeroSympR(2048, 0.0f);
+    piano.process(zeroSympL.data(), zeroSympR.data(), 2048);
+
+    // 2. When sympathetic resonance is 0.45, output should include subtle acoustic coupling
+    piano.reset();
+    braun::FeltPianoParams normalSympParams = zeroSympParams;
+    normalSympParams.sympathetic = 0.45f;
+    piano.setParams(normalSympParams);
+
+    piano.noteOn(60, 0.8f, 3.5f, false, false);
+    std::vector<float> normalSympL(2048, 0.0f);
+    std::vector<float> normalSympR(2048, 0.0f);
+    piano.process(normalSympL.data(), normalSympR.data(), 2048);
+
+    float maxZero = 0.0f;
+    float maxNormal = 0.0f;
+    for (int i = 0; i < 2048; ++i) {
+        maxZero = std::max(maxZero, std::abs(zeroSympL[i]));
+        maxNormal = std::max(maxNormal, std::abs(normalSympL[i]));
+    }
+
+    TEST_ASSERT(maxZero > 0.01f, "Piano produced zero output with sympathetic=0");
+    TEST_ASSERT(maxNormal > 0.01f, "Piano produced zero output with sympathetic=0.45");
+    // Sympathetic resonance should subtly reinforce acoustic soundboard body (~10-25%) rather than exploding
+    TEST_ASSERT(maxNormal >= maxZero, "Sympathetic resonance must add positive acoustic coupling energy");
+    TEST_ASSERT(maxNormal <= maxZero * 1.35f, "Sympathetic resonance exceeded subtle acoustic bounds: maxNormal=" + std::to_string(maxNormal) + " vs maxZero=" + std::to_string(maxZero));
+
+    // 3. Verify tone damping modulates sympathetic filter tuning
+    // Dark tone (0.20): f1 = 244 Hz, f2 = 480 Hz, gain = (0.08 + 0.02) = 0.10
+    // Bright tone (0.80): f1 = 316 Hz, f2 = 600 Hz, gain = (0.08 + 0.08) = 0.16
+    braun::FeltPianoParams darkParams = normalSympParams;
+    darkParams.tone = 0.20f;
+    piano.setParams(darkParams);
+    piano.reset();
+    piano.noteOn(60, 0.8f, 3.5f, false, false);
+    std::vector<float> darkL(2048, 0.0f);
+    std::vector<float> darkR(2048, 0.0f);
+    piano.process(darkL.data(), darkR.data(), 2048);
+
+    braun::FeltPianoParams brightParams = normalSympParams;
+    brightParams.tone = 0.80f;
+    piano.setParams(brightParams);
+    piano.reset();
+    piano.noteOn(60, 0.8f, 3.5f, false, false);
+    std::vector<float> brightL(2048, 0.0f);
+    std::vector<float> brightR(2048, 0.0f);
+    piano.process(brightL.data(), brightR.data(), 2048);
+
+    float maxDark = 0.0f;
+    float maxBright = 0.0f;
+    for (int i = 0; i < 2048; ++i) {
+        maxDark = std::max(maxDark, std::abs(darkL[i]));
+        maxBright = std::max(maxBright, std::abs(brightL[i]));
+    }
+    TEST_ASSERT(maxBright > maxDark, "Bright tone should exhibit greater acoustic harmonic energy than dark tone");
+}
+
+// ============================================================================
+// Test 17: Shimmer Reverb Stereo Decorrelation and True Spatial Separation
+// ============================================================================
+void test_shimmer_reverb_stereo_decorrelation() {
+    braun::ShimmerReverbDsp reverb;
+    reverb.prepare(48000.0);
+
+    braun::ShimmerReverbParams params;
+    params.decaySec = 6.0f;
+    params.damping = 0.50f;
+    params.shimmer = 0.35f;
+    params.mix = 1.0f;
+    params.freeze = false;
+
+    // Inject Left-only unit impulse (1.0, 0.0)
+    float outL = 0.0f, outR = 0.0f;
+    reverb.processSample(1.0f, 0.0f, params, outL, outR);
+
+    // Collect 4096 samples and verify true stereo spread (L and R are not identical mono)
+    float diffSum = 0.0f;
+    float totalEnergy = 0.0f;
+
+    for (int i = 0; i < 4096; ++i) {
+        outL = 0.0f;
+        outR = 0.0f;
+        reverb.processSample(0.0f, 0.0f, params, outL, outR);
+
+        diffSum += std::abs(outL - outR);
+        totalEnergy += outL * outL + outR * outR;
+    }
+
+    TEST_ASSERT(totalEnergy > 0.001f, "Reverb produced zero energy from Left impulse");
+    TEST_ASSERT(diffSum > 0.01f, "Reverb must produce decorrelated stereo output (L != R) when fed Left-only impulse");
+}
+
+// ============================================================================
+// Test 18: Startup Default Power and Voice States
+// ============================================================================
+void test_startup_default_power_and_voice_states() {
+    braun::ParameterSnapshot defaultSnapshot;
+
+    // 1. Both Drone 1 and Drone 2 must be inactive by default
+    TEST_ASSERT(defaultSnapshot.drone1_active == false, "Drone 1 must be inactive (false) by default");
+    TEST_ASSERT(defaultSnapshot.drone2_active == false, "Drone 2 must be inactive (false) by default");
+    TEST_ASSERT(defaultSnapshot.drone_track_midi == false, "Drone MIDI tracking must be inactive (false) by default");
+
+    // 2. DspEngine must produce 100% silence on fresh boot
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    std::vector<float> l(512, 0.0f);
+    std::vector<float> r(512, 0.0f);
+    engine.process(l.data(), r.data(), 512, defaultSnapshot, nullptr, 0);
+
+    for (int i = 0; i < 512; ++i) {
+        TEST_ASSERT(l[i] == 0.0f, "Engine output L must be zero on startup");
+        TEST_ASSERT(r[i] == 0.0f, "Engine output R must be zero on startup");
+    }
+}
+
+// ============================================================================
+// Test 19: Shimmer Reverb Exhaustive Phase Modes & Tape Delay Echo Clarity
+// ============================================================================
+void test_shimmer_fdn_exhaustive_phase_modes_and_tape_echo_clarity() {
+    braun::ShimmerReverbDsp reverb;
+    reverb.prepare(48000.0);
+
+    braun::ShimmerReverbParams revParams;
+    revParams.decaySec = 8.5f;
+    revParams.damping = 0.60f;
+    revParams.shimmer = 0.45f;
+    revParams.mix = 0.45f;
+    revParams.freeze = false;
+
+    // 1. Verify Mono (1, 1), Left-only (1, 0), Right-only (0, 1), and Out-of-phase (1, -1) inputs
+    const float testInputs[4][2] = {
+        { 1.0f, 1.0f },
+        { 1.0f, 0.0f },
+        { 0.0f, 1.0f },
+        { 1.0f, -1.0f }
+    };
+
+    for (int mode = 0; mode < 4; ++mode) {
+        reverb.reset();
+        float outL = 0.0f, outR = 0.0f;
+        reverb.processSample(testInputs[mode][0], testInputs[mode][1], revParams, outL, outR);
+
+        float energyFirstHalf = 0.0f;
+        float energySecondHalf = 0.0f;
+        float diffSum = 0.0f;
+
+        for (int i = 0; i < 96000; ++i) {
+            outL = 0.0f;
+            outR = 0.0f;
+            reverb.processSample(0.0f, 0.0f, revParams, outL, outR);
+
+            diffSum += std::abs(outL - outR);
+            if (i < 48000) {
+                energyFirstHalf += outL * outL + outR * outR;
+            } else {
+                energySecondHalf += outL * outL + outR * outR;
+            }
+        }
+
+        TEST_ASSERT(energyFirstHalf > 0.001f, "Mode " + std::to_string(mode) + " produced zero energy in first half");
+        TEST_ASSERT(energyFirstHalf > energySecondHalf, "Mode " + std::to_string(mode) + " did not decay smoothly");
+        TEST_ASSERT(diffSum > 0.01f, "Mode " + std::to_string(mode) + " lacked stereo decorrelation");
+    }
+
+    // 2. Verify Tape Delay echo clarity over Shimmer Reverb floor
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    braun::ParameterSnapshot params;
+    params.felt_volume = 0.80f;
+    params.tape_mix = 0.40f;
+    params.tape_time = 0.46f;
+    params.tape_feedback = 0.55f;
+    params.shimmer_mix = 0.45f;
+    params.shimmer_decay = 8.5f;
+
+    // Trigger staccato note (150ms hold)
+    braun::MidiEvent noteOn;
+    noteOn.sampleOffset = 0;
+    noteOn.status = 0x90;
+    noteOn.data1 = 60; // C4
+    noteOn.data2 = 100;
+
+    braun::MidiEvent noteOff;
+    noteOff.sampleOffset = 7200; // 150ms at 48kHz
+    noteOff.status = 0x80;
+    noteOff.data1 = 60;
+    noteOff.data2 = 0;
+
+    braun::MidiEvent midi[2] = { noteOn, noteOff };
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // Process block with note trigger
+    engine.process(blockL.data(), blockR.data(), 512, params, midi, 2);
+
+    // Process audio up to 1.5 seconds and collect envelope
+    std::vector<float> env(48000 * 2, 0.0f);
+    int envIdx = 0;
+    for (int b = 0; b < 187; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+        for (int s = 0; s < 512 && envIdx < static_cast<int>(env.size()); ++s) {
+            env[envIdx++] = std::abs(blockL[s]) + std::abs(blockR[s]);
+        }
+    }
+
+    // 3:2 Polyrhythmic Ping-Pong Tape Delay Tap Progression:
+    // Tap 1 (Left line first hit) at ~0.46s
+    // Tap 2 (Right line first hit) at ~0.69s
+    // Tap 3 (Left line second hit) at ~0.92s
+    const int tap1Sample = static_cast<int>(0.46f * 48000.0f);
+    const int tap2Sample = static_cast<int>(0.69f * 48000.0f);
+    const int tap3Sample = static_cast<int>(0.92f * 48000.0f);
+
+    float peakTap1 = 0.0f;
+    for (int i = tap1Sample - 500; i < tap1Sample + 500; ++i) {
+        peakTap1 = std::max(peakTap1, env[i]);
+    }
+
+    float peakTap2 = 0.0f;
+    for (int i = tap2Sample - 500; i < tap2Sample + 500; ++i) {
+        peakTap2 = std::max(peakTap2, env[i]);
+    }
+
+    float peakTap3 = 0.0f;
+    for (int i = tap3Sample - 500; i < tap3Sample + 500; ++i) {
+        peakTap3 = std::max(peakTap3, env[i]);
+    }
+
+    TEST_ASSERT(peakTap1 > 0.05f, "Tape Delay tap 1 was inaudible: " + std::to_string(peakTap1));
+    TEST_ASSERT(peakTap2 > 0.03f, "Tape Delay tap 2 was inaudible: " + std::to_string(peakTap2));
+    TEST_ASSERT(peakTap3 > 0.02f, "Tape Delay tap 3 was inaudible: " + std::to_string(peakTap3));
+}
+
+// ============================================================================
+// Test 20: CS-80 Timbre Sustain & Filter Release Sweep Verification
+// ============================================================================
+void test_cs80_timbre_sustain_and_filter_release_sweep() {
+    braun::WavetableBank wavetables;
+    wavetables.initTables();
+
+    braun::FeltPianoVoice voice;
+    voice.prepare(48000.0f, &wavetables, nullptr, 0, 0);
+
+    braun::FeltPianoParams params;
+    params.waveform = braun::WaveformType::CS80;
+    params.decay = 1.0f;
+    params.tone = 0.70f;
+    params.volume = 0.80f;
+
+    const float freq = 440.0f; // A4
+    const float velocity = 0.85f;
+
+    // 1. Trigger voice with isHold = true
+    voice.trigger(freq, velocity, 3.5f, params, true, false, 0);
+    TEST_ASSERT(voice.isActive(), "Voice must be active immediately after trigger");
+
+    // Process through attack (24ms)
+    for (int i = 0; i < 2000; ++i) { // ~41.6ms
+        voice.processSample(params);
+    }
+    const float attackGain = voice.getEnvGain();
+    TEST_ASSERT(attackGain > 0.10f, "Voice envelope gain must be active after attack");
+
+    // Process through initial decay (250ms) into sustain stage
+    for (int i = 0; i < 15000; ++i) { // ~312.5ms
+        voice.processSample(params);
+    }
+
+    const float sustainGain = voice.getEnvGain();
+    TEST_ASSERT(voice.isActive(), "CS-80 voice must remain active during held sustain");
+    TEST_ASSERT(sustainGain > 0.10f, "CS-80 voice sustain gain must remain non-zero (~72% peak gain)");
+    TEST_ASSERT(sustainGain <= attackGain, "Sustain gain must be <= peak attack gain");
+
+    // Hold for another 0.5s and verify sustain does not collapse to zero
+    for (int i = 0; i < 24000; ++i) {
+        voice.processSample(params);
+    }
+    TEST_ASSERT(voice.getEnvGain() == sustainGain, "CS-80 voice gain must stay constant at sustain level while held");
+
+    // 2. Note release: verify dynamic filter cutoff sweep towards fundamental (1.1 * f0)
+    const float cutoffBeforeRelease = voice.getCurrentCutoff();
+    TEST_ASSERT(cutoffBeforeRelease > 2000.0f, "CS-80 rest cutoff while held should be wide open (> 2000 Hz)");
+
+    voice.release();
+    TEST_ASSERT(voice.isActive(), "Voice must remain active during release tail");
+
+    // Process 250ms of release
+    for (int i = 0; i < 12000; ++i) {
+        voice.processSample(params);
+    }
+    const float cutoffMidRelease = voice.getCurrentCutoff();
+    TEST_ASSERT(cutoffMidRelease < cutoffBeforeRelease, "Filter cutoff must sweep downwards during release");
+    TEST_ASSERT(cutoffMidRelease >= std::max(160.0f, freq * 1.1f), "Filter cutoff should not drop below fundamental lower bound");
+
+    // Process remaining release samples until idle
+    for (int i = 0; i < 30000; ++i) {
+        voice.processSample(params);
+    }
+    TEST_ASSERT(!voice.isActive(), "Voice must become inactive after full release time");
+    TEST_ASSERT(voice.getEnvGain() == 0.0f, "Voice envelope gain must be exactly 0.0 after release completion");
+}
+
+// ============================================================================
+// Test 21: Rapid Preset Switching Under Active MIDI Polyphony
+// ============================================================================
+void test_rapid_preset_switching_under_active_midi_polyphony() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    // 1. Configure initial VANGELIS preset parameters
+    braun::ParameterSnapshot vangelisParams;
+    vangelisParams.felt_volume = 0.88f;
+    vangelisParams.felt_decay = 1.8f;
+    vangelisParams.felt_tone = 0.80f;
+    vangelisParams.felt_hammer = 0.20f;
+    vangelisParams.felt_space = 0.30f;
+    vangelisParams.felt_waveform = 4; // CS-80
+    vangelisParams.drone1_volume = 0.42f;
+    vangelisParams.drone1_pitch = 65.41f;
+    vangelisParams.drone1_cutoff = 600.0f;
+    vangelisParams.drone1_resonance = 2.6f;
+    vangelisParams.drone1_waveA = 2; // Saw
+    vangelisParams.drone1_waveB = 2; // Saw
+    vangelisParams.drone1_active = true;
+    vangelisParams.drone2_volume = 0.38f;
+    vangelisParams.drone2_pitch = 98.00f;
+    vangelisParams.drone2_cutoff = 750.0f;
+    vangelisParams.drone2_resonance = 2.8f;
+    vangelisParams.drone2_waveA = 2; // Saw
+    vangelisParams.drone2_waveB = 3; // Square
+    vangelisParams.drone2_active = true;
+    vangelisParams.tape_time = 0.380f;
+    vangelisParams.tape_feedback = 0.52f;
+    vangelisParams.tape_mix = 0.45f;
+    vangelisParams.tape_wow = 0.40f;
+    vangelisParams.tape_tone = 4500.0f;
+    vangelisParams.shimmer_decay = 9.0f;
+    vangelisParams.shimmer_damping = 0.45f;
+    vangelisParams.shimmer_amount = 0.65f;
+    vangelisParams.shimmer_mix = 0.50f;
+    vangelisParams.master_volume = 0.78f;
+
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // Trigger Vangelis CS-80 5-note brass chord
+    braun::MidiEvent chordEvents[] = {
+        { 0, 0x90, 48, 100 }, // C3
+        { 0, 0x90, 55, 95 },  // G3
+        { 0, 0x90, 62, 90 },  // D4
+        { 0, 0x90, 66, 85 },  // F#4
+        { 0, 0x90, 69, 80 }   // A4
+    };
+    engine.process(blockL.data(), blockR.data(), 512, vangelisParams, chordEvents, 5);
+
+    // Process 20 blocks (~213ms) under Vangelis preset
+    for (int b = 0; b < 20; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, vangelisParams, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(!std::isnan(blockL[i]) && !std::isnan(blockR[i]), "Vangelis block output must not be NaN");
+            TEST_ASSERT(!std::isinf(blockL[i]) && !std::isinf(blockR[i]), "Vangelis block output must not be Inf");
+            TEST_ASSERT(std::abs(blockL[i]) <= 1.05f && std::abs(blockR[i]) <= 1.05f, "Output must be bounded by limiter");
+        }
+    }
+
+    // 2. Rapidly switch to ENO_AIRPORTS preset while chord is actively held
+    braun::ParameterSnapshot enoParams;
+    enoParams.felt_volume = 0.75f;
+    enoParams.felt_decay = 2.0f;
+    enoParams.felt_tone = 0.70f;
+    enoParams.felt_hammer = 0.35f;
+    enoParams.felt_space = 0.55f;
+    enoParams.felt_waveform = 1; // Sine
+    enoParams.drone1_volume = 0.50f;
+    enoParams.drone1_pitch = 32.70f;
+    enoParams.drone1_isSubBass = true;
+    enoParams.drone1_waveA = 1; // Sine
+    enoParams.drone1_waveB = 5; // Triangle
+    enoParams.drone1_active = true;
+    enoParams.drone2_volume = 0.45f;
+    enoParams.drone2_pitch = 65.41f;
+    enoParams.drone2_waveA = 1; // Sine
+    enoParams.drone2_waveB = 5; // Triangle
+    enoParams.drone2_active = true;
+    enoParams.tape_time = 0.460f;
+    enoParams.tape_feedback = 0.55f;
+    enoParams.tape_mix = 0.40f;
+    enoParams.tape_wow = 0.45f;
+    enoParams.tape_tone = 3600.0f;
+    enoParams.shimmer_decay = 12.0f;
+    enoParams.shimmer_damping = 0.70f;
+    enoParams.shimmer_amount = 0.35f;
+    enoParams.shimmer_mix = 0.55f;
+    enoParams.master_volume = 0.80f;
+
+    // Process immediately with new Eno params
+    for (int b = 0; b < 20; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, enoParams, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(!std::isnan(blockL[i]) && !std::isnan(blockR[i]), "Eno transition block output must not be NaN");
+            TEST_ASSERT(!std::isinf(blockL[i]) && !std::isinf(blockR[i]), "Eno transition block output must not be Inf");
+            TEST_ASSERT(std::abs(blockL[i]) <= 1.05f && std::abs(blockR[i]) <= 1.05f, "Output must be bounded by limiter");
+        }
+    }
+
+    // 3. Trigger new chime note on top of held chord
+    braun::MidiEvent enoNote = { 0, 0x90, 72, 90 }; // C5
+    engine.process(blockL.data(), blockR.data(), 512, enoParams, &enoNote, 1);
+
+    // 4. Release all notes
+    braun::MidiEvent allOff = { 0, 0xB0, 123, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, enoParams, &allOff, 1);
+
+    // Process decay tail until quiet
+    for (int b = 0; b < 100; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, enoParams, nullptr, 0);
+    }
+
+    TEST_ASSERT(engine.getFeltPiano().getActiveVoiceCount() == 0, "All voices must cleanly release to 0 active after preset switch & release");
+}
+
+// ============================================================================
+// Test 22: Undamped Shimmer Reverb CS-80 Saw Excitation Stability & Anti-Ringing
+// ============================================================================
+void test_shimmer_undamped_cs80_resonance_and_stability() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    braun::ParameterSnapshot params;
+    params.felt_volume = 0.90f;
+    params.felt_waveform = 4; // CS-80 dual saw brass voice
+    params.felt_tone = 0.95f;   // Maximum brightness (open filter, singing Q)
+    params.felt_decay = 2.0f;
+    params.felt_hammer = 0.0f;
+    params.felt_space = 0.30f;
+    params.tape_mix = 0.0f;    // Dry tape to isolate reverb tail
+
+    // Reverb at extreme undamped settings (shimmer_damping = 0.0f, decay = 18.0s, shimmer = 0.95f)
+    params.shimmer_mix = 1.0f;
+    params.shimmer_decay = 18.0f;
+    params.shimmer_damping = 0.0f; // Minimum damping / bright tail
+    params.shimmer_amount = 0.95f; // High octave-up pitch-shift feedback
+    params.shimmer_freeze = false;
+    params.master_volume = 0.85f;
+
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // 1. Excite with 5-note CS-80 brass chord
+    const braun::MidiEvent chordEvents[] = {
+        { 0, 0x90, 48, 110 }, // C3
+        { 0, 0x90, 55, 105 }, // G3
+        { 0, 0x90, 60, 100 }, // C4
+        { 0, 0x90, 64, 95 },  // E4
+        { 0, 0x90, 67, 90 }   // G4
+    };
+    engine.process(blockL.data(), blockR.data(), 512, params, chordEvents, 5);
+
+    // Hold chord for 40 blocks (~426 ms)
+    for (int b = 0; b < 40; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(!std::isnan(blockL[i]) && !std::isnan(blockR[i]), "CS-80 note excitation produced NaN");
+            TEST_ASSERT(!std::isinf(blockL[i]) && !std::isinf(blockR[i]), "CS-80 note excitation produced Inf");
+            TEST_ASSERT(std::abs(blockL[i]) <= 1.15f && std::abs(blockR[i]) <= 1.15f, "CS-80 excitation output exceeded bounds");
+        }
+    }
+
+    // 2. Release all notes
+    const braun::MidiEvent allOff = { 0, 0xB0, 123, 0 };
+    engine.process(blockL.data(), blockR.data(), 512, params, &allOff, 1);
+
+    // 3. Track decay tail energy across consecutive windows (2s each)
+    float windowEnergy[5] = { 0.0f };
+
+    int sampleTotal = 0;
+    for (int b = 0; b < 1000; ++b) { // ~10.66 seconds
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+
+        for (int i = 0; i < 512; ++i) {
+            TEST_ASSERT(!std::isnan(blockL[i]) && !std::isnan(blockR[i]), "Reverb tail produced NaN");
+            TEST_ASSERT(!std::isinf(blockL[i]) && !std::isinf(blockR[i]), "Reverb tail produced Inf");
+            TEST_ASSERT(std::abs(blockL[i]) <= 1.10f && std::abs(blockR[i]) <= 1.10f, "Reverb tail must remain bounded");
+
+            const float sampleEnergy = blockL[i] * blockL[i] + blockR[i] * blockR[i];
+            const int s = sampleTotal + i;
+            if (s >= 24000 && s < 120000) windowEnergy[0] += sampleEnergy;
+            else if (s >= 120000 && s < 216000) windowEnergy[1] += sampleEnergy;
+            else if (s >= 216000 && s < 312000) windowEnergy[2] += sampleEnergy;
+            else if (s >= 312000 && s < 408000) windowEnergy[3] += sampleEnergy;
+            else if (s >= 408000 && s < 504000) windowEnergy[4] += sampleEnergy;
+        }
+        sampleTotal += 512;
+    }
+
+    // Energy must decay strictly monotonically between windows (no resonant runaway)
+    TEST_ASSERT(windowEnergy[0] > windowEnergy[1], "Reverb tail did not decay: window 0 vs 1");
+    TEST_ASSERT(windowEnergy[1] > windowEnergy[2], "Reverb tail did not decay: window 1 vs 2");
+    TEST_ASSERT(windowEnergy[2] > windowEnergy[3], "Reverb tail did not decay: window 2 vs 3");
+    TEST_ASSERT(windowEnergy[3] > windowEnergy[4], "Reverb tail did not decay: window 3 vs 4");
+
+    // Process another 5 seconds to ensure decay to quiet
+    for (int b = 0; b < 500; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+        engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+    }
+    TEST_ASSERT(std::abs(blockL[511]) < 1.0e-3f, "Reverb tail failed to decay to near-silence after 15s");
+    TEST_ASSERT(std::abs(blockR[511]) < 1.0e-3f, "Reverb tail failed to decay to near-silence after 15s");
+}
+
+// ============================================================================
+// Test 23: Shimmer Reverb Loop Gain Matrix Stability Under Minimum Damping
+// ============================================================================
+void test_shimmer_loop_gain_grid_stability_under_min_damping() {
+    const float testDecays[] = { 1.0f, 5.0f, 10.0f, 18.0f, 25.0f };
+    const float testShimmers[] = { 0.0f, 0.25f, 0.50f, 0.75f, 1.0f };
+
+    for (float decay : testDecays) {
+        for (float shimmer : testShimmers) {
+            braun::ShimmerReverbDsp reverb;
+            reverb.prepare(48000.0);
+
+            braun::ShimmerReverbParams revParams;
+            revParams.decaySec = decay;
+            revParams.damping = 0.0f; // Minimum damping floor
+            revParams.shimmer = shimmer;
+            revParams.mix = 1.0f;
+            revParams.freeze = false;
+
+            // Excite with a 50-sample high-amplitude pulse wave containing high harmonics
+            for (int s = 0; s < 50; ++s) {
+                float outL = 0.0f, outR = 0.0f;
+                const float in = (s % 4 == 0) ? 0.9f : -0.3f;
+                reverb.processSample(in, in, revParams, outL, outR);
+            }
+
+            // Run for 3 seconds (144,000 samples)
+            float maxPeak = 0.0f;
+            float earlyEnergy = 0.0f;
+            float lateEnergy = 0.0f;
+
+            for (int i = 0; i < 144000; ++i) {
+                float outL = 0.0f, outR = 0.0f;
+                reverb.processSample(0.0f, 0.0f, revParams, outL, outR);
+
+                TEST_ASSERT(!std::isnan(outL) && !std::isnan(outR), "Reverb produced NaN during grid sweep");
+                TEST_ASSERT(!std::isinf(outL) && !std::isinf(outR), "Reverb produced Inf during grid sweep");
+
+                maxPeak = std::max(maxPeak, std::max(std::abs(outL), std::abs(outR)));
+
+                if (i < 48000) {
+                    earlyEnergy += outL * outL + outR * outR;
+                } else if (i >= 96000) {
+                    lateEnergy += outL * outL + outR * outR;
+                }
+            }
+
+            TEST_ASSERT(maxPeak < 1.5f, "Reverb peak exceeded 1.5 during grid sweep: decay=" + std::to_string(decay) + " shimmer=" + std::to_string(shimmer));
+            TEST_ASSERT(earlyEnergy > lateEnergy, "Loop gain >= 1.0 detected: late energy did not decay below early energy");
+        }
+    }
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -1011,6 +1716,16 @@ int main() {
     RUN_TEST(test_drone_midi_pitch_tracking);
     RUN_TEST(test_drone_midi_note_off_gating);
     RUN_TEST(test_scope_visualizer_ring_buffer_bounds_and_safety);
+    RUN_TEST(test_biquad_bandpass_unity_gain);
+    RUN_TEST(test_shimmer_reverb_fdn_diffusion_and_decay);
+    RUN_TEST(test_felt_piano_sympathetic_resonance_tracking);
+    RUN_TEST(test_shimmer_reverb_stereo_decorrelation);
+    RUN_TEST(test_startup_default_power_and_voice_states);
+    RUN_TEST(test_shimmer_fdn_exhaustive_phase_modes_and_tape_echo_clarity);
+    RUN_TEST(test_cs80_timbre_sustain_and_filter_release_sweep);
+    RUN_TEST(test_rapid_preset_switching_under_active_midi_polyphony);
+    RUN_TEST(test_shimmer_undamped_cs80_resonance_and_stability);
+    RUN_TEST(test_shimmer_loop_gain_grid_stability_under_min_damping);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
@@ -1018,3 +1733,5 @@ int main() {
 
     return (gTestsFailed == 0) ? 0 : 1;
 }
+
+

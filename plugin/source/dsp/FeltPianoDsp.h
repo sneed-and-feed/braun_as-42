@@ -61,6 +61,7 @@ public:
         mEnvStage = EnvStage::Idle;
         mEnvGain = 0.0f;
         mStealGain = 0.0f;
+        mNoteSampleCount = 0;
         mCurrentFreq = 220.0f;
         mCurrentMidi = 57;
 
@@ -73,6 +74,8 @@ public:
         mHammerPlaying = false;
         mHammerGain = 0.0f;
         mHammerTargetGain = 0.0f;
+        mCurrentCutoff = 500.0f;
+        mReleaseStartCutoff = 500.0f;
     }
 
     bool isActive() const noexcept { return mIsActive; }
@@ -81,6 +84,7 @@ public:
     float getCurrentFreq() const noexcept { return mCurrentFreq; }
     int getCurrentMidi() const noexcept { return mCurrentMidi; }
     float getEnvGain() const noexcept { return mEnvGain; }
+    float getCurrentCutoff() const noexcept { return mCurrentCutoff; }
     uint64_t getStartSample() const noexcept { return mStartSample; }
 
     void setPitchBend(float cents) noexcept {
@@ -193,7 +197,7 @@ public:
 
         const float baseDecay = std::clamp(7.5f * std::pow(220.0f / std::max(60.0f, freq), 0.45f), 1.2f, 10.0f)
                                 * params.decay * registerDecayMult;
-        const float decayDuration = isCS80 ? (std::max(durationSec, 3.5f) * params.decay)
+        const float decayDuration = isCS80 ? (0.25f * params.decay)
                                            : std::max(baseDecay, durationSec * params.decay);
         mDecaySamples = std::max(1u, static_cast<uint32_t>(decayDuration * mSampleRate));
         mReleaseSamples = std::max(1u, static_cast<uint32_t>((isCS80 ? 0.65f : 0.40f) * mSampleRate));
@@ -226,6 +230,7 @@ public:
 
         mEnvStage = EnvStage::Attack;
         mEnvSampleCount = 0;
+        mNoteSampleCount = 0;
         mIsActive = true;
     }
 
@@ -242,6 +247,7 @@ public:
         }
         mEnvStage = EnvStage::Release;
         mReleaseStartGain = std::max(0.0001f, mEnvGain);
+        mReleaseStartCutoff = mCurrentCutoff;
         mEnvSampleCount = 0;
     }
 
@@ -284,11 +290,20 @@ public:
                     // Exponential decay from mPeakGain down to mSustainLevel (or 0.0001 if not held)
                     const float target = mIsHold ? mSustainLevel : 0.0001f;
                     mEnvGain = mPeakGain * std::pow(std::max(0.0001f, target) / mPeakGain, frac);
-                    if (mEnvSampleCount >= mDecaySamples && !mIsHold) {
-                        mIsActive = false;
-                        mEnvStage = EnvStage::Idle;
-                        mEnvGain = 0.0f;
+                    if (mEnvSampleCount >= mDecaySamples) {
+                        if (mIsHold) {
+                            mEnvStage = EnvStage::Sustain;
+                            mEnvGain = mSustainLevel;
+                        } else {
+                            mIsActive = false;
+                            mEnvStage = EnvStage::Idle;
+                            mEnvGain = 0.0f;
+                        }
                     }
+                    break;
+                }
+                case EnvStage::Sustain: {
+                    mEnvGain = mSustainLevel;
                     break;
                 }
                 case EnvStage::Release: {
@@ -315,29 +330,35 @@ public:
         const bool isCS80 = (mCurrentWaveform == WaveformType::CS80);
         float currentCutoff = mRestFilterCutoff;
 
-        if (isCS80) {
-            const float attackSec = mFilterAttackSec;
-            const float decaySec = mFilterDecaySec;
-            const float t = static_cast<float>(mEnvSampleCount) / mSampleRate;
-            if (t <= attackSec) {
-                const float frac = t / std::max(0.001f, attackSec);
-                currentCutoff = mStartFilterCutoff + frac * (mMaxFilterCutoff - mStartFilterCutoff);
-            } else {
-                const float frac = std::min(1.0f, (t - attackSec) / std::max(0.001f, decaySec));
-                currentCutoff = mMaxFilterCutoff * std::pow(mRestFilterCutoff / mMaxFilterCutoff, frac);
-            }
+        if (mEnvStage == EnvStage::Release) {
+            const float frac = std::min(1.0f, static_cast<float>(mEnvSampleCount) / static_cast<float>(mReleaseSamples));
+            const float releaseTargetCutoff = std::max(160.0f, mCurrentFreq * 1.1f);
+            currentCutoff = mReleaseStartCutoff * std::pow(releaseTargetCutoff / std::max(releaseTargetCutoff, mReleaseStartCutoff), frac);
         } else {
+            ++mNoteSampleCount;
             const float attackSec = mFilterAttackSec;
             const float decaySec = mFilterDecaySec;
-            const float t = static_cast<float>(mEnvSampleCount) / mSampleRate;
-            if (t <= attackSec) {
-                const float frac = t / std::max(0.001f, attackSec);
-                currentCutoff = mRestFilterCutoff + frac * (mMaxFilterCutoff - mRestFilterCutoff);
+            const float t = static_cast<float>(mNoteSampleCount) / mSampleRate;
+
+            if (isCS80) {
+                if (t <= attackSec) {
+                    const float frac = t / std::max(0.001f, attackSec);
+                    currentCutoff = mStartFilterCutoff + frac * (mMaxFilterCutoff - mStartFilterCutoff);
+                } else {
+                    const float frac = std::min(1.0f, (t - attackSec) / std::max(0.001f, decaySec));
+                    currentCutoff = mMaxFilterCutoff * std::pow(mRestFilterCutoff / mMaxFilterCutoff, frac);
+                }
             } else {
-                const float frac = std::min(1.0f, (t - attackSec) / std::max(0.001f, decaySec));
-                currentCutoff = mMaxFilterCutoff * std::pow(mRestFilterCutoff / mMaxFilterCutoff, frac);
+                if (t <= attackSec) {
+                    const float frac = t / std::max(0.001f, attackSec);
+                    currentCutoff = mRestFilterCutoff + frac * (mMaxFilterCutoff - mRestFilterCutoff);
+                } else {
+                    const float frac = std::min(1.0f, (t - attackSec) / std::max(0.001f, decaySec));
+                    currentCutoff = mMaxFilterCutoff * std::pow(mRestFilterCutoff / mMaxFilterCutoff, frac);
+                }
             }
         }
+        mCurrentCutoff = currentCutoff;
 
         const float filterQ1 = isCS80 ? 1.85f : 0.7071f;
         const float filterQ2 = isCS80 ? 1.45f : 0.7071f;
@@ -367,9 +388,41 @@ public:
         mPhase2 += freq2 / mSampleRate;
         if (mPhase2 >= 1.0f) mPhase2 -= 1.0f;
 
+        // Waveform mapping matching Web Audio felt-piano.js:
+        // - Felt: Osc 1 = Sine, Osc 2 = Triangle
+        // - Sine: Osc 1 = Sine, Osc 2 = Sine
+        // - Saw: Osc 1 = Saw, Osc 2 = Warm
+        // - Square: Osc 1 = Square, Osc 2 = Square
+        // - CS80: Osc 1 = Saw, Osc 2 = Warm
+        WaveformType wave1 = WaveformType::Sine;
+        WaveformType wave2 = WaveformType::Triangle;
+        switch (mCurrentWaveform) {
+            case WaveformType::Sine:
+                wave1 = WaveformType::Sine;
+                wave2 = WaveformType::Sine;
+                break;
+            case WaveformType::Saw:
+                wave1 = WaveformType::Saw;
+                wave2 = WaveformType::Warm;
+                break;
+            case WaveformType::Square:
+                wave1 = WaveformType::Square;
+                wave2 = WaveformType::Square;
+                break;
+            case WaveformType::CS80:
+                wave1 = WaveformType::Saw;
+                wave2 = WaveformType::Warm;
+                break;
+            case WaveformType::Felt:
+            default:
+                wave1 = WaveformType::Sine;
+                wave2 = WaveformType::Triangle;
+                break;
+        }
+
         // Generate oscillator outputs
-        const float osc1 = mWavetables->readSample(mCurrentWaveform, mPhase1) * mOsc1Gain;
-        const float osc2 = mWavetables->readSample(mCurrentWaveform, mPhase2) * mOsc2Gain;
+        const float osc1 = mWavetables->readSample(wave1, mPhase1) * mOsc1Gain;
+        const float osc2 = mWavetables->readSample(wave2, mPhase2) * mOsc2Gain;
         const float oscMix = osc1 + osc2;
 
         // 5. Internal saturation shaper
@@ -409,6 +462,7 @@ private:
         Idle,
         Attack,
         Decay,
+        Sustain,
         Release
     };
 
@@ -450,11 +504,14 @@ private:
     float mStartFilterCutoff { 280.0f };
     float mMaxFilterCutoff { 2000.0f };
     float mRestFilterCutoff { 500.0f };
+    float mCurrentCutoff { 500.0f };
+    float mReleaseStartCutoff { 500.0f };
     float mFilterAttackSec { 0.009f };
     float mFilterDecaySec { 0.18f };
 
     EnvStage mEnvStage { EnvStage::Idle };
     uint32_t mEnvSampleCount { 0 };
+    uint32_t mNoteSampleCount { 0 };
     uint32_t mAttackSamples { 400 };
     uint32_t mDecaySamples { 100000 };
     uint32_t mReleaseSamples { 19200 };
@@ -493,8 +550,7 @@ public:
             mVoices[i].prepare(mSampleRate, mWavetables, mHammerBuffer.data(), mHammerBuffer.size(), static_cast<int>(i));
         }
 
-        mSympatheticFilter1.configure(Biquad::Type::Bandpass, mSampleRate, 290.0f, 3.2f);
-        mSympatheticFilter2.configure(Biquad::Type::Bandpass, mSampleRate, 560.0f, 3.5f);
+        updateSympatheticFilters();
 
         mHeadroomSmoother.setSampleRate(mSampleRate);
         mHeadroomSmoother.setTimeConstant(0.075f);
@@ -626,10 +682,18 @@ public:
 
     void setParams(const FeltPianoParams& params) noexcept {
         mParams = params;
+        updateHeadroomTarget();
+        updateSympatheticFilters();
     }
 
     // Process a block of samples, summing into left and right
     void process(float* outL, float* outR, int numSamples) noexcept {
+        if (mParams.volume < 1.0e-5f) {
+            return;
+        }
+
+        const float symGain = (0.08f + mParams.tone * 0.10f) * (mParams.sympathetic / 0.45f);
+
         for (int s = 0; s < numSamples; ++s) {
             ++mCurrentSampleCount;
             float voiceSum = 0.0f;
@@ -650,10 +714,10 @@ public:
 
             const float headroom = mHeadroomSmoother.next();
 
-            // Sympathetic string resonance: dual bandpass filters in parallel
+            // Sympathetic string resonance: dual bandpass filters in parallel with tone and sympathetic tracking
             const float sym1 = mSympatheticFilter1.process(voiceSum);
             const float sym2 = mSympatheticFilter2.process(voiceSum);
-            const float symCoupling = (sym1 + sym2) * (0.14f * (mParams.sympathetic / 0.45f));
+            const float symCoupling = (sym1 + sym2) * symGain;
 
             const float finalSample = (voiceSum + symCoupling) * headroom;
             outL[s] += finalSample;
@@ -674,6 +738,13 @@ private:
         const float polyHeadroom = 1.0f / std::sqrt(std::max(1.0f, static_cast<float>(mLastActiveCount)));
         const float targetGain = 0.38f * polyHeadroom * mParams.volume;
         mHeadroomSmoother.setTarget(targetGain);
+    }
+
+    void updateSympatheticFilters() noexcept {
+        const float f1 = 220.0f + mParams.tone * 120.0f;
+        const float f2 = 440.0f + mParams.tone * 200.0f;
+        mSympatheticFilter1.configure(Biquad::Type::Bandpass, mSampleRate, f1, 3.2f);
+        mSympatheticFilter2.configure(Biquad::Type::Bandpass, mSampleRate, f2, 3.5f);
     }
 
     void generateHammerBuffer() {

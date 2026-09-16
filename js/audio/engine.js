@@ -836,7 +836,7 @@ export class AudioEngine {
     this._updateDroneGating();
   }
 
-  noteOn(note) {
+  noteOn(note, velocity = 0.65, duration = 3.5, isHold = false) {
     if (typeof note === 'number') {
       if (!this._heldNotes) this._heldNotes = new Set();
       if (!this._latchedNotes) this._latchedNotes = new Set();
@@ -845,6 +845,11 @@ export class AudioEngine {
       this.trackDronePitch(note);
     }
     this._updateDroneGating();
+    if (this.feltPiano && typeof note === 'number') {
+      const freq = midiToFrequency(note, this.a4 || 440);
+      return this.feltPiano.playNote(freq, velocity, duration, isHold);
+    }
+    return null;
   }
 
   noteOff(note) {
@@ -855,6 +860,10 @@ export class AudioEngine {
       }
     }
     this._updateDroneGating();
+    if (this.feltPiano && typeof note === 'number') {
+      const freq = midiToFrequency(note, this.a4 || 440);
+      return this.feltPiano.release(freq);
+    }
   }
 
   setSustainPedal(isDown) {

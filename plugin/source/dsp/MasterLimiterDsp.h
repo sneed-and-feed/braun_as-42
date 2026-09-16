@@ -32,9 +32,6 @@ public:
         mVolumeSmoother.setTimeConstant(0.040f);
         mVolumeSmoother.reset(0.80f);
 
-        mOversamplerL.reset();
-        mOversamplerR.reset();
-
         reset();
     }
 
@@ -43,8 +40,6 @@ public:
         mCompressorR.reset();
         mDcBlockerL.reset();
         mDcBlockerR.reset();
-        mOversamplerL.reset();
-        mOversamplerR.reset();
     }
 
     inline void processSample(float inL, float inR, const MasterLimiterParams& params,
@@ -65,28 +60,15 @@ public:
         const float compL = mCompressorL.process(dcBlockedL);
         const float compR = mCompressorR.process(dcBlockedR);
 
-        // 4. Oversampled Tape Saturation (Warmth = 0.18) & Cubic Hermite Soft Limiter (k = 0.80)
-        float upL0 = 0.0f, upL1 = 0.0f;
-        float upR0 = 0.0f, upR1 = 0.0f;
-        mOversamplerL.upsample(compL, upL0, upL1);
-        mOversamplerR.upsample(compR, upR0, upR1);
+        // 4. Analog Tape Saturation (Warmth = 0.18) & Cubic Hermite Soft Limiter (k = 0.80)
+        const float satL = tapeSaturate(compL, params.tapeWarmth);
+        const float satR = tapeSaturate(compR, params.tapeWarmth);
 
-        const float warmth = params.tapeWarmth;
-        const float knee = params.limiterKnee;
+        const float limL = softLimit(satL, params.limiterKnee);
+        const float limR = softLimit(satR, params.limiterKnee);
 
-        // Tape saturation followed by soft limiting at oversampled rate
-        const float satL0 = softLimit(tapeSaturate(upL0, warmth), knee);
-        const float satL1 = softLimit(tapeSaturate(upL1, warmth), knee);
-        const float satR0 = softLimit(tapeSaturate(upR0, warmth), knee);
-        const float satR1 = softLimit(tapeSaturate(upR1, warmth), knee);
-
-        const float limL = mOversamplerL.downsample(satL0, satL1);
-        const float limR = mOversamplerR.downsample(satR0, satR1);
-
-        // 5. Final post-decimation C1 soft limiter / safety clamp:
-        // Enforces strictly <= 1.000000 FS ceiling, absorbing FIR decimation Gibbs ringing
-        outL = std::clamp(softLimit(limL, 0.95f), -1.0f, 1.0f);
-        outR = std::clamp(softLimit(limR, 0.95f), -1.0f, 1.0f);
+        outL = std::clamp(limL, -1.0f, 1.0f);
+        outR = std::clamp(limR, -1.0f, 1.0f);
     }
 
 private:
@@ -95,9 +77,6 @@ private:
     OnePoleSmoother mVolumeSmoother;
     SoftCompressor mCompressorL;
     SoftCompressor mCompressorR;
-
-    Oversampler2x mOversamplerL;
-    Oversampler2x mOversamplerR;
 
     Biquad mDcBlockerL;
     Biquad mDcBlockerR;

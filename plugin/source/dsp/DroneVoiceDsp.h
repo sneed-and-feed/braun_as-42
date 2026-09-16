@@ -20,7 +20,7 @@ struct DroneVoiceParams {
     float lfoDepth { 180.0f };      // LFO depth in Hz
     float volume { 0.55f };         // Output volume
     bool isSubBass { false };       // Sub-bass stabilization mode (Voice 1)
-    bool active { true };
+    bool active { false };
 };
 
 // ============================================================================
@@ -68,7 +68,6 @@ public:
         mFilter2.reset();
         mDeclickSamples = 0;
         mDeclickGain = 1.0f;
-        mOversampler.reset();
     }
 
     void triggerDeclick(float crossfadeTimeSec = 0.025f) noexcept {
@@ -121,28 +120,20 @@ public:
         const float shaperIn = shaperA + shaperB;
         const float directIn = directA + directB;
 
-        // 4. Wavefolder / Sub-bass shaper (with 2x oversampling)
+        // 4. Wavefolder / Sub-bass shaper (analytical C1 smooth curves)
         float foldedOut = 0.0f;
         if (!isSquareA || !isSquareB) {
-            float up0 = 0.0f, up1 = 0.0f;
-            mOversampler.upsample(shaperIn, up0, up1);
-
             const float drive = std::clamp(1.0f + params.foldPercent / 50.0f, 0.5f, 4.0f);
             const float fold = std::clamp(params.foldPercent / 100.0f, 0.0f, 1.0f);
 
-            float sat0 = 0.0f, sat1 = 0.0f;
             if (params.isSubBass) {
                 // Sub-bass mode: smooth tanh saturation replaces wavefolder
                 const float d = 1.25f + fold * 0.45f;
                 const float norm = std::tanh(d);
-                sat0 = applySmoothBoundaryKnee(std::tanh(d * up0) / norm, 0.70f);
-                sat1 = applySmoothBoundaryKnee(std::tanh(d * up1) / norm, 0.70f);
+                foldedOut = applySmoothBoundaryKnee(std::tanh(d * shaperIn) / (norm > 0.0001f ? norm : 1.0f), 0.70f);
             } else {
-                sat0 = wavefold(up0, drive, fold);
-                sat1 = wavefold(up1, drive, fold);
+                foldedOut = wavefold(shaperIn, drive, fold);
             }
-
-            foldedOut = mOversampler.downsample(sat0, sat1);
         }
 
         const float combinedFilterInput = foldedOut + directIn;
@@ -208,7 +199,6 @@ private:
 
     Biquad mFilter1;
     Biquad mFilter2;
-    Oversampler2x mOversampler;
 
     uint32_t mDeclickSamples { 0 };
     uint32_t mDeclickSamplesTotal { 1200 };

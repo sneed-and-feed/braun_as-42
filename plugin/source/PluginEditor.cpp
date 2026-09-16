@@ -13,31 +13,76 @@ struct ParamInfo {
 };
 
 static const ParamInfo kParamMap[] = {
+    // 1. Felt Piano (6)
     { "felt_volume",      "feltLevel",     0.01f },
     { "felt_decay",       "feltDecay",     1.0f  },
     { "felt_tone",        "feltTone",      0.01f },
     { "felt_hammer",      "feltHammer",    0.01f },
     { "felt_space",       "feltSymp",      0.01f },
+    { "felt_waveform",    "feltWaveform",  1.0f  },
+
+    // 2. Drone 1 (11)
     { "drone1_volume",    "drone1Vol",     0.01f },
     { "drone1_pitch",     "drone1Pitch",   1.0f  },
     { "drone1_fold",      "drone1Fold",    1.0f  },
     { "drone1_cutoff",    "drone1Cutoff",  1.0f  },
     { "drone1_resonance", "drone1Res",     1.0f  },
+    { "drone1_beat",      "drone1Beat",    1.0f  },
+    { "drone1_detune",    "drone1Detune",  1.0f  },
+    { "drone1_lfo",       "drone1Lfo",     1.0f  },
+    { "drone1_waveA",     "drone1WaveA",   1.0f  },
+    { "drone1_waveB",     "drone1WaveB",   1.0f  },
+    { "drone1_isSubBass", "drone1SubBass", 1.0f  },
+
+    // 3. Drone 2 (10)
     { "drone2_volume",    "drone2Vol",     0.01f },
     { "drone2_pitch",     "drone2Pitch",   1.0f  },
     { "drone2_fold",      "drone2Fold",    1.0f  },
     { "drone2_cutoff",    "drone2Cutoff",  1.0f  },
     { "drone2_resonance", "drone2Res",     1.0f  },
+    { "drone2_beat",      "drone2Beat",    1.0f  },
+    { "drone2_detune",    "drone2Detune",  1.0f  },
+    { "drone2_lfo",       "drone2Lfo",     1.0f  },
+    { "drone2_waveA",     "drone2WaveA",   1.0f  },
+    { "drone2_waveB",     "drone2WaveB",   1.0f  },
+
+    // 4. Tape Delay (5)
     { "tape_time",        "delayTime",     0.001f }, // 460ms -> 0.46s
     { "tape_feedback",    "delayFeedback", 0.01f },
     { "tape_mix",         "delayWet",      0.01f },
     { "tape_wow",         "delayWow",      0.01f },
+    { "tape_tone",        "delayTone",     1.0f  },
+
+    // 5. Shimmer Reverb (5)
     { "shimmer_mix",      "reverbWet",     0.01f },
     { "shimmer_decay",    "reverbDecay",   1.0f  },
+    { "shimmer_damping",  "reverbDamping", 0.01f },
+    { "shimmer_amount",   "reverbShimmer", 0.01f },
+    { "shimmer_freeze",   "reverbFreeze",  1.0f  },
+
+    // 6. Master Bus (1)
     { "master_volume",    "masterVol",     0.01f }
 };
 
-static_assert(std::size(kParamMap) == 22, "kParamMap size must match pendingParamValues array size");
+static_assert(std::size(kParamMap) == BRAUN_AS42AudioProcessorEditor::kNumTrackedParams,
+              "kParamMap size must match pendingParamValues array size");
+
+static int waveformFromString(const juce::var& v)
+{
+    if (v.isString())
+    {
+        const juce::String s = v.toString().trim().toLowerCase();
+        if (s == "felt") return 0;
+        if (s == "sine" || s == "sin") return 1;
+        if (s == "saw" || s == "sawtooth") return 2;
+        if (s == "square" || s == "sqr") return 3;
+        if (s == "cs80" || s == "cs-80" || s == "vangelis") return 4;
+        if (s == "triangle" || s == "tri") return 5;
+        if (s == "warm") return 6;
+        return s.getIntValue();
+    }
+    return static_cast<int>(v);
+}
 
 } // namespace
 
@@ -77,6 +122,18 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
         })
         .withEventListener("paramChange", [&editor](const juce::var& data) {
             editor.handleParamChangeFromWeb(data);
+        })
+        .withEventListener("noteOn", [&editor](const juce::var& data) {
+            editor.handleNoteOnFromWeb(data);
+        })
+        .withEventListener("noteOff", [&editor](const juce::var& data) {
+            editor.handleNoteOffFromWeb(data);
+        })
+        .withEventListener("allNotesOff", [&editor](const juce::var& data) {
+            editor.handleAllNotesOffFromWeb(data);
+        })
+        .withEventListener("pitchBend", [&editor](const juce::var& data) {
+            editor.handlePitchBendFromWeb(data);
         });
 
     return options;
@@ -345,6 +402,46 @@ void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
     }
 }
 
+void BRAUN_AS42AudioProcessorEditor::handleNoteOnFromWeb(const juce::var& data)
+{
+    if (!data.isObject())
+        return;
+    auto* obj = data.getDynamicObject();
+    if (obj == nullptr)
+        return;
+    const int note = static_cast<int>(obj->getProperty("note"));
+    const float velocity = obj->hasProperty("velocity") ? static_cast<float>(obj->getProperty("velocity")) : 0.65f;
+    processorRef.pushUINoteOn(note, velocity);
+}
+
+void BRAUN_AS42AudioProcessorEditor::handleNoteOffFromWeb(const juce::var& data)
+{
+    if (!data.isObject())
+        return;
+    auto* obj = data.getDynamicObject();
+    if (obj == nullptr)
+        return;
+    const int note = static_cast<int>(obj->getProperty("note"));
+    const float velocity = obj->hasProperty("velocity") ? static_cast<float>(obj->getProperty("velocity")) : 0.0f;
+    processorRef.pushUINoteOff(note, velocity);
+}
+
+void BRAUN_AS42AudioProcessorEditor::handleAllNotesOffFromWeb(const juce::var& /*data*/)
+{
+    processorRef.pushUIAllNotesOff();
+}
+
+void BRAUN_AS42AudioProcessorEditor::handlePitchBendFromWeb(const juce::var& data)
+{
+    if (!data.isObject())
+        return;
+    auto* obj = data.getDynamicObject();
+    if (obj == nullptr)
+        return;
+    const float cents = static_cast<float>(obj->getProperty("cents"));
+    processorRef.pushUIPitchBend(cents);
+}
+
 void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& data)
 {
     if (!data.isObject())
@@ -355,7 +452,8 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
         return;
 
     const juce::String incomingId = obj->getProperty("id").toString();
-    const float incomingVal = static_cast<float>(obj->getProperty("value"));
+    const juce::var rawVal = obj->getProperty("value");
+    const float incomingVal = rawVal.isString() ? static_cast<float>(rawVal.toString().getDoubleValue()) : static_cast<float>(rawVal);
 
     // Handle state sync request from WebView2
     if (incomingId.equalsIgnoreCase("requestSync") || incomingId.equalsIgnoreCase("requestState"))
@@ -386,6 +484,61 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
         return;
     }
 
+    // Check for waveform string / int parameters
+    if (incomingId.equalsIgnoreCase("felt_waveform") || incomingId.equalsIgnoreCase("feltWaveform") || incomingId.equalsIgnoreCase("pianoWave"))
+    {
+        const int waveIdx = waveformFromString(rawVal);
+        if (auto* param = processorRef.getAPVTS().getParameter("felt_waveform"))
+        {
+            param->setValueNotifyingHost(param->convertTo0to1(static_cast<float>(waveIdx)));
+        }
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("drone1_waveA") || incomingId.equalsIgnoreCase("drone1WaveA"))
+    {
+        const int waveIdx = waveformFromString(rawVal);
+        if (auto* param = processorRef.getAPVTS().getParameter("drone1_waveA"))
+        {
+            param->setValueNotifyingHost(param->convertTo0to1(static_cast<float>(waveIdx)));
+        }
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("drone1_waveB") || incomingId.equalsIgnoreCase("drone1WaveB"))
+    {
+        const int waveIdx = waveformFromString(rawVal);
+        if (auto* param = processorRef.getAPVTS().getParameter("drone1_waveB"))
+        {
+            param->setValueNotifyingHost(param->convertTo0to1(static_cast<float>(waveIdx)));
+        }
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("drone2_waveA") || incomingId.equalsIgnoreCase("drone2WaveA"))
+    {
+        const int waveIdx = waveformFromString(rawVal);
+        if (auto* param = processorRef.getAPVTS().getParameter("drone2_waveA"))
+        {
+            param->setValueNotifyingHost(param->convertTo0to1(static_cast<float>(waveIdx)));
+        }
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("drone2_waveB") || incomingId.equalsIgnoreCase("drone2WaveB"))
+    {
+        const int waveIdx = waveformFromString(rawVal);
+        if (auto* param = processorRef.getAPVTS().getParameter("drone2_waveB"))
+        {
+            param->setValueNotifyingHost(param->convertTo0to1(static_cast<float>(waveIdx)));
+        }
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("shimmer_freeze") || incomingId.equalsIgnoreCase("reverbFreeze") || incomingId.equalsIgnoreCase("freeze"))
+    {
+        if (auto* param = processorRef.getAPVTS().getParameter("shimmer_freeze"))
+        {
+            param->setValueNotifyingHost(incomingVal > 0.5f ? 1.0f : 0.0f);
+        }
+        return;
+    }
+
     juce::String targetApvtsId;
     float targetApvtsVal = incomingVal;
 
@@ -400,22 +553,93 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
         if (incomingId.equalsIgnoreCase(item.apvtsId))
         {
             targetApvtsId = item.apvtsId;
-            targetApvtsVal = incomingVal;
+            // If APVTS parameter is on 0..1 range and webScale is 0.01 (e.g. passed 0..100), auto-scale
+            if (item.webScale == 0.01f && incomingVal > 1.0f)
+                targetApvtsVal = incomingVal * 0.01f;
+            else if (juce::String(item.apvtsId) == "tape_time" && incomingVal > 10.0f)
+                targetApvtsVal = incomingVal * 0.001f;
+            else
+                targetApvtsVal = incomingVal;
             break;
         }
     }
 
     if (targetApvtsId.isEmpty())
     {
-        if (incomingId.equalsIgnoreCase("drone1Level"))
+        if (incomingId.equalsIgnoreCase("drone1Level") || incomingId.equalsIgnoreCase("drone1Volume") || incomingId.equalsIgnoreCase("drone1_volume"))
         {
             targetApvtsId = "drone1_volume";
-            targetApvtsVal = incomingVal * 0.01f;
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
         }
-        else if (incomingId.equalsIgnoreCase("drone2Level"))
+        else if (incomingId.equalsIgnoreCase("drone2Level") || incomingId.equalsIgnoreCase("drone2Volume") || incomingId.equalsIgnoreCase("drone2_volume"))
         {
             targetApvtsId = "drone2_volume";
-            targetApvtsVal = incomingVal * 0.01f;
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("drone1SubBass") || incomingId.equalsIgnoreCase("subBass") || incomingId.equalsIgnoreCase("drone1_isSubBass"))
+        {
+            targetApvtsId = "drone1_isSubBass";
+            targetApvtsVal = (incomingVal > 0.5f) ? 1.0f : 0.0f;
+        }
+        else if (incomingId.equalsIgnoreCase("pianoLevel") || incomingId.equalsIgnoreCase("pianoVolume") || incomingId.equalsIgnoreCase("feltVolume") || incomingId.equalsIgnoreCase("felt_volume"))
+        {
+            targetApvtsId = "felt_volume";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("feltSympathetic") || incomingId.equalsIgnoreCase("felt_space") || incomingId.equalsIgnoreCase("feltSpace"))
+        {
+            targetApvtsId = "felt_space";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("tapeMix") || incomingId.equalsIgnoreCase("delayMix") || incomingId.equalsIgnoreCase("tape_mix") || incomingId.equalsIgnoreCase("delay_wet") || incomingId.equalsIgnoreCase("delayWet"))
+        {
+            targetApvtsId = "tape_mix";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("tapeTime") || incomingId.equalsIgnoreCase("delay_time") || incomingId.equalsIgnoreCase("tape_time") || incomingId.equalsIgnoreCase("delayTime"))
+        {
+            targetApvtsId = "tape_time";
+            targetApvtsVal = (incomingVal > 10.0f) ? (incomingVal * 0.001f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("tapeFeedback") || incomingId.equalsIgnoreCase("delay_feedback") || incomingId.equalsIgnoreCase("tape_feedback") || incomingId.equalsIgnoreCase("delayFeedback"))
+        {
+            targetApvtsId = "tape_feedback";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("tapeWow") || incomingId.equalsIgnoreCase("delay_wow") || incomingId.equalsIgnoreCase("tape_wow") || incomingId.equalsIgnoreCase("delayWow"))
+        {
+            targetApvtsId = "tape_wow";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("tapeTone") || incomingId.equalsIgnoreCase("delay_tone") || incomingId.equalsIgnoreCase("tape_tone") || incomingId.equalsIgnoreCase("delayTone"))
+        {
+            targetApvtsId = "tape_tone";
+            targetApvtsVal = incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("reverbMix") || incomingId.equalsIgnoreCase("shimmerMix") || incomingId.equalsIgnoreCase("shimmer_mix") || incomingId.equalsIgnoreCase("reverb_wet") || incomingId.equalsIgnoreCase("reverbWet"))
+        {
+            targetApvtsId = "shimmer_mix";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("reverbDecay") || incomingId.equalsIgnoreCase("shimmerDecay") || incomingId.equalsIgnoreCase("shimmer_decay") || incomingId.equalsIgnoreCase("reverb_decay"))
+        {
+            targetApvtsId = "shimmer_decay";
+            targetApvtsVal = incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("reverbDamping") || incomingId.equalsIgnoreCase("shimmerDamping") || incomingId.equalsIgnoreCase("shimmer_damping") || incomingId.equalsIgnoreCase("reverb_damping"))
+        {
+            targetApvtsId = "shimmer_damping";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("reverbShimmer") || incomingId.equalsIgnoreCase("shimmerAmount") || incomingId.equalsIgnoreCase("shimmer_amount") || incomingId.equalsIgnoreCase("reverb_shimmer"))
+        {
+            targetApvtsId = "shimmer_amount";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("masterVolume") || incomingId.equalsIgnoreCase("master_volume") || incomingId.equalsIgnoreCase("master_vol"))
+        {
+            targetApvtsId = "master_volume";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
         }
     }
 

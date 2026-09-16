@@ -38,6 +38,21 @@ export class BraunVectorPad {
     this.draw();
   }
 
+  get isAnimating() {
+    return this._animId !== null;
+  }
+
+  _raf(cb) {
+    if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(cb);
+    return setTimeout(cb, 16);
+  }
+
+  _cancelAnim(id) {
+    if (!id) return;
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id);
+    else clearTimeout(id);
+  }
+
   _render() {
     if (typeof document === 'undefined' || !this.container) return;
     this.container.innerHTML = '';
@@ -223,7 +238,7 @@ export class BraunVectorPad {
       }
 
       if (this._animId) {
-        cancelAnimationFrame(this._animId);
+        this._cancelAnim(this._animId);
         this._animId = null;
       }
 
@@ -296,8 +311,7 @@ export class BraunVectorPad {
 
   resetToCenter(updateEngine = true, animate = false, duration = 300) {
     if (this._animId) {
-      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animId);
-      else clearTimeout(this._animId);
+      this._cancelAnim(this._animId);
       this._animId = null;
     }
     if (animate && duration > 0) {
@@ -316,8 +330,7 @@ export class BraunVectorPad {
    */
   animateTo(targetX, targetY, duration = 300, updateEngine = false) {
     if (this._animId) {
-      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animId);
-      else clearTimeout(this._animId);
+      this._cancelAnim(this._animId);
       this._animId = null;
     }
 
@@ -346,22 +359,14 @@ export class BraunVectorPad {
       this.setCoordinates(curX, curY, updateEngine);
 
       if (progress < 1.0) {
-        if (typeof requestAnimationFrame === 'function') {
-          this._animId = requestAnimationFrame(step);
-        } else {
-          this._animId = setTimeout(() => step(Date.now()), 16);
-        }
+        this._animId = this._raf(step);
       } else {
         this.setCoordinates(clampedTargetX, clampedTargetY, updateEngine);
         this._animId = null;
       }
     };
 
-    if (typeof requestAnimationFrame === 'function') {
-      this._animId = requestAnimationFrame(step);
-    } else {
-      this._animId = setTimeout(() => step(Date.now()), 16);
-    }
+    this._animId = this._raf(step);
   }
 
   setCoordinates(x, y, updateEngine = true) {
@@ -403,40 +408,55 @@ export class BraunVectorPad {
   }
 
   _applyModulation(notifyChange = true) {
-    if (!this.engine) return;
-
     // X Axis: Filter Cutoff / Felt Piano Tone (0.15 to 0.95)
     const feltTone = 0.15 + this.x * 0.80;
-    this.engine.setFeltTone(feltTone);
 
     // Drone cutoff tracking:
     const drone1Cutoff = 200 + this.x * 3200;
     const drone2Cutoff = 350 + this.x * 3800;
-    this.engine.setDroneCutoff(1, drone1Cutoff);
-    this.engine.setDroneCutoff(2, drone2Cutoff);
 
     // Y Axis: Space & Shimmer Wash (Decoupled from Tape Delay Time to eliminate record scratch crunch)
     // Delay Wet Mix (0% to 75%)
     const delayWet = this.y * 0.75;
-    this.engine.setDelayWet(delayWet);
 
     // Delay Feedback (0.25 to 0.70)
     const delayFeedback = 0.25 + this.y * 0.45;
-    this.engine.setDelayFeedback(delayFeedback);
 
     // Reverb Wet Mix (0% to 85%)
     const reverbWet = this.y * 0.85;
-    this.engine.setReverbWet(reverbWet);
 
     // Shimmer Bloom Feedback (0% to 80%)
     const shimmerAmount = this.y * 0.80;
-    this.engine.setReverbShimmer(shimmerAmount);
 
-    if (notifyChange && this.onChange) {
+    if (this.engine) {
+      if (typeof this.engine.setFeltTone === 'function') {
+        this.engine.setFeltTone(feltTone);
+      }
+      if (typeof this.engine.setDroneCutoff === 'function') {
+        this.engine.setDroneCutoff(1, drone1Cutoff);
+        this.engine.setDroneCutoff(2, drone2Cutoff);
+      }
+      if (typeof this.engine.setDelayWet === 'function') {
+        this.engine.setDelayWet(delayWet);
+      }
+      if (typeof this.engine.setDelayFeedback === 'function') {
+        this.engine.setDelayFeedback(delayFeedback);
+      }
+      if (typeof this.engine.setReverbWet === 'function') {
+        this.engine.setReverbWet(reverbWet);
+      }
+      if (typeof this.engine.setReverbShimmer === 'function') {
+        this.engine.setReverbShimmer(shimmerAmount);
+      }
+    }
+
+    if (notifyChange && typeof this.onChange === 'function') {
       this.onChange({
         x: this.x,
         y: this.y,
         feltTone,
+        drone1Cutoff,
+        drone2Cutoff,
         cutoffHz: Math.round(250 * Math.pow(5500 / 250, this.x)),
         delayWet,
         delayFeedback,
@@ -448,7 +468,7 @@ export class BraunVectorPad {
 
   _springReturn() {
     if (this._animId) {
-      cancelAnimationFrame(this._animId);
+      this._cancelAnim(this._animId);
       this._animId = null;
     }
 
@@ -457,10 +477,11 @@ export class BraunVectorPad {
     const targetX = this.defaultX;
     const targetY = this.defaultY;
     const duration = 220; // 220ms smooth return
-    const startTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
     const step = (currentTime) => {
-      const elapsed = currentTime - startTime;
+      const now = (typeof currentTime === 'number' && currentTime > 0) ? currentTime : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+      const elapsed = Math.max(0, now - startTime);
       const progress = Math.min(1.0, elapsed / duration);
       // Smooth quintic ease-out deceleration
       const ease = 1.0 - Math.pow(1.0 - progress, 4);
@@ -471,14 +492,14 @@ export class BraunVectorPad {
       this.setCoordinates(curX, curY, true);
 
       if (progress < 1.0) {
-        this._animId = requestAnimationFrame(step);
+        this._animId = this._raf(step);
       } else {
         this.setCoordinates(targetX, targetY, true);
         this._animId = null;
       }
     };
 
-    this._animId = requestAnimationFrame(step);
+    this._animId = this._raf(step);
   }
 
   draw() {

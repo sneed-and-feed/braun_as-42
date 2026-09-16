@@ -24,8 +24,8 @@ namespace braun {
 struct ParameterSnapshot {
     // Felt Piano parameters
     float felt_volume { 0.80f };
-    float felt_decay { 1.0f };
-    float felt_tone { 0.60f };
+    float felt_decay { 1.10f };
+    float felt_tone { 0.62f };
     float felt_hammer { 0.45f };
     float felt_space { 0.45f };       // Sympathetic string resonance level
     int felt_waveform { 0 };          // 0: Felt, 1: Sine, 2: Saw, 3: Square, 4: CS80
@@ -34,10 +34,12 @@ struct ParameterSnapshot {
     float drone1_volume { 0.55f };
     float drone1_pitch { 65.41f };     // C2
     float drone1_fold { 45.0f };
-    float drone1_cutoff { 680.0f };
+    float drone1_cutoff { 650.0f };
     float drone1_resonance { 3.5f };
     float drone1_beat { 0.35f };
     float drone1_detune { 2.5f };
+    float drone1_lfo { 0.12f };
+    float drone1_lfo_depth { 180.0f };
     int drone1_waveA { 2 };           // Saw
     int drone1_waveB { 6 };           // Warm
     bool drone1_isSubBass { false };
@@ -47,10 +49,12 @@ struct ParameterSnapshot {
     float drone2_volume { 0.55f };
     float drone2_pitch { 98.00f };     // G2
     float drone2_fold { 45.0f };
-    float drone2_cutoff { 680.0f };
+    float drone2_cutoff { 850.0f };
     float drone2_resonance { 3.5f };
     float drone2_beat { 0.65f };
     float drone2_detune { -3.2f };
+    float drone2_lfo { 0.12f };
+    float drone2_lfo_depth { 180.0f };
     int drone2_waveA { 3 };           // Square
     int drone2_waveB { 5 };           // Triangle
     bool drone2_active { false };
@@ -59,16 +63,16 @@ struct ParameterSnapshot {
     bool drone_track_midi { false };
 
     // Tape Delay parameters
-    float tape_time { 0.48f };
-    float tape_feedback { 0.58f };
-    float tape_mix { 0.45f };
-    float tape_wow { 0.50f };
+    float tape_time { 0.46f };
+    float tape_feedback { 0.55f };
+    float tape_mix { 0.40f };
+    float tape_wow { 0.45f };
     float tape_tone { 3600.0f };
 
     // Shimmer Reverb parameters
-    float shimmer_mix { 0.40f };
-    float shimmer_decay { 7.5f };
-    float shimmer_damping { 0.65f };
+    float shimmer_mix { 0.45f };
+    float shimmer_decay { 8.5f };
+    float shimmer_damping { 0.60f };
     float shimmer_amount { 0.45f };
     bool shimmer_freeze { false };
 

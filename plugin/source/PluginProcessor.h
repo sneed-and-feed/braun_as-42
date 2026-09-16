@@ -55,6 +55,13 @@ public:
     bool getDroneTrackMidi() const noexcept;
     bool consumeDroneTrackMidiDirty() noexcept;
 
+    // Lock-free UI MIDI Event injection (for onscreen play surface, macros, chords, and keyboard shortcuts)
+    void pushUINoteOn(int noteNumber, float velocity) noexcept;
+    void pushUINoteOff(int noteNumber, float velocity = 0.0f) noexcept;
+    void pushUIAllNotesOff() noexcept;
+    void pushUIPitchBend(float pitchBendCents) noexcept;
+    void pushUIMidiRaw(uint8_t status, uint8_t d1, uint8_t d2) noexcept;
+
     // Lock-free oscilloscope visualizer buffer
     static constexpr int kScopeBufferSize = 2048;
     void pushScopeSamples(const float* left, const float* right, int numSamples) noexcept;
@@ -74,33 +81,66 @@ private:
     std::atomic<bool> droneTrackMidi { false };
     std::atomic<bool> droneTrackMidiDirty { false };
 
+    // Lock-free FIFO queue for UI MIDI events
+    struct UIMidiEvent {
+        uint8_t status { 0 };
+        uint8_t data1 { 0 };
+        uint8_t data2 { 0 };
+    };
+    static constexpr int kUIMidiQueueSize = 256;
+    UIMidiEvent uiMidiQueue[kUIMidiQueueSize] {};
+    std::atomic<int> uiMidiWritePos { 0 };
+    std::atomic<int> uiMidiReadPos { 0 };
+
     // Cached raw atomic parameter pointers for lock-free, zero-overhead audio thread reads
+    // 1. Felt Piano
     std::atomic<float>* paramFeltVolume { nullptr };
     std::atomic<float>* paramFeltDecay { nullptr };
     std::atomic<float>* paramFeltTone { nullptr };
     std::atomic<float>* paramFeltHammer { nullptr };
     std::atomic<float>* paramFeltSpace { nullptr };
+    std::atomic<float>* paramFeltWaveform { nullptr };
 
+    // 2. Drone 1
     std::atomic<float>* paramDrone1Volume { nullptr };
     std::atomic<float>* paramDrone1Pitch { nullptr };
     std::atomic<float>* paramDrone1Fold { nullptr };
     std::atomic<float>* paramDrone1Cutoff { nullptr };
     std::atomic<float>* paramDrone1Resonance { nullptr };
+    std::atomic<float>* paramDrone1Beat { nullptr };
+    std::atomic<float>* paramDrone1Detune { nullptr };
+    std::atomic<float>* paramDrone1Lfo { nullptr };
+    std::atomic<float>* paramDrone1WaveA { nullptr };
+    std::atomic<float>* paramDrone1WaveB { nullptr };
+    std::atomic<float>* paramDrone1IsSubBass { nullptr };
 
+    // 3. Drone 2
     std::atomic<float>* paramDrone2Volume { nullptr };
     std::atomic<float>* paramDrone2Pitch { nullptr };
     std::atomic<float>* paramDrone2Fold { nullptr };
     std::atomic<float>* paramDrone2Cutoff { nullptr };
     std::atomic<float>* paramDrone2Resonance { nullptr };
+    std::atomic<float>* paramDrone2Beat { nullptr };
+    std::atomic<float>* paramDrone2Detune { nullptr };
+    std::atomic<float>* paramDrone2Lfo { nullptr };
+    std::atomic<float>* paramDrone2WaveA { nullptr };
+    std::atomic<float>* paramDrone2WaveB { nullptr };
 
+    // 4. Tape Delay
     std::atomic<float>* paramTapeTime { nullptr };
     std::atomic<float>* paramTapeFeedback { nullptr };
     std::atomic<float>* paramTapeMix { nullptr };
     std::atomic<float>* paramTapeWow { nullptr };
+    std::atomic<float>* paramTapeTone { nullptr };
 
+    // 5. Shimmer Reverb
     std::atomic<float>* paramShimmerMix { nullptr };
     std::atomic<float>* paramShimmerDecay { nullptr };
+    std::atomic<float>* paramShimmerDamping { nullptr };
+    std::atomic<float>* paramShimmerAmount { nullptr };
+    std::atomic<float>* paramShimmerFreeze { nullptr };
 
+    // 6. Master Bus
     std::atomic<float>* paramMasterVolume { nullptr };
 
     std::atomic<int> scopeWritePos { 0 };

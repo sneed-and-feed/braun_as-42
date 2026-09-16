@@ -8,11 +8,11 @@
 namespace braun {
 
 struct TapeDelayParams {
-    float timeSec { 0.48f };       // Left delay time (0.015s to 2.0s)
-    float feedback { 0.58f };      // 0.0 to 0.92
+    float timeSec { 0.46f };       // Left delay time (0.015s to 2.0s)
+    float feedback { 0.55f };      // 0.0 to 0.92
     float toneHz { 3600.0f };      // Lowpass cutoff
-    float wowAmount { 0.50f };     // 0.0 to 1.0
-    float mix { 0.45f };           // Wet level
+    float wowAmount { 0.45f };     // 0.0 to 1.0
+    float mix { 0.40f };           // Wet level
 };
 
 // ============================================================================
@@ -30,15 +30,15 @@ public:
 
         mDelayTimeLSmoother.setSampleRate(mSampleRate);
         mDelayTimeLSmoother.setTimeConstant(0.010f); // 10ms analog tape slewing
-        mDelayTimeLSmoother.reset(0.48f);
+        mDelayTimeLSmoother.reset(0.46f);
 
         mDelayTimeRSmoother.setSampleRate(mSampleRate);
         mDelayTimeRSmoother.setTimeConstant(0.010f);
-        mDelayTimeRSmoother.reset(0.48f * 1.5f);
+        mDelayTimeRSmoother.reset(0.46f * 1.5f);
 
         mFeedbackSmoother.setSampleRate(mSampleRate);
         mFeedbackSmoother.setTimeConstant(0.025f);
-        mFeedbackSmoother.reset(0.58f);
+        mFeedbackSmoother.reset(0.55f);
 
         mToneSmoother.setSampleRate(mSampleRate);
         mToneSmoother.setTimeConstant(0.040f);
@@ -53,9 +53,6 @@ public:
         // Delay return dynamics: compressor (-6dBFS, 4:1) + limiter (k=0.78)
         mReturnCompL.prepare(mSampleRate, -6.0f, 4.0f, 4.0f, 0.003f, 0.080f);
         mReturnCompR.prepare(mSampleRate, -6.0f, 4.0f, 4.0f, 0.003f, 0.080f);
-
-        mOversamplerL.reset();
-        mOversamplerR.reset();
 
         reset();
     }
@@ -73,8 +70,6 @@ public:
         mLowpassR.reset();
         mReturnCompL.reset();
         mReturnCompR.reset();
-        mOversamplerL.reset();
-        mOversamplerR.reset();
     }
 
     inline void processSample(float inL, float inR, const TapeDelayParams& params,
@@ -134,19 +129,9 @@ public:
         const float filteredL = mLowpassL.process(mHighpassL.process(delayedL));
         const float filteredR = mLowpassR.process(mHighpassR.process(delayedR));
 
-        // 5. Tape saturation wave shaper with 2x oversampling
-        float upL0 = 0.0f, upL1 = 0.0f;
-        float upR0 = 0.0f, upR1 = 0.0f;
-        mOversamplerL.upsample(filteredL, upL0, upL1);
-        mOversamplerR.upsample(filteredR, upR0, upR1);
-
-        const float satL0 = tapeSaturate(upL0, 0.40f);
-        const float satL1 = tapeSaturate(upL1, 0.40f);
-        const float satR0 = tapeSaturate(upR0, 0.40f);
-        const float satR1 = tapeSaturate(upR1, 0.40f);
-
-        const float shaperOutL = mOversamplerL.downsample(satL0, satL1);
-        const float shaperOutR = mOversamplerR.downsample(satR0, satR1);
+        // 5. Tape saturation wave shaper (C1 continuous curve)
+        const float shaperOutL = tapeSaturate(filteredL, 0.40f);
+        const float shaperOutR = tapeSaturate(filteredR, 0.40f);
 
         // 6. Normalized feedback routing (k = 1.5173)
         // Direct FB = 0.70 * FB / 1.5173, Cross FB = 0.30 * FB / 1.5173
@@ -174,11 +159,11 @@ public:
         const float limL = applySmoothBoundaryKnee(compL, 0.78f);
         const float limR = applySmoothBoundaryKnee(compR, 0.78f);
 
-        // 9. Stereo panning (Left -0.8, Right +0.8) and wet mix
-        constexpr float kPanL_LeftGain = 0.94868f;  // cos(pi/2 * 0.1)
-        constexpr float kPanL_RightGain = 0.31623f; // sin(pi/2 * 0.1)
-        constexpr float kPanR_LeftGain = 0.31623f;  // cos(pi/2 * 0.9)
-        constexpr float kPanR_RightGain = 0.94868f; // sin(pi/2 * 0.9)
+        // 9. Stereo panning (Left -0.8, Right +0.8) and wet mix matching Web Audio equal-power panner
+        constexpr float kPanL_LeftGain  = 0.98769f; // cos(pi/2 * 0.05)
+        constexpr float kPanL_RightGain = 0.15643f; // sin(pi/2 * 0.05)
+        constexpr float kPanR_LeftGain  = 0.15643f; // cos(pi/2 * 0.45)
+        constexpr float kPanR_RightGain = 0.98769f; // sin(pi/2 * 0.45)
 
         const float wetL = (limL * kPanL_LeftGain + limR * kPanR_LeftGain) * params.mix;
         const float wetR = (limL * kPanL_RightGain + limR * kPanR_RightGain) * params.mix;
@@ -234,9 +219,6 @@ private:
 
     SoftCompressor mReturnCompL;
     SoftCompressor mReturnCompR;
-
-    Oversampler2x mOversamplerL;
-    Oversampler2x mOversamplerR;
 
     float mWowPhase { 0.0f };
     float mFlutterPhase { 0.0f };

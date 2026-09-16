@@ -63,19 +63,23 @@ export class PhaseLoopEngine {
    * @param {number} deltaSeconds
    */
   step(deltaSeconds) {
-    const effectiveDelta = deltaSeconds * this.speedMultiplier;
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) return;
+    const effectiveDelta = deltaSeconds * (Number.isFinite(this.speedMultiplier) && this.speedMultiplier > 0 ? this.speedMultiplier : 1.0);
 
     for (const loop of this.loops) {
-      if (!loop.active) continue;
+      if (!loop.active || !Number.isFinite(loop.periodSeconds) || loop.periodSeconds <= 0) continue;
 
       const prevTime = loop.elapsedSeconds;
       loop.elapsedSeconds += effectiveDelta;
 
-      // Calculate normalized progress (0.0 to 1.0)
-      loop.progress = (loop.elapsedSeconds % loop.periodSeconds) / loop.periodSeconds;
-
       // Check for period wrap-around (note strike event)
-      if (Math.floor(loop.elapsedSeconds / loop.periodSeconds) > Math.floor(prevTime / loop.periodSeconds)) {
+      const prevCycles = Math.floor(prevTime / loop.periodSeconds);
+      const currCycles = Math.floor(loop.elapsedSeconds / loop.periodSeconds);
+
+      // Normalized progress in [0.0, 1.0)
+      loop.progress = Math.max(0.0, Math.min(1.0, (loop.elapsedSeconds % loop.periodSeconds) / loop.periodSeconds));
+
+      if (currCycles > prevCycles) {
         if (this.onNoteTrigger) {
           this.onNoteTrigger(loop, {
             midi: loop.midi,
@@ -85,6 +89,11 @@ export class PhaseLoopEngine {
             duration: loop.duration
           });
         }
+      }
+
+      // Bound elapsedSeconds to avoid large floating point accumulation
+      if (loop.elapsedSeconds >= loop.periodSeconds * 100) {
+        loop.elapsedSeconds = loop.elapsedSeconds % loop.periodSeconds;
       }
     }
   }
@@ -98,24 +107,38 @@ export class PhaseLoopEngine {
     if (onTrigger) this.onNoteTrigger = onTrigger;
     if (onPhaseUpdate) this.onPhaseUpdate = onPhaseUpdate;
 
-    this.lastTimestamp = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    this.lastTimestamp = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
 
     const loopLoop = () => {
       if (!this.isRunning) return;
-      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      const dt = Math.min(0.2, (now - this.lastTimestamp) / 1000); // Clamp delta to avoid spiral
+      const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+        ? performance.now()
+        : Date.now();
+
+      if (this.lastTimestamp === null || !Number.isFinite(this.lastTimestamp)) {
+        this.lastTimestamp = now;
+      }
+
+      const rawDt = (now - this.lastTimestamp) / 1000;
+      const dt = (Number.isFinite(rawDt) && rawDt > 0) ? Math.min(0.2, rawDt) : 0;
       this.lastTimestamp = now;
 
-      this.step(dt);
+      if (dt > 0) {
+        this.step(dt);
+      }
 
       if (this.onPhaseUpdate) {
         this.onPhaseUpdate(this.loops);
       }
 
-      if (typeof requestAnimationFrame !== 'undefined') {
-        this.animationFrameId = requestAnimationFrame(loopLoop);
-      } else {
-        this.animationFrameId = setTimeout(loopLoop, 30);
+      if (this.isRunning) {
+        if (typeof requestAnimationFrame !== 'undefined') {
+          this.animationFrameId = requestAnimationFrame(loopLoop);
+        } else {
+          this.animationFrameId = setTimeout(loopLoop, 30);
+        }
       }
     };
 
@@ -131,12 +154,18 @@ export class PhaseLoopEngine {
    */
   stop() {
     this.isRunning = false;
-    if (typeof cancelAnimationFrame !== 'undefined' && this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-    } else if (this.animationFrameId) {
-      clearTimeout(this.animationFrameId);
+    if (typeof cancelAnimationFrame !== 'undefined' && this.animationFrameId !== null) {
+      try {
+        cancelAnimationFrame(this.animationFrameId);
+      } catch (e) {}
+    }
+    if (this.animationFrameId !== null) {
+      try {
+        clearTimeout(this.animationFrameId);
+      } catch (e) {}
     }
     this.animationFrameId = null;
+    this.lastTimestamp = null;
   }
 
   /**

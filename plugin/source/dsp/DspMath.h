@@ -43,7 +43,7 @@ private:
 
 // Inline helper to prevent denormals in recursive feedback loops
 inline float flushDenormal(float val) noexcept {
-    return (std::abs(val) < 1.0e-15f) ? 0.0f : val;
+    return (std::abs(val) < 1.0e-9f) ? 0.0f : val;
 }
 
 // Mathematical constants
@@ -224,10 +224,10 @@ public:
                 break;
             }
             case Type::Bandpass: {
-                // Constant skirt gain, peak gain = Q
-                b0 = sinOmega0 * 0.5f;
+                // Constant 0 dB peak gain at center frequency (matches W3C Web Audio standard)
+                b0 = alpha;
                 b1 = 0.0f;
-                b2 = -sinOmega0 * 0.5f;
+                b2 = -alpha;
                 a0 = 1.0f + alpha;
                 a1 = -2.0f * cosOmega0;
                 a2 = 1.0f - alpha;
@@ -255,9 +255,14 @@ public:
 
     inline float process(float x) noexcept {
         const float y = mB0 * x + mS1;
-        mS1 = flushDenormal(mB1 * x - mA1 * y + mS2);
-        mS2 = flushDenormal(mB2 * x - mA2 * y);
-        return y;
+        mS1 = mB1 * x - mA1 * y + mS2;
+        mS2 = mB2 * x - mA2 * y;
+        if (std::abs(y) < 1.0e-7f && std::abs(x) < 1.0e-7f) {
+            mS1 = 0.0f;
+            mS2 = 0.0f;
+            return 0.0f;
+        }
+        return flushDenormal(y);
     }
 
 private:

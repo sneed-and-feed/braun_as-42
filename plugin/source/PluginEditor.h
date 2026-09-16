@@ -22,12 +22,19 @@ public:
 
     // Web integration helpers
     void handleParamChangeFromWeb(const juce::var& data);
+    void handleNoteOnFromWeb(const juce::var& data);
+    void handleNoteOffFromWeb(const juce::var& data);
+    void handleAllNotesOffFromWeb(const juce::var& data);
+    void handlePitchBendFromWeb(const juce::var& data);
+
     void sendParameterUpdateToWeb(const juce::String& paramID, float newValue);
     void sendPowerUpdateToWeb(bool isPoweredOn);
     void sendDroneActiveUpdateToWeb(int droneId, bool active);
     void sendDroneTrackUpdateToWeb(bool track);
     void syncAllParametersToWeb();
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
+
+    static constexpr size_t kNumTrackedParams = 38;
 
 private:
     void timerCallback() override;
@@ -40,8 +47,8 @@ private:
     bool initialSyncDone { false };
 
     // Lock-free parameter change coalescing to avoid flooding Win32 message loop
-    std::atomic<float> pendingParamValues[22] {};
-    std::atomic<bool> paramDirty[22] {};
+    std::atomic<float> pendingParamValues[kNumTrackedParams] {};
+    std::atomic<bool> paramDirty[kNumTrackedParams] {};
 
     bool hwndStylesConfigured { false };
     int hwndCheckCounter { 0 };

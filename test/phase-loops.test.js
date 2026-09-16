@@ -44,4 +44,56 @@ describe('Brian Eno Phase Loop Engine', () => {
 
     assert.notDeepStrictEqual(oldFreqs, newFreqs);
   });
+
+  it('handles zero, negative, and invalid delta values without moving backwards or triggering false events', () => {
+    const engine = new PhaseLoopEngine({ loopPeriods: [10.0] });
+    engine.loops[0].elapsedSeconds = 5.0;
+
+    let triggeredCount = 0;
+    engine.onNoteTrigger = () => { triggeredCount++; };
+
+    engine.step(0);
+    assert.strictEqual(engine.loops[0].elapsedSeconds, 5.0);
+    assert.strictEqual(triggeredCount, 0);
+
+    engine.step(-1.0);
+    assert.strictEqual(engine.loops[0].elapsedSeconds, 5.0);
+    assert.strictEqual(triggeredCount, 0);
+
+    engine.step(NaN);
+    assert.strictEqual(engine.loops[0].elapsedSeconds, 5.0);
+    assert.strictEqual(triggeredCount, 0);
+  });
+
+  it('keeps elapsedSeconds and progress bounded over extended run times', () => {
+    const engine = new PhaseLoopEngine({ loopPeriods: [13.7] });
+    engine.loops[0].elapsedSeconds = 0;
+
+    // Simulate 2 hours of playback (7200 seconds in 16ms steps)
+    const dt = 0.016;
+    const steps = Math.floor(7200 / dt);
+    let triggerCount = 0;
+    engine.onNoteTrigger = () => { triggerCount++; };
+
+    for (let i = 0; i < steps; i++) {
+      engine.step(dt);
+      assert.ok(engine.loops[0].progress >= 0.0 && engine.loops[0].progress <= 1.0);
+      assert.ok(Number.isFinite(engine.loops[0].elapsedSeconds));
+    }
+
+    // Expected triggers: ~7200 / 13.7 = ~525 triggers
+    assert.ok(triggerCount >= 520 && triggerCount <= 530, `Expected ~525 triggers, got ${triggerCount}`);
+  });
+
+  it('cleans up animationFrame / timers on stop()', () => {
+    const engine = new PhaseLoopEngine();
+    let updates = 0;
+    engine.start(null, () => { updates++; });
+    assert.strictEqual(engine.isRunning, true);
+
+    engine.stop();
+    assert.strictEqual(engine.isRunning, false);
+    assert.strictEqual(engine.animationFrameId, null);
+    assert.strictEqual(engine.lastTimestamp, null);
+  });
 });

@@ -6,32 +6,54 @@ BRAUN_AS42AudioProcessor::BRAUN_AS42AudioProcessor()
       apvts(*this, nullptr, "Parameters", braun::Parameters::createParameterLayout())
 {
     // Cache atomic parameter value pointers
+    // 1. Felt Piano
     paramFeltVolume      = apvts.getRawParameterValue("felt_volume");
     paramFeltDecay       = apvts.getRawParameterValue("felt_decay");
     paramFeltTone        = apvts.getRawParameterValue("felt_tone");
     paramFeltHammer      = apvts.getRawParameterValue("felt_hammer");
     paramFeltSpace       = apvts.getRawParameterValue("felt_space");
+    paramFeltWaveform    = apvts.getRawParameterValue("felt_waveform");
 
+    // 2. Drone 1
     paramDrone1Volume    = apvts.getRawParameterValue("drone1_volume");
     paramDrone1Pitch     = apvts.getRawParameterValue("drone1_pitch");
     paramDrone1Fold      = apvts.getRawParameterValue("drone1_fold");
     paramDrone1Cutoff    = apvts.getRawParameterValue("drone1_cutoff");
     paramDrone1Resonance = apvts.getRawParameterValue("drone1_resonance");
+    paramDrone1Beat      = apvts.getRawParameterValue("drone1_beat");
+    paramDrone1Detune    = apvts.getRawParameterValue("drone1_detune");
+    paramDrone1Lfo       = apvts.getRawParameterValue("drone1_lfo");
+    paramDrone1WaveA     = apvts.getRawParameterValue("drone1_waveA");
+    paramDrone1WaveB     = apvts.getRawParameterValue("drone1_waveB");
+    paramDrone1IsSubBass = apvts.getRawParameterValue("drone1_isSubBass");
 
+    // 3. Drone 2
     paramDrone2Volume    = apvts.getRawParameterValue("drone2_volume");
     paramDrone2Pitch     = apvts.getRawParameterValue("drone2_pitch");
     paramDrone2Fold      = apvts.getRawParameterValue("drone2_fold");
     paramDrone2Cutoff    = apvts.getRawParameterValue("drone2_cutoff");
     paramDrone2Resonance = apvts.getRawParameterValue("drone2_resonance");
+    paramDrone2Beat      = apvts.getRawParameterValue("drone2_beat");
+    paramDrone2Detune    = apvts.getRawParameterValue("drone2_detune");
+    paramDrone2Lfo       = apvts.getRawParameterValue("drone2_lfo");
+    paramDrone2WaveA     = apvts.getRawParameterValue("drone2_waveA");
+    paramDrone2WaveB     = apvts.getRawParameterValue("drone2_waveB");
 
+    // 4. Tape Delay
     paramTapeTime        = apvts.getRawParameterValue("tape_time");
     paramTapeFeedback    = apvts.getRawParameterValue("tape_feedback");
     paramTapeMix         = apvts.getRawParameterValue("tape_mix");
     paramTapeWow         = apvts.getRawParameterValue("tape_wow");
+    paramTapeTone        = apvts.getRawParameterValue("tape_tone");
 
+    // 5. Shimmer Reverb
     paramShimmerMix      = apvts.getRawParameterValue("shimmer_mix");
     paramShimmerDecay    = apvts.getRawParameterValue("shimmer_decay");
+    paramShimmerDamping  = apvts.getRawParameterValue("shimmer_damping");
+    paramShimmerAmount   = apvts.getRawParameterValue("shimmer_amount");
+    paramShimmerFreeze   = apvts.getRawParameterValue("shimmer_freeze");
 
+    // 6. Master Bus
     paramMasterVolume    = apvts.getRawParameterValue("master_volume");
 }
 
@@ -106,6 +128,51 @@ bool BRAUN_AS42AudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts
     return true;
 }
 
+void BRAUN_AS42AudioProcessor::pushUIMidiRaw(uint8_t status, uint8_t d1, uint8_t d2) noexcept
+{
+    const int write = uiMidiWritePos.load(std::memory_order_relaxed);
+    const int nextWrite = (write + 1) % kUIMidiQueueSize;
+    if (nextWrite != uiMidiReadPos.load(std::memory_order_acquire))
+    {
+        uiMidiQueue[write] = { status, d1, d2 };
+        uiMidiWritePos.store(nextWrite, std::memory_order_release);
+    }
+}
+
+void BRAUN_AS42AudioProcessor::pushUINoteOn(int noteNumber, float velocity) noexcept
+{
+    if (!isPoweredOn.load(std::memory_order_relaxed))
+    {
+        isPoweredOn.store(true, std::memory_order_relaxed);
+        powerStateDirty.store(true, std::memory_order_relaxed);
+    }
+    const uint8_t note = static_cast<uint8_t>(std::clamp(noteNumber, 0, 127));
+    const uint8_t vel = static_cast<uint8_t>(std::clamp(static_cast<int>(std::round(velocity * 127.0f)), 1, 127));
+    pushUIMidiRaw(0x90, note, vel);
+}
+
+void BRAUN_AS42AudioProcessor::pushUINoteOff(int noteNumber, float velocity) noexcept
+{
+    const uint8_t note = static_cast<uint8_t>(std::clamp(noteNumber, 0, 127));
+    const uint8_t vel = static_cast<uint8_t>(std::clamp(static_cast<int>(std::round(velocity * 127.0f)), 0, 127));
+    pushUIMidiRaw(0x80, note, vel);
+}
+
+void BRAUN_AS42AudioProcessor::pushUIAllNotesOff() noexcept
+{
+    pushUIMidiRaw(0xB0, 123, 0); // All Notes Off CC 123
+    pushUIMidiRaw(0xB0, 120, 0); // All Sound Off CC 120
+}
+
+void BRAUN_AS42AudioProcessor::pushUIPitchBend(float pitchBendCents) noexcept
+{
+    const float norm = std::clamp((pitchBendCents / 200.0f) * 8192.0f + 8192.0f, 0.0f, 16383.0f);
+    const int bend14 = static_cast<int>(std::round(norm));
+    const uint8_t lsb = static_cast<uint8_t>(bend14 & 0x7F);
+    const uint8_t msb = static_cast<uint8_t>((bend14 >> 7) & 0x7F);
+    pushUIMidiRaw(0xE0, lsb, msb);
+}
+
 void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -119,75 +186,26 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // to prevent leaking uninitialized host buffers, garbage memory, or extra channel data.
     buffer.clear();
 
-    // Power gating: Check if plugin is powered on or triggered by Note-On
-    if (!isPoweredOn.load(std::memory_order_relaxed))
-    {
-        bool hasNoteOn = false;
-        for (const auto metadata : midiMessages)
-        {
-            if (metadata.numBytes >= 3)
-            {
-                const auto* rawData = metadata.data;
-                if ((rawData[0] & 0xF0) == 0x90 && rawData[2] > 0)
-                {
-                    hasNoteOn = true;
-                    break;
-                }
-            }
-        }
-
-        if (hasNoteOn)
-        {
-            isPoweredOn.store(true, std::memory_order_relaxed);
-            powerStateDirty.store(true, std::memory_order_relaxed);
-        }
-        else
-        {
-            midiMessages.clear();
-            return;
-        }
-    }
-
-    // Read atomic parameter values into Plain-Old-Data snapshot
-    braun::ParameterSnapshot snapshot;
-    if (paramFeltVolume)      snapshot.felt_volume = paramFeltVolume->load(std::memory_order_relaxed);
-    if (paramFeltDecay)       snapshot.felt_decay = paramFeltDecay->load(std::memory_order_relaxed);
-    if (paramFeltTone)        snapshot.felt_tone = paramFeltTone->load(std::memory_order_relaxed);
-    if (paramFeltHammer)      snapshot.felt_hammer = paramFeltHammer->load(std::memory_order_relaxed);
-    if (paramFeltSpace)       snapshot.felt_space = paramFeltSpace->load(std::memory_order_relaxed);
-
-    snapshot.drone1_active = drone1Active.load(std::memory_order_relaxed);
-    if (paramDrone1Volume)    snapshot.drone1_volume = paramDrone1Volume->load(std::memory_order_relaxed);
-    if (paramDrone1Pitch)     snapshot.drone1_pitch = paramDrone1Pitch->load(std::memory_order_relaxed);
-    if (paramDrone1Fold)      snapshot.drone1_fold = paramDrone1Fold->load(std::memory_order_relaxed);
-    if (paramDrone1Cutoff)    snapshot.drone1_cutoff = paramDrone1Cutoff->load(std::memory_order_relaxed);
-    if (paramDrone1Resonance) snapshot.drone1_resonance = paramDrone1Resonance->load(std::memory_order_relaxed);
-
-    snapshot.drone2_active = drone2Active.load(std::memory_order_relaxed);
-    if (paramDrone2Volume)    snapshot.drone2_volume = paramDrone2Volume->load(std::memory_order_relaxed);
-    if (paramDrone2Pitch)     snapshot.drone2_pitch = paramDrone2Pitch->load(std::memory_order_relaxed);
-    if (paramDrone2Fold)      snapshot.drone2_fold = paramDrone2Fold->load(std::memory_order_relaxed);
-    if (paramDrone2Cutoff)    snapshot.drone2_cutoff = paramDrone2Cutoff->load(std::memory_order_relaxed);
-    if (paramDrone2Resonance) snapshot.drone2_resonance = paramDrone2Resonance->load(std::memory_order_relaxed);
-
-    snapshot.drone_track_midi = droneTrackMidi.load(std::memory_order_relaxed);
-    dspEngine.setDroneTrackMidi(snapshot.drone_track_midi);
-
-    if (paramTapeTime)        snapshot.tape_time = paramTapeTime->load(std::memory_order_relaxed);
-    if (paramTapeFeedback)    snapshot.tape_feedback = paramTapeFeedback->load(std::memory_order_relaxed);
-    if (paramTapeMix)         snapshot.tape_mix = paramTapeMix->load(std::memory_order_relaxed);
-    if (paramTapeWow)         snapshot.tape_wow = paramTapeWow->load(std::memory_order_relaxed);
-
-    if (paramShimmerMix)      snapshot.shimmer_mix = paramShimmerMix->load(std::memory_order_relaxed);
-    if (paramShimmerDecay)    snapshot.shimmer_decay = paramShimmerDecay->load(std::memory_order_relaxed);
-
-    if (paramMasterVolume)    snapshot.master_volume = paramMasterVolume->load(std::memory_order_relaxed);
-
-    // Convert incoming juce::MidiBuffer to stack-allocated braun::MidiEvent array (zero heap allocations)
+    // Convert UI MIDI FIFO events + incoming juce::MidiBuffer to stack-allocated braun::MidiEvent array
     constexpr int kMaxMidiStack = 256;
     braun::MidiEvent midiEventsStack[kMaxMidiStack];
     int eventCount = 0;
 
+    // 1. Drain UI MIDI events (note clicks, chord macros, computer keyboard, Poisson/Airports loops)
+    int uiRead = uiMidiReadPos.load(std::memory_order_relaxed);
+    const int uiWrite = uiMidiWritePos.load(std::memory_order_acquire);
+    while (uiRead != uiWrite && eventCount < kMaxMidiStack)
+    {
+        midiEventsStack[eventCount].sampleOffset = 0;
+        midiEventsStack[eventCount].status = uiMidiQueue[uiRead].status;
+        midiEventsStack[eventCount].data1 = uiMidiQueue[uiRead].data1;
+        midiEventsStack[eventCount].data2 = uiMidiQueue[uiRead].data2;
+        ++eventCount;
+        uiRead = (uiRead + 1) % kUIMidiQueueSize;
+    }
+    uiMidiReadPos.store(uiRead, std::memory_order_release);
+
+    // 2. Append host DAW MIDI messages
     for (const auto metadata : midiMessages)
     {
         if (eventCount >= kMaxMidiStack)
@@ -205,6 +223,81 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         }
     }
     midiMessages.clear();
+
+    // Power gating: Check if plugin is powered on or triggered by Note-On from UI or Host MIDI
+    if (!isPoweredOn.load(std::memory_order_relaxed))
+    {
+        bool hasNoteOn = false;
+        for (int i = 0; i < eventCount; ++i)
+        {
+            if ((midiEventsStack[i].status & 0xF0) == 0x90 && midiEventsStack[i].data2 > 0)
+            {
+                hasNoteOn = true;
+                break;
+            }
+        }
+
+        if (hasNoteOn)
+        {
+            isPoweredOn.store(true, std::memory_order_relaxed);
+            powerStateDirty.store(true, std::memory_order_relaxed);
+        }
+        else
+        {
+            return;
+        }
+    }
+
+    // Read atomic parameter values into Plain-Old-Data snapshot
+    braun::ParameterSnapshot snapshot;
+    if (paramFeltVolume)      snapshot.felt_volume = paramFeltVolume->load(std::memory_order_relaxed);
+    if (paramFeltDecay)       snapshot.felt_decay = paramFeltDecay->load(std::memory_order_relaxed);
+    if (paramFeltTone)        snapshot.felt_tone = paramFeltTone->load(std::memory_order_relaxed);
+    if (paramFeltHammer)      snapshot.felt_hammer = paramFeltHammer->load(std::memory_order_relaxed);
+    if (paramFeltSpace)       snapshot.felt_space = paramFeltSpace->load(std::memory_order_relaxed);
+    if (paramFeltWaveform)    snapshot.felt_waveform = static_cast<int>(paramFeltWaveform->load(std::memory_order_relaxed));
+
+    snapshot.drone1_active = drone1Active.load(std::memory_order_relaxed);
+    if (paramDrone1Volume)    snapshot.drone1_volume = paramDrone1Volume->load(std::memory_order_relaxed);
+    if (paramDrone1Pitch)     snapshot.drone1_pitch = paramDrone1Pitch->load(std::memory_order_relaxed);
+    if (paramDrone1Fold)      snapshot.drone1_fold = paramDrone1Fold->load(std::memory_order_relaxed);
+    if (paramDrone1Cutoff)    snapshot.drone1_cutoff = paramDrone1Cutoff->load(std::memory_order_relaxed);
+    if (paramDrone1Resonance) snapshot.drone1_resonance = paramDrone1Resonance->load(std::memory_order_relaxed);
+    if (paramDrone1Beat)      snapshot.drone1_beat = paramDrone1Beat->load(std::memory_order_relaxed);
+    if (paramDrone1Detune)    snapshot.drone1_detune = paramDrone1Detune->load(std::memory_order_relaxed);
+    if (paramDrone1Lfo)       snapshot.drone1_lfo = paramDrone1Lfo->load(std::memory_order_relaxed);
+    if (paramDrone1WaveA)     snapshot.drone1_waveA = static_cast<int>(paramDrone1WaveA->load(std::memory_order_relaxed));
+    if (paramDrone1WaveB)     snapshot.drone1_waveB = static_cast<int>(paramDrone1WaveB->load(std::memory_order_relaxed));
+    if (paramDrone1IsSubBass) snapshot.drone1_isSubBass = (paramDrone1IsSubBass->load(std::memory_order_relaxed) > 0.5f);
+
+    snapshot.drone2_active = drone2Active.load(std::memory_order_relaxed);
+    if (paramDrone2Volume)    snapshot.drone2_volume = paramDrone2Volume->load(std::memory_order_relaxed);
+    if (paramDrone2Pitch)     snapshot.drone2_pitch = paramDrone2Pitch->load(std::memory_order_relaxed);
+    if (paramDrone2Fold)      snapshot.drone2_fold = paramDrone2Fold->load(std::memory_order_relaxed);
+    if (paramDrone2Cutoff)    snapshot.drone2_cutoff = paramDrone2Cutoff->load(std::memory_order_relaxed);
+    if (paramDrone2Resonance) snapshot.drone2_resonance = paramDrone2Resonance->load(std::memory_order_relaxed);
+    if (paramDrone2Beat)      snapshot.drone2_beat = paramDrone2Beat->load(std::memory_order_relaxed);
+    if (paramDrone2Detune)    snapshot.drone2_detune = paramDrone2Detune->load(std::memory_order_relaxed);
+    if (paramDrone2Lfo)       snapshot.drone2_lfo = paramDrone2Lfo->load(std::memory_order_relaxed);
+    if (paramDrone2WaveA)     snapshot.drone2_waveA = static_cast<int>(paramDrone2WaveA->load(std::memory_order_relaxed));
+    if (paramDrone2WaveB)     snapshot.drone2_waveB = static_cast<int>(paramDrone2WaveB->load(std::memory_order_relaxed));
+
+    snapshot.drone_track_midi = droneTrackMidi.load(std::memory_order_relaxed);
+    dspEngine.setDroneTrackMidi(snapshot.drone_track_midi);
+
+    if (paramTapeTime)        snapshot.tape_time = paramTapeTime->load(std::memory_order_relaxed);
+    if (paramTapeFeedback)    snapshot.tape_feedback = paramTapeFeedback->load(std::memory_order_relaxed);
+    if (paramTapeMix)         snapshot.tape_mix = paramTapeMix->load(std::memory_order_relaxed);
+    if (paramTapeWow)         snapshot.tape_wow = paramTapeWow->load(std::memory_order_relaxed);
+    if (paramTapeTone)        snapshot.tape_tone = paramTapeTone->load(std::memory_order_relaxed);
+
+    if (paramShimmerMix)      snapshot.shimmer_mix = paramShimmerMix->load(std::memory_order_relaxed);
+    if (paramShimmerDecay)    snapshot.shimmer_decay = paramShimmerDecay->load(std::memory_order_relaxed);
+    if (paramShimmerDamping)  snapshot.shimmer_damping = paramShimmerDamping->load(std::memory_order_relaxed);
+    if (paramShimmerAmount)   snapshot.shimmer_amount = paramShimmerAmount->load(std::memory_order_relaxed);
+    if (paramShimmerFreeze)   snapshot.shimmer_freeze = (paramShimmerFreeze->load(std::memory_order_relaxed) > 0.5f);
+
+    if (paramMasterVolume)    snapshot.master_volume = paramMasterVolume->load(std::memory_order_relaxed);
 
     float* left = buffer.getWritePointer(0);
     float* right = (buffer.getNumChannels() > 1) ? buffer.getWritePointer(1) : left;

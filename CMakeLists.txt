@@ -144,3 +144,24 @@ target_link_libraries(BRAUN_AS42
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )
+
+# ==============================================================================
+# 5. C++ DSP Test Executables
+# ==============================================================================
+add_executable(dsp_tests
+    test/cpp/dsp_tests.cpp
+    plugin/source/dsp/DspEngine.cpp
+)
+target_include_directories(dsp_tests PRIVATE
+    plugin/source
+    plugin/source/dsp
+)
+
+add_executable(challenger_stress_tests
+    test/cpp/challenger_stress_tests.cpp
+    plugin/source/dsp/DspEngine.cpp
+)
+target_include_directories(challenger_stress_tests PRIVATE
+    plugin/source
+    plugin/source/dsp
+)

@@ -19,15 +19,27 @@ export class PoissonGenerator {
    * @param {number} [options.a4=440]
    */
   constructor(options = {}) {
-    this.eventsPerMinute = options.eventsPerMinute ?? 12;
-    this.minRestSeconds = options.minRestSeconds ?? 0.5;
-    this.maxRestSeconds = options.maxRestSeconds ?? 9.0;
-    this.humanize = options.humanize ?? 0.50;
-    this.rootPitchClass = options.rootPitchClass ?? 0;
-    this.scaleIntervals = options.scaleIntervals ?? SCALES.BUDD_PENTATONIC.intervals;
-    this.minMidi = options.minMidi ?? 48; // C3
-    this.maxMidi = options.maxMidi ?? 84; // C6
-    this.a4 = options.a4 ?? 440;
+    this.eventsPerMinute = (typeof options.eventsPerMinute === 'number' && Number.isFinite(options.eventsPerMinute) && options.eventsPerMinute > 0)
+      ? options.eventsPerMinute
+      : 12;
+    this.minRestSeconds = (typeof options.minRestSeconds === 'number' && Number.isFinite(options.minRestSeconds) && options.minRestSeconds > 0)
+      ? options.minRestSeconds
+      : 0.6;
+    this.maxRestSeconds = (typeof options.maxRestSeconds === 'number' && Number.isFinite(options.maxRestSeconds) && options.maxRestSeconds >= this.minRestSeconds)
+      ? options.maxRestSeconds
+      : 8.5;
+    this.humanize = (typeof options.humanize === 'number' && Number.isFinite(options.humanize))
+      ? Math.max(0, Math.min(1.0, options.humanize))
+      : 0.50;
+    this.rootPitchClass = (typeof options.rootPitchClass === 'number' && Number.isFinite(options.rootPitchClass))
+      ? options.rootPitchClass
+      : 0;
+    this.scaleIntervals = (Array.isArray(options.scaleIntervals) && options.scaleIntervals.length > 0)
+      ? options.scaleIntervals
+      : SCALES.BUDD_PENTATONIC.intervals;
+    this.minMidi = (typeof options.minMidi === 'number' && Number.isFinite(options.minMidi)) ? options.minMidi : 48; // C3
+    this.maxMidi = (typeof options.maxMidi === 'number' && Number.isFinite(options.maxMidi)) ? options.maxMidi : 84; // C6
+    this.a4 = (typeof options.a4 === 'number' && Number.isFinite(options.a4) && options.a4 > 0) ? options.a4 : 440;
 
     this.lastMidiNote = 60; // Start at middle C
     this.timerId = null;
@@ -41,7 +53,19 @@ export class PoissonGenerator {
    * @returns {number} Seconds until next event
    */
   getNextInterval(customEpm) {
-    const epm = customEpm ?? this.eventsPerMinute;
+    const rawEpm = (customEpm !== undefined) ? customEpm : this.eventsPerMinute;
+    const epm = (typeof rawEpm === 'number' && Number.isFinite(rawEpm) && rawEpm > 0) ? rawEpm : 12;
+
+    const minRest = (typeof this.minRestSeconds === 'number' && Number.isFinite(this.minRestSeconds) && this.minRestSeconds > 0)
+      ? this.minRestSeconds
+      : 0.6;
+    const maxRest = (typeof this.maxRestSeconds === 'number' && Number.isFinite(this.maxRestSeconds) && this.maxRestSeconds >= minRest)
+      ? this.maxRestSeconds
+      : 8.5;
+    const hum = (typeof this.humanize === 'number' && Number.isFinite(this.humanize))
+      ? Math.max(0, Math.min(1.0, this.humanize))
+      : 0.50;
+
     const lambda = Math.max(0.1, epm) / 60.0; // events per second
 
     // Exponential distribution: -ln(1 - U) / lambda
@@ -50,10 +74,11 @@ export class PoissonGenerator {
 
     // Organic rubato timing variance scaled by humanize
     const mean = 1.0 / lambda;
-    const rubato = mean + (rawInterval - mean) * (0.35 + this.humanize * 0.65);
+    const rubato = mean + (rawInterval - mean) * (0.35 + hum * 0.65);
 
     // Constrain within organic ambient bounds
-    return Math.max(this.minRestSeconds, Math.min(this.maxRestSeconds, rubato));
+    const clamped = Math.max(minRest, Math.min(maxRest, rubato));
+    return (Number.isFinite(clamped) && clamped > 0) ? clamped : minRest;
   }
 
   /**
@@ -152,12 +177,19 @@ export class PoissonGenerator {
         this.onNoteTrigger(event);
       }
 
-      const delayMs = Math.round(event.nextInterval * 1000);
-      this.timerId = setTimeout(scheduleNext, delayMs);
+      const nextSec = (typeof event.nextInterval === 'number' && Number.isFinite(event.nextInterval) && event.nextInterval > 0)
+        ? event.nextInterval
+        : this.getNextInterval();
+      const delayMs = Math.max(100, Math.round(nextSec * 1000));
+      if (this.isRunning) {
+        this.timerId = setTimeout(scheduleNext, delayMs);
+      }
     };
 
     // First note triggers with short graceful prelude
-    this.timerId = setTimeout(scheduleNext, 300);
+    const initialInterval = this.getNextInterval();
+    const firstDelayMs = Math.max(100, Math.round(initialInterval * 1000 * 0.5));
+    this.timerId = setTimeout(scheduleNext, firstDelayMs);
   }
 
   /**
@@ -165,7 +197,7 @@ export class PoissonGenerator {
    */
   stop() {
     this.isRunning = false;
-    if (this.timerId) {
+    if (this.timerId !== null) {
       clearTimeout(this.timerId);
       this.timerId = null;
     }
@@ -174,11 +206,27 @@ export class PoissonGenerator {
   /**
    * Update parameters live
    */
-  setParameters({ eventsPerMinute, rootPitchClass, scaleIntervals, a4, humanize }) {
-    if (eventsPerMinute !== undefined) this.eventsPerMinute = eventsPerMinute;
-    if (rootPitchClass !== undefined) this.rootPitchClass = rootPitchClass;
-    if (scaleIntervals !== undefined) this.scaleIntervals = scaleIntervals;
-    if (a4 !== undefined) this.a4 = a4;
-    if (humanize !== undefined) this.humanize = Math.max(0, Math.min(1.0, humanize));
+  setParameters({ eventsPerMinute, rootPitchClass, scaleIntervals, a4, humanize, minRestSeconds, maxRestSeconds } = {}) {
+    if (eventsPerMinute !== undefined && Number.isFinite(eventsPerMinute) && eventsPerMinute > 0) {
+      this.eventsPerMinute = eventsPerMinute;
+    }
+    if (rootPitchClass !== undefined && Number.isFinite(rootPitchClass)) {
+      this.rootPitchClass = rootPitchClass;
+    }
+    if (scaleIntervals !== undefined && Array.isArray(scaleIntervals)) {
+      this.scaleIntervals = scaleIntervals;
+    }
+    if (a4 !== undefined && Number.isFinite(a4) && a4 > 0) {
+      this.a4 = a4;
+    }
+    if (humanize !== undefined && Number.isFinite(humanize)) {
+      this.humanize = Math.max(0, Math.min(1.0, humanize));
+    }
+    if (minRestSeconds !== undefined && Number.isFinite(minRestSeconds) && minRestSeconds > 0) {
+      this.minRestSeconds = minRestSeconds;
+    }
+    if (maxRestSeconds !== undefined && Number.isFinite(maxRestSeconds) && maxRestSeconds > 0) {
+      this.maxRestSeconds = maxRestSeconds;
+    }
   }
 }

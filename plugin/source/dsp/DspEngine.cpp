@@ -191,8 +191,8 @@ void DspEngine::process(float* left, float* right, int numSamples,
     drone1Params.foldPercent = params.drone1_fold;
     drone1Params.cutoffHz = params.drone1_cutoff;
     drone1Params.resonance = params.drone1_resonance;
-    drone1Params.lfoRate = 0.12f;
-    drone1Params.lfoDepth = 180.0f;
+    drone1Params.lfoRate = params.drone1_lfo;
+    drone1Params.lfoDepth = params.drone1_isSubBass ? 12.0f : params.drone1_lfo_depth;
     drone1Params.volume = params.drone1_volume;
     drone1Params.isSubBass = params.drone1_isSubBass;
     drone1Params.active = params.drone1_active;
@@ -206,8 +206,8 @@ void DspEngine::process(float* left, float* right, int numSamples,
     drone2Params.foldPercent = params.drone2_fold;
     drone2Params.cutoffHz = params.drone2_cutoff;
     drone2Params.resonance = params.drone2_resonance;
-    drone2Params.lfoRate = 0.12f;
-    drone2Params.lfoDepth = 180.0f;
+    drone2Params.lfoRate = params.drone2_lfo;
+    drone2Params.lfoDepth = params.drone2_lfo_depth;
     drone2Params.volume = params.drone2_volume;
     drone2Params.isSubBass = false;
     drone2Params.active = params.drone2_active;

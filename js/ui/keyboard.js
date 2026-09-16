@@ -217,6 +217,12 @@ export class BraunPlaySurface {
     if (this.engine && typeof this.engine.noteOff === 'function' && typeof midi === 'number') {
       this.engine.noteOff(midi);
     }
+    try {
+      const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+      if (backend && typeof backend.emitEvent === 'function' && typeof midi === 'number') {
+        backend.emitEvent('noteOff', { note: Math.round(midi), velocity: 0.0 });
+      }
+    } catch (err) {}
     if (voice) {
       this.activePointerVoices.delete(voice);
       if (typeof voice.release === 'function') {
@@ -827,8 +833,14 @@ export class BraunPlaySurface {
       this.engine.trackDronePitch(midi);
     }
     if (this.engine && typeof this.engine.noteOn === 'function') {
-      this.engine.noteOn(midi);
+      this.engine.noteOn(midi, velocity, duration, isHold);
     }
+    try {
+      const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+      if (backend && typeof backend.emitEvent === 'function' && typeof midi === 'number') {
+        backend.emitEvent('noteOn', { note: Math.round(midi), velocity: velocity || 0.65 });
+      }
+    } catch (err) {}
     if (this.onPlay) {
       this.onPlay(freq, midi, velocity);
     }
@@ -939,6 +951,12 @@ export class BraunPlaySurface {
       if (this.engine && typeof this.engine.noteOn === 'function') {
         this.engine.noteOn(midi);
       }
+      try {
+        const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+        if (backend && typeof backend.emitEvent === 'function' && typeof midi === 'number') {
+          backend.emitEvent('noteOn', { note: Math.round(midi), velocity: vel || 0.65 });
+        }
+      } catch (err) {}
       const playVoice = (piano) => {
         const voice = piano.playNote(freq, vel, duration, isHold, true);
         if (voice) {
@@ -1004,6 +1022,12 @@ export class BraunPlaySurface {
     if (this.engine && typeof this.engine.noteOff === 'function' && Array.isArray(session.midiNotes)) {
       session.midiNotes.forEach(m => this.engine.noteOff(m));
     }
+    try {
+      const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+      if (backend && typeof backend.emitEvent === 'function' && Array.isArray(session.midiNotes)) {
+        session.midiNotes.forEach(m => backend.emitEvent('noteOff', { note: Math.round(m), velocity: 0.0 }));
+      }
+    } catch (err) {}
     session.midiNotes = [];
   }
 
@@ -1161,6 +1185,18 @@ export class BraunPlaySurface {
           keyEl._isHeld = false;
           keyEl.classList.remove('is-active');
           keyEl.classList.remove('is-pressed');
+          const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
+          if (!isNaN(midi)) {
+            if (this.engine && typeof this.engine.noteOff === 'function') {
+              this.engine.noteOff(midi);
+            }
+            try {
+              const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+              if (backend && typeof backend.emitEvent === 'function') {
+                backend.emitEvent('noteOff', { note: midi, velocity: 0.0 });
+              }
+            } catch (err) {}
+          }
         }
         if (voiceOrPromise) {
           if (typeof voiceOrPromise.release === 'function') {
@@ -1222,6 +1258,13 @@ export class BraunPlaySurface {
         if (session) this.stopChordSession(session);
       });
       this.activeHeldChords.clear();
+
+      try {
+        const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+        if (backend && typeof backend.emitEvent === 'function') {
+          backend.emitEvent('allNotesOff', {});
+        }
+      } catch (err) {}
 
       this.keyElements.forEach(keyEl => {
         keyEl._isHeld = false;

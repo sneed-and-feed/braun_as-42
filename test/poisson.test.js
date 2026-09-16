@@ -83,4 +83,33 @@ describe('Poisson Point Process Generator', () => {
     const lowHumEvent = generator.generateEvent();
     assert.ok(lowHumEvent.velocity >= 0.25 && lowHumEvent.velocity <= 0.85);
   });
+
+  it('safely handles NaN, negative, or invalid parameters without producing zero delay or NaN interval', () => {
+    const generator = new PoissonGenerator();
+    generator.setParameters({
+      eventsPerMinute: NaN,
+      humanize: 'invalid',
+      minRestSeconds: -5,
+      maxRestSeconds: NaN
+    });
+
+    for (let i = 0; i < 50; i++) {
+      const interval = generator.getNextInterval(NaN);
+      assert.ok(Number.isFinite(interval), `Interval must be finite, got ${interval}`);
+      assert.ok(interval >= 0.5, `Interval must be >= 0.5s, got ${interval}`);
+      assert.ok(interval <= 9.0, `Interval must be <= 9.0s, got ${interval}`);
+    }
+  });
+
+  it('cleans up timer on stop() and avoids redundant scheduling', () => {
+    const generator = new PoissonGenerator();
+    let triggerCount = 0;
+    generator.start(() => { triggerCount++; });
+    assert.strictEqual(generator.isRunning, true);
+    assert.ok(generator.timerId !== null);
+
+    generator.stop();
+    assert.strictEqual(generator.isRunning, false);
+    assert.strictEqual(generator.timerId, null);
+  });
 });

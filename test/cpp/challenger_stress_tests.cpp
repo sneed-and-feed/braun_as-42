@@ -634,6 +634,88 @@ void test_realtime_memory_safety_and_allocations() {
 }
 
 // ============================================================================
+// Stress Test 9: CS-80 Dual-Saw Brass Excitation with Min Damping & Shimmer Overload
+// ============================================================================
+void test_shimmer_reverb_cs80_adversarial_burst_and_damping_floor() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    braun::ParameterSnapshot params;
+    params.felt_volume = 1.0f;
+    params.felt_waveform = 4; // CS-80
+    params.felt_tone = 1.0f;   // Maximum brightness
+    params.felt_decay = 2.5f;
+    params.felt_space = 0.5f;
+    params.shimmer_mix = 1.0f;
+    params.shimmer_decay = 25.0f; // Max decay
+    params.shimmer_damping = 0.0f; // Min damping
+    params.shimmer_amount = 1.0f;  // Max shimmer
+    params.tape_mix = 0.40f;
+    params.tape_feedback = 0.70f;
+    params.master_volume = 0.90f;
+
+    std::vector<float> blockL(512, 0.0f);
+    std::vector<float> blockR(512, 0.0f);
+
+    // Blast 8 dense CS-80 chords in rapid succession
+    for (int chord = 0; chord < 8; ++chord) {
+        const uint8_t baseNote = static_cast<uint8_t>(48 + (chord * 3) % 24);
+        const braun::MidiEvent chordEvents[5] = {
+            { 0,   0x90, baseNote, 127 },
+            { 10,  0x90, static_cast<uint8_t>(baseNote + 4), 120 },
+            { 20,  0x90, static_cast<uint8_t>(baseNote + 7), 115 },
+            { 30,  0x90, static_cast<uint8_t>(baseNote + 11), 110 },
+            { 40,  0x90, static_cast<uint8_t>(baseNote + 14), 105 }
+        };
+
+        engine.process(blockL.data(), blockR.data(), 512, params, chordEvents, 5);
+
+        // Run 5 blocks
+        for (int b = 0; b < 5; ++b) {
+            std::fill(blockL.begin(), blockL.end(), 0.0f);
+            std::fill(blockR.begin(), blockR.end(), 0.0f);
+            engine.process(blockL.data(), blockR.data(), 512, params, nullptr, 0);
+        }
+
+        // Release notes
+        const braun::MidiEvent allOff = { 0, 0xB0, 123, 0 };
+        engine.process(blockL.data(), blockR.data(), 512, params, &allOff, 1);
+    }
+
+    // Now track allocation and ensure zero heap allocs while tail decays
+    gAllocationCount.store(0);
+    gAllocatedBytes.store(0);
+    gTrackAllocations.store(true);
+
+    float tailPeak = 0.0f;
+    for (int b = 0; b < 200; ++b) {
+        std::fill(blockL.begin(), blockL.end(), 0.0f);
+        std::fill(blockR.begin(), blockR.end(), 0.0f);
+
+        // Simultaneously modulate pitch bend and mod wheel
+        const braun::MidiEvent modEvents[2] = {
+            { 0,   0xB0, 1, static_cast<uint8_t>((b * 3) % 128) },
+            { 256, 0xE0, static_cast<uint8_t>((b * 7) % 128), static_cast<uint8_t>((b * 11) % 128) }
+        };
+
+        engine.process(blockL.data(), blockR.data(), 512, params, modEvents, 2);
+
+        std::string err;
+        CHALLENGER_ASSERT(checkBufferFiniteAndBounded(blockL.data(), 512, 1.25f, err), "CS80 Shimmer burst L: " + err);
+        CHALLENGER_ASSERT(checkBufferFiniteAndBounded(blockR.data(), 512, 1.25f, err), "CS80 Shimmer burst R: " + err);
+
+        for (int s = 0; s < 512; ++s) {
+            tailPeak = std::max(tailPeak, std::max(std::abs(blockL[s]), std::abs(blockR[s])));
+        }
+    }
+
+    gTrackAllocations.store(false);
+
+    CHALLENGER_ASSERT(gAllocationCount.load() == 0, "Hard real-time allocation violation during CS-80 shimmer burst");
+    CHALLENGER_ASSERT(tailPeak > 0.001f, "Reverb tail was completely dead");
+}
+
+// ============================================================================
 // Main Challenger Test Runner
 // ============================================================================
 int main() {
@@ -649,6 +731,7 @@ int main() {
     RUN_CHALLENGER_TEST(test_tape_delay_feedback_saturation_stress);
     RUN_CHALLENGER_TEST(test_master_limiter_overload_protection);
     RUN_CHALLENGER_TEST(test_realtime_memory_safety_and_allocations);
+    RUN_CHALLENGER_TEST(test_shimmer_reverb_cs80_adversarial_burst_and_damping_floor);
 
     std::cout << "========================================================\n";
     std::cout << "Challenger Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
