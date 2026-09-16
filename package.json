@@ -1,6 +1,6 @@
 {
   "name": "braun-as-42",
-  "version": "1.0.0",
+  "version": "1.2.4",
   "description": "Dieter Rams / Braun inspired microtonal ambient generative synthesizer (Harold Budd / Brian Eno / Elta Solar 42n)",
   "type": "module",
   "scripts": {
