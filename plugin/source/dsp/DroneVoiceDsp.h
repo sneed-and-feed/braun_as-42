@@ -50,6 +50,14 @@ public:
         mGainSmoother.setTimeConstant(0.030f);
         mGainSmoother.reset(0.55f);
 
+        mResonanceSmoother.setSampleRate(mSampleRate);
+        mResonanceSmoother.setTimeConstant(0.025f);
+        mResonanceSmoother.reset(3.5f);
+
+        mFoldSmoother.setSampleRate(mSampleRate);
+        mFoldSmoother.setTimeConstant(0.025f);
+        mFoldSmoother.reset(45.0f);
+
         mBeatHz = defaultBeat;
         mDetuneCents = defaultDetune;
 
@@ -66,6 +74,7 @@ public:
         mLfoPhase = 0.0f;
         mFilter1.reset();
         mFilter2.reset();
+        mFilterSubBlockCounter = 0;
         mDeclickSamples = 0;
         mDeclickGain = 1.0f;
     }
@@ -84,9 +93,17 @@ public:
         const float targetVol = params.volume * (params.isSubBass ? 1.70f : 1.0f);
         mGainSmoother.setTarget(targetVol);
 
+        const float targetResonance = params.isSubBass ? 0.5f : std::clamp(params.resonance, 0.5f, 12.0f);
+        mResonanceSmoother.setTarget(targetResonance);
+
+        const float targetFold = std::clamp(params.foldPercent, 0.0f, 100.0f);
+        mFoldSmoother.setTarget(targetFold);
+
         const float baseFreq = mFreqSmoother.next();
         const float baseCutoff = mCutoffSmoother.next();
         const float currentGain = mGainSmoother.next();
+        const float currentResonance = mResonanceSmoother.next();
+        const float currentFoldPercent = mFoldSmoother.next();
 
         // 2. Frequency computation
         // Sub-bass mode locks beating and detune to 0 to prevent phase cancellation
@@ -123,8 +140,8 @@ public:
         // 4. Wavefolder / Sub-bass shaper (analytical C1 smooth curves)
         float foldedOut = 0.0f;
         if (!isSquareA || !isSquareB) {
-            const float drive = std::clamp(1.0f + params.foldPercent / 50.0f, 0.5f, 4.0f);
-            const float fold = std::clamp(params.foldPercent / 100.0f, 0.0f, 1.0f);
+            const float drive = std::clamp(1.0f + currentFoldPercent / 50.0f, 0.5f, 4.0f);
+            const float fold = std::clamp(currentFoldPercent / 100.0f, 0.0f, 1.0f);
 
             if (params.isSubBass) {
                 // Sub-bass mode: smooth tanh saturation replaces wavefolder
@@ -149,12 +166,17 @@ public:
         const float modulatedCutoff = std::max(25.5f, baseCutoff + lfoSine * effectiveDepth);
 
         // 6. 4-Pole Resonant Ladder Filter (cascaded dual biquad with Q = sqrt(R))
-        const float r = params.isSubBass ? 0.5f : std::clamp(params.resonance, 0.5f, 12.0f);
-        const float q = std::sqrt(r);
-        const float filterCutoff = params.isSubBass ? 140.0f : modulatedCutoff;
+        if (mFilterSubBlockCounter == 0) {
+            const float r = params.isSubBass ? 0.5f : currentResonance;
+            const float q = std::sqrt(r);
+            const float filterCutoff = params.isSubBass ? 140.0f : modulatedCutoff;
 
-        mFilter1.configure(Biquad::Type::Lowpass, mSampleRate, filterCutoff, q);
-        mFilter2.configure(Biquad::Type::Lowpass, mSampleRate, filterCutoff, q);
+            mFilter1.configure(Biquad::Type::Lowpass, mSampleRate, filterCutoff, q);
+            mFilter2.copyCoefficientsFrom(mFilter1);
+            mFilterSubBlockCounter = kFilterSubBlockSize - 1;
+        } else {
+            --mFilterSubBlockCounter;
+        }
 
         const float f1 = mFilter1.process(combinedFilterInput);
         const float f2 = mFilter2.process(f1);
@@ -196,9 +218,14 @@ private:
     OnePoleSmoother mFreqSmoother;
     OnePoleSmoother mCutoffSmoother;
     OnePoleSmoother mGainSmoother;
+    OnePoleSmoother mResonanceSmoother;
+    OnePoleSmoother mFoldSmoother;
 
     Biquad mFilter1;
     Biquad mFilter2;
+
+    static constexpr uint32_t kFilterSubBlockSize = 16;
+    uint32_t mFilterSubBlockCounter { 0 };
 
     uint32_t mDeclickSamples { 0 };
     uint32_t mDeclickSamplesTotal { 1200 };

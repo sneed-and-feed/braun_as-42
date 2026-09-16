@@ -61,9 +61,11 @@ public:
         mEnvStage = EnvStage::Idle;
         mEnvGain = 0.0f;
         mStealGain = 0.0f;
+        mStealFreq = 220.0f;
         mNoteSampleCount = 0;
         mCurrentFreq = 220.0f;
         mCurrentMidi = 57;
+        mFilterSubBlockCounter = 0;
 
         mFilter1.reset();
         mFilter2.reset();
@@ -81,6 +83,8 @@ public:
     bool isActive() const noexcept { return mIsActive; }
     bool isHold() const noexcept { return mIsHold; }
     bool isChord() const noexcept { return mIsChord; }
+    bool isStealing() const noexcept { return mIsStealing; }
+    float getStealFreq() const noexcept { return mStealFreq; }
     float getCurrentFreq() const noexcept { return mCurrentFreq; }
     int getCurrentMidi() const noexcept { return mCurrentMidi; }
     float getEnvGain() const noexcept { return mEnvGain; }
@@ -95,6 +99,7 @@ public:
 
     void trigger(float freq, float velocity, float durationSec, const FeltPianoParams& params,
                  bool isHold, bool isChord, uint64_t currentSampleCount) noexcept {
+        const float oldFreq = mCurrentFreq;
         mCurrentFreq = freq;
         mCurrentVelocity = std::clamp(velocity, 0.01f, 1.0f);
         mDurationSec = durationSec;
@@ -226,10 +231,12 @@ public:
         if (mIsActive && mEnvGain > 0.001f) {
             mIsStealing = true;
             mStealGain = mEnvGain;
+            mStealFreq = oldFreq;
             mStealSamplesTotal = static_cast<uint32_t>(0.005f * mSampleRate);
             mStealSamplesLeft = mStealSamplesTotal;
         } else {
             mIsStealing = false;
+            mStealFreq = freq;
             mEnvGain = 0.0f;
         }
 
@@ -237,6 +244,7 @@ public:
         mEnvSampleCount = 0;
         mNoteSampleCount = 0;
         mIsActive = true;
+        mFilterSubBlockCounter = 0;
     }
 
     void release() noexcept {
@@ -244,16 +252,16 @@ public:
         mIsHold = false;
         mIsChord = false;
         if (mIsStealing) {
-            mIsStealing = false;
-            mIsActive = false;
+            // Smoothly complete the steal fade-out to 0.0f rather than snapping to zero.
+            // Setting mEnvStage to Idle prevents transitioning to Attack when fade-out finishes.
             mEnvStage = EnvStage::Idle;
-            mEnvGain = 0.0f;
             return;
         }
         mEnvStage = EnvStage::Release;
         mReleaseStartGain = std::max(0.0001f, mEnvGain);
         mReleaseStartCutoff = mCurrentCutoff;
         mEnvSampleCount = 0;
+        mFilterSubBlockCounter = 0;
     }
 
     inline float processSample(const FeltPianoParams& /*params*/) noexcept {
@@ -270,6 +278,7 @@ public:
                     mEnvGain = 0.0f;
                     if (mEnvStage == EnvStage::Attack && mIsActive) {
                         mEnvSampleCount = 0;
+                        mNoteSampleCount = 0;
                     } else {
                         mIsActive = false;
                         mEnvStage = EnvStage::Idle;
@@ -366,10 +375,19 @@ public:
         }
         mCurrentCutoff = currentCutoff;
 
-        const float filterQ1 = isCS80 ? 1.85f : 0.7071f;
-        const float filterQ2 = isCS80 ? 1.45f : 0.7071f;
-        mFilter1.configure(Biquad::Type::Lowpass, mSampleRate, currentCutoff, filterQ1);
-        mFilter2.configure(Biquad::Type::Lowpass, mSampleRate, currentCutoff, filterQ2);
+        if (mFilterSubBlockCounter == 0) {
+            const float filterQ1 = isCS80 ? 1.85f : 0.7071f;
+            mFilter1.configure(Biquad::Type::Lowpass, mSampleRate, currentCutoff, filterQ1);
+            if (isCS80) {
+                const float filterQ2 = 1.45f;
+                mFilter2.configure(Biquad::Type::Lowpass, mSampleRate, currentCutoff, filterQ2);
+            } else {
+                mFilter2.copyCoefficientsFrom(mFilter1);
+            }
+            mFilterSubBlockCounter = kFilterSubBlockSize - 1;
+        } else {
+            --mFilterSubBlockCounter;
+        }
 
         // 4. Calculate oscillator frequencies including pitch bend, micro-dispersion, and CS-80 chorus
         const float pitchBend = mPitchBendSmoother.next();
@@ -385,8 +403,9 @@ public:
             detune2 = (mDispersionOffsetCents + 6.5f) + pitchBend + chorusMod;
         }
 
-        const float freq1 = mCurrentFreq * std::pow(2.0f, detune1 / 1200.0f);
-        const float freq2 = mCurrentFreq * std::pow(2.0f, detune2 / 1200.0f);
+        const float activeFreq = mIsStealing ? mStealFreq : mCurrentFreq;
+        const float freq1 = activeFreq * std::pow(2.0f, detune1 / 1200.0f);
+        const float freq2 = activeFreq * std::pow(2.0f, detune2 / 1200.0f);
 
         // Advance phases
         mPhase1 += freq1 / mSampleRate;
@@ -507,6 +526,9 @@ private:
     Biquad mBodyFilter;
     Biquad mHammerFilter;
 
+    static constexpr uint32_t kFilterSubBlockSize = 16;
+    uint32_t mFilterSubBlockCounter { 0 };
+
     float mStartFilterCutoff { 280.0f };
     float mMaxFilterCutoff { 2000.0f };
     float mRestFilterCutoff { 500.0f };
@@ -527,6 +549,7 @@ private:
     float mEnvGain { 0.0f };
 
     float mStealGain { 0.0f };
+    float mStealFreq { 220.0f };
     uint32_t mStealSamplesTotal { 240 };
     uint32_t mStealSamplesLeft { 0 };
 
@@ -565,6 +588,7 @@ public:
         mCurrentSampleCount = 0;
         mVoiceIndex = 0;
         mPitchBendCents = 0.0f;
+        mNumActiveVoices = 0;
     }
 
     void reset() noexcept {
@@ -576,6 +600,28 @@ public:
         mHeadroomSmoother.reset(0.38f);
         mVoiceIndex = 0;
         mCurrentSampleCount = 0;
+        mNumActiveVoices = 0;
+    }
+
+    void addActiveVoice(size_t voiceIdx) noexcept {
+        const uint8_t idx = static_cast<uint8_t>(voiceIdx);
+        size_t insertPos = mNumActiveVoices;
+        for (size_t a = 0; a < mNumActiveVoices; ++a) {
+            if (mActiveVoices[a] == idx) {
+                return; // already present
+            }
+            if (mActiveVoices[a] > idx) {
+                insertPos = a;
+                break;
+            }
+        }
+        if (mNumActiveVoices < kNumVoices) {
+            for (size_t a = mNumActiveVoices; a > insertPos; --a) {
+                mActiveVoices[a] = mActiveVoices[a - 1];
+            }
+            mActiveVoices[insertPos] = idx;
+            ++mNumActiveVoices;
+        }
     }
 
     void noteOn(int midiNote, float velocity, float durationSec = 3.5f, bool isHold = false, bool isChord = false) noexcept {
@@ -591,9 +637,9 @@ public:
     void playNote(float freq, float velocity, float durationSec = 3.5f, bool isHold = false, bool isChord = false) noexcept {
         FeltPianoVoice* voice = nullptr;
 
-        // 1. If an active voice is already playing this exact note and not held, re-trigger it
+        // 1. If an active voice is already playing this exact note, re-trigger it (even if held via sustain pedal)
         for (auto& v : mVoices) {
-            if (v.isActive() && !v.isHold() && std::abs(v.getCurrentFreq() - freq) < 0.5f) {
+            if (v.isActive() && std::abs(v.getCurrentFreq() - freq) < 0.5f) {
                 voice = &v;
                 break;
             }
@@ -644,7 +690,8 @@ public:
                 // Priority 4: Compare current envelope gain (steal quietest)
                 if (cand.getEnvGain() < voice->getEnvGain() - 0.01f) {
                     voice = &cand;
-                } else if (cand.getStartSample() < voice->getStartSample()) {
+                } else if (std::abs(cand.getEnvGain() - voice->getEnvGain()) <= 0.01f &&
+                           cand.getStartSample() < voice->getStartSample()) {
                     voice = &cand;
                 }
             }
@@ -660,6 +707,7 @@ public:
 
         voice->setPitchBend(mPitchBendCents);
         voice->trigger(freq, velocity, durationSec, mParams, isHold, isChord, mCurrentSampleCount);
+        addActiveVoice(static_cast<size_t>(voice - &mVoices[0]));
         updateHeadroomTarget();
     }
 
@@ -704,13 +752,19 @@ public:
             ++mCurrentSampleCount;
             float voiceSum = 0.0f;
             int activeCount = 0;
+            size_t writeIdx = 0;
 
-            for (auto& voice : mVoices) {
+            for (size_t a = 0; a < mNumActiveVoices; ++a) {
+                const uint8_t vIdx = mActiveVoices[a];
+                auto& voice = mVoices[vIdx];
+                voiceSum += voice.processSample(mParams);
+                ++activeCount;
+
                 if (voice.isActive()) {
-                    voiceSum += voice.processSample(mParams);
-                    ++activeCount;
+                    mActiveVoices[writeIdx++] = vIdx;
                 }
             }
+            mNumActiveVoices = writeIdx;
 
             // Check if active voice count changed for headroom scaling
             if (activeCount != mLastActiveCount) {
@@ -732,11 +786,7 @@ public:
     }
 
     int getActiveVoiceCount() const noexcept {
-        int count = 0;
-        for (const auto& v : mVoices) {
-            if (v.isActive()) ++count;
-        }
-        return count;
+        return static_cast<int>(mNumActiveVoices);
     }
 
 private:
@@ -814,6 +864,8 @@ private:
     std::vector<float> mHammerBuffer;
 
     std::array<FeltPianoVoice, kNumVoices> mVoices;
+    std::array<uint8_t, kNumVoices> mActiveVoices {};
+    size_t mNumActiveVoices { 0 };
     size_t mVoiceIndex { 0 };
     uint64_t mCurrentSampleCount { 0 };
     int mLastActiveCount { 0 };

@@ -28,6 +28,10 @@ public:
         mDcBlockerL.configure(Biquad::Type::Highpass, mSampleRate, 15.0f, 0.7071f);
         mDcBlockerR.configure(Biquad::Type::Highpass, mSampleRate, 15.0f, 0.7071f);
 
+        // Master Output Post-Saturation DC Blocker (15 Hz highpass, Q = 0.7071) - removes tape saturation DC bias
+        mPostDcBlockerL.configure(Biquad::Type::Highpass, mSampleRate, 15.0f, 0.7071f);
+        mPostDcBlockerR.configure(Biquad::Type::Highpass, mSampleRate, 15.0f, 0.7071f);
+
         mVolumeSmoother.setSampleRate(mSampleRate);
         mVolumeSmoother.setTimeConstant(0.040f);
         mVolumeSmoother.reset(0.80f);
@@ -40,6 +44,8 @@ public:
         mCompressorR.reset();
         mDcBlockerL.reset();
         mDcBlockerR.reset();
+        mPostDcBlockerL.reset();
+        mPostDcBlockerR.reset();
     }
 
     inline void processSample(float inL, float inR, const MasterLimiterParams& params,
@@ -67,8 +73,13 @@ public:
         const float limL = softLimit(satL, params.limiterKnee);
         const float limR = softLimit(satR, params.limiterKnee);
 
-        outL = std::clamp(limL, -1.0f, 1.0f);
-        outR = std::clamp(limR, -1.0f, 1.0f);
+        // 5. Post-Saturation DC Blocker (15 Hz highpass): removes DC drift and rectification
+        // bias produced by asymmetric tape saturation and soft limiting
+        const float postBlockedL = mPostDcBlockerL.process(limL);
+        const float postBlockedR = mPostDcBlockerR.process(limR);
+
+        outL = std::clamp(postBlockedL, -1.0f, 1.0f);
+        outR = std::clamp(postBlockedR, -1.0f, 1.0f);
     }
 
 private:
@@ -80,6 +91,8 @@ private:
 
     Biquad mDcBlockerL;
     Biquad mDcBlockerR;
+    Biquad mPostDcBlockerL;
+    Biquad mPostDcBlockerR;
 };
 
 } // namespace braun

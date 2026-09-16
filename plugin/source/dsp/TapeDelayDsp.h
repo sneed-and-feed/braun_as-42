@@ -22,7 +22,13 @@ class TapeDelayDsp {
 public:
     void prepare(double sampleRate, double maxDelaySec = 3.5) {
         mSampleRate = static_cast<float>(sampleRate > 100.0 ? sampleRate : 48000.0);
-        mMaxDelaySamples = static_cast<size_t>(std::ceil(mSampleRate * maxDelaySec)) + 1024;
+        const size_t minRequired = static_cast<size_t>(std::ceil(mSampleRate * maxDelaySec)) + 1024;
+        size_t capacity = 1;
+        while (capacity < minRequired) {
+            capacity <<= 1;
+        }
+        mMaxDelaySamples = capacity;
+        mBufferMask = capacity - 1;
 
         mBufferL.assign(mMaxDelaySamples, 0.0f);
         mBufferR.assign(mMaxDelaySamples, 0.0f);
@@ -44,6 +50,14 @@ public:
         mToneSmoother.setTimeConstant(0.040f);
         mToneSmoother.reset(3600.0f);
 
+        mMixSmoother.setSampleRate(mSampleRate);
+        mMixSmoother.setTimeConstant(0.025f);
+        mMixSmoother.reset(0.40f);
+
+        mWowSmoother.setSampleRate(mSampleRate);
+        mWowSmoother.setTimeConstant(0.025f);
+        mWowSmoother.reset(0.45f);
+
         // Filters: Butterworth Q = 0.7071 eliminates resonant peaking in recirculation
         mHighpassL.configure(Biquad::Type::Highpass, mSampleRate, 75.0f, 0.7071f);
         mHighpassR.configure(Biquad::Type::Highpass, mSampleRate, 75.0f, 0.7071f);
@@ -63,6 +77,7 @@ public:
         mWriteIndex = 0;
         mWowPhase = 0.0f;
         mFlutterPhase = 0.0f;
+        mFilterSubBlockCounter = 0;
 
         mHighpassL.reset();
         mHighpassR.reset();
@@ -86,13 +101,26 @@ public:
         const float targetTone = std::clamp(params.toneHz, 800.0f, 12000.0f);
         mToneSmoother.setTarget(targetTone);
 
+        const float targetMix = std::clamp(params.mix, 0.0f, 1.0f);
+        mMixSmoother.setTarget(targetMix);
+
+        const float targetWow = std::clamp(params.wowAmount, 0.0f, 1.0f);
+        mWowSmoother.setTarget(targetWow);
+
         const float curTimeL = mDelayTimeLSmoother.next();
         const float curTimeR = mDelayTimeRSmoother.next();
         const float curFb = mFeedbackSmoother.next();
         const float curTone = mToneSmoother.next();
+        const float curMix = mMixSmoother.next();
+        const float curWow = mWowSmoother.next();
 
-        mLowpassL.configure(Biquad::Type::Lowpass, mSampleRate, curTone, 0.7071f);
-        mLowpassR.configure(Biquad::Type::Lowpass, mSampleRate, curTone, 0.7071f);
+        if (mFilterSubBlockCounter == 0) {
+            mLowpassL.configure(Biquad::Type::Lowpass, mSampleRate, curTone, 0.7071f);
+            mLowpassR.copyCoefficientsFrom(mLowpassL);
+            mFilterSubBlockCounter = kFilterSubBlockSize - 1;
+        } else {
+            --mFilterSubBlockCounter;
+        }
 
         // 2. Wow & Flutter mechanical LFO modulation
         // Wow: 0.38 Hz sine LFO
@@ -111,8 +139,8 @@ public:
         constexpr float nominalTotal = 0.0065f; // max wow (0.005) + max flutter (0.0015)
         const float modScale = (maxMod < nominalTotal) ? (maxMod / nominalTotal) : 1.0f;
 
-        const float wowDepth = (0.005f * params.wowAmount) * modScale;
-        const float flutterDepth = (0.0015f * params.wowAmount) * modScale;
+        const float wowDepth = (0.005f * curWow) * modScale;
+        const float flutterDepth = (0.0015f * curWow) * modScale;
 
         // Phase inverted wow for stereo width, flutter 0.8 on right
         const float totalModL = (wowSine * wowDepth) + (flutterSine * flutterDepth);
@@ -151,7 +179,7 @@ public:
         mBufferL[mWriteIndex] = inputMixedL;
         mBufferR[mWriteIndex] = inputMixedR;
 
-        mWriteIndex = (mWriteIndex + 1) % mMaxDelaySamples;
+        mWriteIndex = (mWriteIndex + 1) & mBufferMask;
 
         // 8. Delay return conditioning (compressor -6dBFS + soft limiter k=0.78)
         const float compL = mReturnCompL.process(shaperOutL);
@@ -165,27 +193,24 @@ public:
         constexpr float kPanR_LeftGain  = 0.15643f; // cos(pi/2 * 0.45)
         constexpr float kPanR_RightGain = 0.98769f; // sin(pi/2 * 0.45)
 
-        const float wetL = (limL * kPanL_LeftGain + limR * kPanR_LeftGain) * params.mix;
-        const float wetR = (limL * kPanL_RightGain + limR * kPanR_RightGain) * params.mix;
+        const float wetL = (limL * kPanL_LeftGain + limR * kPanR_LeftGain) * curMix;
+        const float wetR = (limL * kPanL_RightGain + limR * kPanR_RightGain) * curMix;
 
         outL += wetL;
         outR += wetR;
     }
 
 private:
-    // 4-point cubic Hermite interpolation for smooth non-integer delay line reads
+    // 4-point cubic Hermite interpolation with power-of-2 bitwise mask wrapping
     inline float readDelayCubic(const std::vector<float>& buffer, size_t writeIdx, float delaySamples) const noexcept {
-        const float bufSize = static_cast<float>(mMaxDelaySamples);
-        float readPos = static_cast<float>(writeIdx) - delaySamples;
-        while (readPos < 0.0f) readPos += bufSize;
-        while (readPos >= bufSize) readPos -= bufSize;
+        const float readPos = static_cast<float>(writeIdx) - delaySamples;
+        const int64_t iFloor = static_cast<int64_t>(std::floor(readPos));
+        const float frac = readPos - static_cast<float>(iFloor);
 
-        const size_t i1 = static_cast<size_t>(readPos);
-        const float frac = readPos - static_cast<float>(i1);
-
-        const size_t i0 = (i1 + mMaxDelaySamples - 1) % mMaxDelaySamples;
-        const size_t i2 = (i1 + 1) % mMaxDelaySamples;
-        const size_t i3 = (i1 + 2) % mMaxDelaySamples;
+        const size_t i0 = static_cast<size_t>(iFloor - 1) & mBufferMask;
+        const size_t i1 = static_cast<size_t>(iFloor) & mBufferMask;
+        const size_t i2 = static_cast<size_t>(iFloor + 1) & mBufferMask;
+        const size_t i3 = static_cast<size_t>(iFloor + 2) & mBufferMask;
 
         const float y0 = buffer[i0];
         const float y1 = buffer[i1];
@@ -202,7 +227,10 @@ private:
     }
 
     float mSampleRate { 48000.0f };
-    size_t mMaxDelaySamples { 170000 };
+    size_t mMaxDelaySamples { 262144 };
+    size_t mBufferMask { 262143 };
+    static constexpr uint32_t kFilterSubBlockSize = 16;
+    uint32_t mFilterSubBlockCounter { 0 };
     std::vector<float> mBufferL;
     std::vector<float> mBufferR;
     size_t mWriteIndex { 0 };
@@ -211,6 +239,8 @@ private:
     OnePoleSmoother mDelayTimeRSmoother;
     OnePoleSmoother mFeedbackSmoother;
     OnePoleSmoother mToneSmoother;
+    OnePoleSmoother mMixSmoother;
+    OnePoleSmoother mWowSmoother;
 
     Biquad mHighpassL;
     Biquad mHighpassR;

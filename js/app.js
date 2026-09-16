@@ -604,13 +604,17 @@ export class AmbientApp {
 
         if (!this.engine.poisson.isRunning) {
           this.engine.poisson.start((ev) => {
-            if (this.engine.feltPiano) {
-              this.engine.feltPiano.playNote(ev.freq, ev.velocity, ev.duration);
+            if (this.engine) {
+              this.engine.noteOn(ev.midi, ev.velocity, ev.duration);
             }
             this._emitJuceNoteOn(ev.midi, ev.velocity);
+            const noteDuration = (ev.duration || 3.5) * 1000;
             setTimeout(() => {
+              if (this.engine) {
+                this.engine.noteOff(ev.midi);
+              }
               this._emitJuceNoteOff(ev.midi);
-            }, (ev.duration || 3.5) * 1000);
+            }, noteDuration);
             if (this.playSurface) this.playSurface.flashKey(ev.midi);
           });
           autoEvolveBtn.classList.add('is-active');
@@ -618,6 +622,9 @@ export class AmbientApp {
           if (textEl) textEl.textContent = 'AUTO EVOLVE ON';
         } else {
           this.engine.poisson.stop();
+          if (this.engine && typeof this.engine.releaseAllNotes === 'function') {
+            this.engine.releaseAllNotes();
+          }
           this._emitJuceAllNotesOff();
           autoEvolveBtn.classList.remove('is-active');
           const textEl = autoEvolveBtn.querySelector('.braun-status-text');
@@ -635,19 +642,23 @@ export class AmbientApp {
         if (!this.engine.phaseLoops.isRunning) {
           this.engine.phaseLoops.start(
             (loop, ev) => {
-              if (this.engine.feltPiano) {
-                this.engine.feltPiano.playNote(ev.freq, ev.velocity, ev.duration);
+              if (this.engine) {
+                this.engine.noteOn(ev.midi, ev.velocity, ev.duration);
               }
               this._emitJuceNoteOn(ev.midi, ev.velocity);
+              const noteDuration = (ev.duration || 3.5) * 1000;
               setTimeout(() => {
+                if (this.engine) {
+                  this.engine.noteOff(ev.midi);
+                }
                 this._emitJuceNoteOff(ev.midi);
-              }, (ev.duration || 3.5) * 1000);
+              }, noteDuration);
               if (this.playSurface) this.playSurface.flashKey(ev.midi);
             },
             (loops) => {
-              // Update 60fps loop progress bars
+              // Update 60fps loop progress bars via cached DOM references
               loops.forEach(l => {
-                const bar = document.getElementById(`loop-progress-${l.id}`);
+                const bar = this._getLoopBar(l.id);
                 if (bar) {
                   bar.style.width = `${(l.progress * 100).toFixed(1)}%`;
                 }
@@ -659,12 +670,15 @@ export class AmbientApp {
           if (textEl) textEl.textContent = 'AIRPORTS LOOPS ON';
         } else {
           this.engine.phaseLoops.stop();
+          if (this.engine && typeof this.engine.releaseAllNotes === 'function') {
+            this.engine.releaseAllNotes();
+          }
           this._emitJuceAllNotesOff();
           loopsBtn.classList.remove('is-active');
           const textEl = loopsBtn.querySelector('.braun-status-text');
           if (textEl) textEl.textContent = 'AIRPORTS LOOPS OFF';
           this.engine.phaseLoops.loops.forEach(l => {
-            const bar = document.getElementById(`loop-progress-${l.id}`);
+            const bar = this._getLoopBar(l.id);
             if (bar) bar.style.width = '0%';
           });
         }
@@ -1381,24 +1395,52 @@ export class AmbientApp {
     }
   }
 
+  _getLoopBar(id) {
+    if (!this._loopBars) this._loopBars = [];
+    let bar = this._loopBars[id];
+    if (!bar && typeof document !== 'undefined') {
+      bar = document.getElementById(`loop-progress-${id}`);
+      if (bar) this._loopBars[id] = bar;
+    }
+    return bar;
+  }
+
+  _getLoopNote(id) {
+    if (!this._loopNotes) this._loopNotes = [];
+    let note = this._loopNotes[id];
+    if (!note && typeof document !== 'undefined') {
+      note = document.getElementById(`loop-note-${id}`);
+      if (note) this._loopNotes[id] = note;
+    }
+    return note;
+  }
+
   _renderLoopRows() {
     const list = document.getElementById('loops-list');
     if (!list) return;
     list.innerHTML = '';
+    this._loopBars = [];
+    this._loopNotes = [];
 
     const periods = [13.7, 17.3, 21.1, 26.9];
     periods.forEach((period, idx) => {
+      const loopId = idx + 1;
       const row = document.createElement('div');
       row.className = 'braun-loop-row';
       row.innerHTML = `
-        <span class="braun-loop-id">TAPE ${idx + 1}</span>
-        <span class="braun-loop-note" id="loop-note-${idx + 1}">---</span>
+        <span class="braun-loop-id">TAPE ${loopId}</span>
+        <span class="braun-loop-note" id="loop-note-${loopId}">---</span>
         <div class="braun-loop-bar-container">
-          <div class="braun-loop-progress" id="loop-progress-${idx + 1}"></div>
+          <div class="braun-loop-progress" id="loop-progress-${loopId}"></div>
         </div>
         <span class="braun-loop-period">${period}s</span>
       `;
       list.appendChild(row);
+
+      const barEl = row.querySelector(`#loop-progress-${loopId}`);
+      const noteEl = row.querySelector(`#loop-note-${loopId}`);
+      if (barEl) this._loopBars[loopId] = barEl;
+      if (noteEl) this._loopNotes[loopId] = noteEl;
     });
 
     this.updateLoopNotes();
@@ -1407,7 +1449,7 @@ export class AmbientApp {
   updateLoopNotes() {
     if (!this.engine || !this.engine.phaseLoops) return;
     this.engine.phaseLoops.loops.forEach(l => {
-      const el = document.getElementById(`loop-note-${l.id}`);
+      const el = this._getLoopNote(l.id);
       if (el && l.noteName) {
         el.textContent = l.noteName;
       }
@@ -1523,9 +1565,9 @@ export class AmbientApp {
           const textEl = loopsBtn.querySelector('.braun-status-text');
           if (textEl) textEl.textContent = 'LOOPS OFF';
         }
-        // Reset loop progress meters to zero
+        // Reset loop progress meters to zero via cached DOM references
         this.engine.phaseLoops.loops.forEach(l => {
-          const bar = document.getElementById(`loop-progress-${l.id}`);
+          const bar = this._getLoopBar(l.id);
           if (bar) bar.style.width = '0%';
         });
       }

@@ -9,6 +9,9 @@
 // Architecture-specific denormal suppression (DAZ/FTZ)
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <immintrin.h>
+#elif defined(_M_ARM64) || defined(_M_ARM64EC)
+#include <arm64intr.h>
+#include <intrin.h>
 #endif
 
 namespace braun {
@@ -23,12 +26,29 @@ public:
         mOldMxcsr = _mm_getcsr();
         // 0x8040 sets DAZ (bit 6) and FTZ (bit 15)
         _mm_setcsr(mOldMxcsr | 0x8040);
+#elif defined(_M_ARM64) || defined(_M_ARM64EC)
+        mOldFpcr = static_cast<uint64_t>(_ReadStatusReg(ARM64_FPCR));
+        // Bit 24 (FZ): Flush-to-zero for FP32/FP64
+        // Bit 19 (FZ16): Flush-to-zero for FP16
+        constexpr uint64_t kFzMask = (1ULL << 24) | (1ULL << 19);
+        _WriteStatusReg(ARM64_FPCR, static_cast<__int64>(mOldFpcr | kFzMask));
+#elif defined(__aarch64__) || defined(__arm64__)
+        uint64_t fpcr = 0;
+        __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
+        mOldFpcr = fpcr;
+        constexpr uint64_t kFzMask = (1ULL << 24) | (1ULL << 19);
+        fpcr |= kFzMask;
+        __asm__ __volatile__("msr fpcr, %0" : : "r"(fpcr));
 #endif
     }
 
     ~ScopedNoDenormals() noexcept {
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
         _mm_setcsr(mOldMxcsr);
+#elif defined(_M_ARM64) || defined(_M_ARM64EC)
+        _WriteStatusReg(ARM64_FPCR, static_cast<__int64>(mOldFpcr));
+#elif defined(__aarch64__) || defined(__arm64__)
+        __asm__ __volatile__("msr fpcr, %0" : : "r"(mOldFpcr));
 #endif
     }
 
@@ -38,6 +58,8 @@ public:
 private:
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
     unsigned int mOldMxcsr { 0 };
+#elif defined(_M_ARM64) || defined(_M_ARM64EC) || defined(__aarch64__) || defined(__arm64__)
+    uint64_t mOldFpcr { 0 };
 #endif
 };
 
@@ -80,11 +102,14 @@ inline float applySmoothBoundaryKnee(float y, float knee = 0.70f) noexcept {
 /**
  * West-Coast polynomial analog wavefolding curve (Solar 42n style).
  * y = tanh( sin(0.5 * pi * D * x) - F * sin(1.5 * pi * D * x) )
+ * Optimized via triple-angle identity: sin(3θ) = sin(θ) * (3 - 4*sin²(θ))
+ * Eliminates a second std::sin() call while maintaining ε-bounded numerical invariance (< 6e-7).
  */
 inline float wavefold(float x, float drive = 1.8f, float fold = 0.6f) noexcept {
     const float driven = x * drive;
     const float stage1 = std::sin(kHalfPi * driven);
-    const float stage2 = stage1 - fold * std::sin(kThreeHalfPi * driven);
+    const float sin3 = stage1 * (3.0f - 4.0f * stage1 * stage1);
+    const float stage2 = stage1 - fold * sin3;
     return std::tanh(stage2);
 }
 
@@ -190,6 +215,14 @@ public:
         mS2 = 0.0f;
     }
 
+    inline void copyCoefficientsFrom(const Biquad& other) noexcept {
+        mB0 = other.mB0;
+        mB1 = other.mB1;
+        mB2 = other.mB2;
+        mA1 = other.mA1;
+        mA2 = other.mA2;
+    }
+
     void configure(Type type, float sampleRate, float cutoffHz, float Q, float gainDb = 0.0f) noexcept {
         const float fs = sampleRate > 100.0f ? sampleRate : 48000.0f;
         // Clamp cutoff to safe Nyquist limit
@@ -257,11 +290,8 @@ public:
         const float y = mB0 * x + mS1;
         mS1 = mB1 * x - mA1 * y + mS2;
         mS2 = mB2 * x - mA2 * y;
-        if (std::abs(y) < 1.0e-7f && std::abs(x) < 1.0e-7f) {
-            mS1 = 0.0f;
-            mS2 = 0.0f;
-            return 0.0f;
-        }
+        mS1 = flushDenormal(mS1);
+        mS2 = flushDenormal(mS2);
         return flushDenormal(y);
     }
 

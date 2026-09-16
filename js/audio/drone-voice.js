@@ -8,6 +8,33 @@
 import { makeWavefoldCurve, makeSoftClipCurve } from './wavefolder.js';
 import { midiToFrequency } from '../generative/scales.js';
 
+// Module-level pre-computed curve banks to eliminate heap allocation during drags
+const _wavefoldCurveBank = new Map();
+const _softClipCurveBank = new Map();
+
+function getCachedWavefoldCurve(drive, fold, samples = 2048) {
+  const qDrive = Math.round(drive * 20) / 20; // 0.05 step
+  const qFold = Math.round(fold * 50) / 50;   // 0.02 step
+  const key = `${samples}_${qDrive.toFixed(2)}_${qFold.toFixed(2)}`;
+  let curve = _wavefoldCurveBank.get(key);
+  if (!curve) {
+    curve = makeWavefoldCurve(samples, qDrive, qFold);
+    _wavefoldCurveBank.set(key, curve);
+  }
+  return curve;
+}
+
+function getCachedSoftClipCurve(k, samples = 2048) {
+  const qK = Math.round(k * 50) / 50;
+  const key = `${samples}_${qK.toFixed(2)}`;
+  let curve = _softClipCurveBank.get(key);
+  if (!curve) {
+    curve = makeSoftClipCurve(samples, qK);
+    _softClipCurveBank.set(key, curve);
+  }
+  return curve;
+}
+
 export class SolarDroneVoice {
   /**
    * @param {AudioContext} ctx
@@ -373,8 +400,39 @@ export class SolarDroneVoice {
   }
 
   /**
-   * Micro-gain declick crossfade during pitch jumps/frequency slewing
-   * Dips output gain to near-silence during frequency transition and ramps back up to volume,
+   * Helper to interpolate and estimate instantaneous gain during envelope transitions or fallbacks
+   * @param {number} now
+   * @returns {number}
+   */
+  _getInstantGain(now) {
+    if (!this.isActive) return 0.0001;
+    // If currently in a declick crossfade transition, interpolate the in-flight envelope
+    if (this._declickEndTime && now < this._declickEndTime) {
+      const tStart = this._declickStartTime || now;
+      const tHalf = this._declickHalfTime || (tStart + 0.015);
+      const tEnd = this._declickEndTime;
+      const startG = this._declickStartGain || 0.5;
+      const dipG = this._declickDipGain || 0.01;
+      const endG = this._declickEndGain || startG;
+      if (now <= tHalf) {
+        const frac = Math.max(0, Math.min(1, (now - tStart) / Math.max(0.001, tHalf - tStart)));
+        return startG + (dipG - startG) * frac;
+      } else {
+        const frac = Math.max(0, Math.min(1, (now - tHalf) / Math.max(0.001, tEnd - tHalf)));
+        return dipG + (endG - dipG) * frac;
+      }
+    }
+    // Query AudioParam.value if valid and finite
+    if (this.voiceGain && this.voiceGain.gain && typeof this.voiceGain.gain.value === 'number' && isFinite(this.voiceGain.gain.value)) {
+      return Math.max(0.0001, Math.min(1.5, this.voiceGain.gain.value));
+    }
+    const baseVol = this.volume * (this.subBassGainTrim || 1.0);
+    return (typeof this._currentGain === 'number' && isFinite(this._currentGain)) ? this._currentGain : baseVol;
+  }
+
+  /**
+   * Execute soft crossfade dip on voiceGain to prevent audible pops when changing waveforms,
+   * beating, or tuning snaps. Gain dips to 2% and recovers to operating level over 25ms,
    * preventing pitch-slew transients from blasting into tape delay and shimmer reverb.
    * Supports extended crossfade windows (65-75ms, ~2 full cycles of 32.7 Hz) for sub-bass transitions.
    * @param {number} [crossfadeTime=0.025] - Total crossfade duration in seconds
@@ -388,9 +446,8 @@ export class SolarDroneVoice {
     }
     this._lastDeclickTime = now;
 
-    const baseVol = this.volume * (this.subBassGainTrim || 1.0);
-    const curVol = (typeof this._currentGain === 'number' && isFinite(this._currentGain)) ? this._currentGain : baseVol;
-    if (curVol <= 0.001) return;
+    const instantGain = this._getInstantGain(now);
+    if (instantGain <= 0.0001 && (!this.isActive || this.volume <= 0.001)) return;
 
     let held = false;
     if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
@@ -404,15 +461,22 @@ export class SolarDroneVoice {
     if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
       this.voiceGain.gain.cancelScheduledValues(now);
       if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
-        this.voiceGain.gain.setValueAtTime(curVol, now);
+        this.voiceGain.gain.setValueAtTime(instantGain, now);
       }
     }
 
-    const dipGain = Math.max(0.0001, curVol * 0.02);
+    const baseVol = this.volume * (this.subBassGainTrim || 1.0);
+    const dipGain = Math.max(0.0001, instantGain * 0.02);
     const halfTime = Math.max(0.008, Math.min(0.035, crossfadeTime * 0.45));
     const fullTime = Math.max(0.018, Math.min(0.075, crossfadeTime));
-    const endVol = (typeof targetEndGain === 'number' && isFinite(targetEndGain)) ? targetEndGain : curVol;
+    const endVol = (typeof targetEndGain === 'number' && isFinite(targetEndGain)) ? targetEndGain : baseVol;
 
+    this._declickStartTime = now;
+    this._declickStartGain = instantGain;
+    this._declickHalfTime = now + halfTime;
+    this._declickDipGain = dipGain;
+    this._declickEndTime = now + fullTime;
+    this._declickEndGain = endVol;
     this._currentGain = endVol;
     this._declickingUntil = now + fullTime;
 
@@ -640,16 +704,49 @@ export class SolarDroneVoice {
   setWavefold(drive, fold) {
     const d = Math.max(0.5, Math.min(4.0, drive));
     const f = Math.max(0.0, Math.min(1.0, fold));
-    if (this.shaper && this.shaper.curve && Math.abs(this.drive - d) < 0.005 && Math.abs(this.fold - f) < 0.005 && !this._shaperNeedsUpdate) {
+
+    const targetCurve = this.isSubBass
+      ? getCachedSoftClipCurve(1.25 + f * 0.45, 2048)
+      : getCachedWavefoldCurve(d, f, 2048);
+
+    // Skip if shaper already points to identical cached curve reference
+    if (this.shaper && this.shaper.curve === targetCurve && !this._shaperNeedsUpdate) {
+      this.drive = d;
+      this.fold = f;
       return;
     }
+
     this.drive = d;
     this.fold = f;
     this._shaperNeedsUpdate = false;
-    if (this.isSubBass) {
-      this.shaper.curve = makeSoftClipCurve(2048, 1.25 + f * 0.45);
+
+    const now = this.ctx ? this.ctx.currentTime : 0;
+    const timeSinceLast = (this._lastWavefoldTime !== undefined) ? (now - this._lastWavefoldTime) : 1.0;
+    this._lastWavefoldTime = now;
+
+    // Live drag detection (< 60ms cadence): debounce table reload to trailing edge
+    const isLiveDrag = timeSinceLast < 0.060;
+
+    if (isLiveDrag && this.isActive) {
+      this._pendingCurve = targetCurve;
+      if (!this._wavefoldDebounceTimer) {
+        this._wavefoldDebounceTimer = setTimeout(() => {
+          if (this.shaper && this._pendingCurve && this.shaper.curve !== this._pendingCurve) {
+            this.shaper.curve = this._pendingCurve;
+          }
+          this._wavefoldDebounceTimer = null;
+          this._pendingCurve = null;
+        }, 40);
+      }
     } else {
-      this.shaper.curve = makeWavefoldCurve(2048, this.drive, this.fold);
+      if (this._wavefoldDebounceTimer) {
+        clearTimeout(this._wavefoldDebounceTimer);
+        this._wavefoldDebounceTimer = null;
+        this._pendingCurve = null;
+      }
+      if (this.shaper) {
+        this.shaper.curve = targetCurve;
+      }
     }
   }
 
@@ -783,8 +880,12 @@ export class SolarDroneVoice {
     const effectiveGain = this.volume * (this.subBassGainTrim || 1.0);
     if (this.isActive && this.voiceGain && this.voiceGain.gain) {
       const now = this.ctx.currentTime;
-      const prevGain = (this._currentGain !== undefined) ? this._currentGain : effectiveGain;
+      const prevGain = this._getInstantGain(now);
       this._currentGain = effectiveGain;
+      this._declickEndTime = null;
+      this._declickingUntil = null;
+      this._declickStartTime = null;
+      this._declickHalfTime = null;
       let held = false;
       if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
         try {
@@ -812,12 +913,14 @@ export class SolarDroneVoice {
    * Toggle or set active state with soft clickless crossfade
    */
   setActive(active) {
-    this.isActive = Boolean(active);
     const now = this.ctx.currentTime;
+    const prevGain = this._getInstantGain(now);
+    this.isActive = Boolean(active);
     const effectiveGain = this.volume * (this.subBassGainTrim || 1.0);
     const targetGain = this.isActive ? effectiveGain : 0.0;
-    const prevGain = (this._currentGain !== undefined) ? this._currentGain : (this.isActive ? 0.0 : effectiveGain);
     this._currentGain = targetGain;
+    this._declickEndTime = null;
+    this._declickingUntil = null;
 
     let held = false;
     if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {

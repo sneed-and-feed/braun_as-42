@@ -166,3 +166,12 @@ target_include_directories(challenger_stress_tests PRIVATE
     plugin/source
     plugin/source/dsp
 )
+
+add_executable(adversarial_challenge_suite
+    test/cpp/adversarial_challenge_suite.cpp
+    plugin/source/dsp/DspEngine.cpp
+)
+target_include_directories(adversarial_challenge_suite PRIVATE
+    plugin/source
+    plugin/source/dsp
+)

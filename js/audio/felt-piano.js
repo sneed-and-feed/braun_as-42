@@ -1058,6 +1058,96 @@ export class FeltPianoVoice {
       this._releaseTimer = null;
     }, releaseLifetimeMs);
   }
+
+  /**
+   * Deactivate voice smoothly over a fast declick ramp (Panic / All Notes Off)
+   * @param {number} [declickTime=0.005] - 5ms anti-pop gain ramp down
+   */
+  deactivate(declickTime = 0.005) {
+    if (this._decayTimer) {
+      clearTimeout(this._decayTimer);
+      this._decayTimer = null;
+    }
+    if (this._releaseTimer) {
+      clearTimeout(this._releaseTimer);
+      this._releaseTimer = null;
+    }
+    this.isHold = false;
+    this.isChord = false;
+    this._isReleased = false;
+
+    if (!this.isActive) return;
+    this.isActive = false;
+
+    const now = this.ctx.currentTime;
+    const cancelTime = Math.max(now, this.ctx.currentTime);
+    const estGain = typeof this.getEstimatedGain === 'function' ? this.getEstimatedGain(cancelTime) : 0.0001;
+    const curGain = (estGain > 0.0001 && estGain <= 1.0)
+      ? estGain
+      : ((this.voiceGain && this.voiceGain.gain && typeof this.voiceGain.gain.value === 'number' && this.voiceGain.gain.value > 0.001)
+        ? this.voiceGain.gain.value
+        : 0.0001);
+
+    let held = false;
+    if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
+      try {
+        this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
+      this.voiceGain.gain.cancelScheduledValues(cancelTime);
+    }
+    if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+      this.voiceGain.gain.setValueAtTime(Math.max(0.0001, curGain), cancelTime);
+    }
+    if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
+      this.voiceGain.gain.linearRampToValueAtTime(0.0001, cancelTime + declickTime);
+      this.voiceGain.gain.linearRampToValueAtTime(0.0, cancelTime + declickTime + 0.001);
+    } else if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+      this.voiceGain.gain.setValueAtTime(0.0, cancelTime + declickTime);
+    } else {
+      this.voiceGain.gain.value = 0.0;
+    }
+
+    if (this.oscMixer && this.oscMixer.gain) {
+      let mHeld = false;
+      if (typeof this.oscMixer.gain.cancelAndHoldAtTime === 'function') {
+        try {
+          this.oscMixer.gain.cancelAndHoldAtTime(cancelTime);
+          mHeld = true;
+        } catch (e) {
+          mHeld = false;
+        }
+      }
+      if (!mHeld && typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
+        this.oscMixer.gain.cancelScheduledValues(cancelTime);
+      }
+      const curMixer = (typeof this.oscMixer.gain.value === 'number' && isFinite(this.oscMixer.gain.value))
+        ? Math.max(0.0, Math.min(1.0, this.oscMixer.gain.value))
+        : 1.0;
+      if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
+        this.oscMixer.gain.setValueAtTime(curMixer, cancelTime);
+      }
+      if (typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
+        this.oscMixer.gain.linearRampToValueAtTime(0.0, cancelTime + declickTime);
+      }
+    }
+
+    if (this.currentHammerSource) {
+      try {
+        this.currentHammerSource.stop(cancelTime + declickTime);
+      } catch (e) {}
+      this.currentHammerSource = null;
+    }
+
+    if (this._pendingOscillatorWaveform) {
+      this.applyOscillatorWaveforms(this._pendingOscillatorWaveform);
+      this._pendingOscillatorWaveform = null;
+    }
+  }
 }
 
 export class FeltPianoSynthesizer {
@@ -1340,6 +1430,22 @@ export class FeltPianoSynthesizer {
         voice.release();
       }
     }
+  }
+
+  /**
+   * Release all active sounding voices smoothly over a 5ms declick ramp (Panic / All Notes Off)
+   */
+  releaseAllNotes() {
+    for (const voice of this.voices) {
+      if (voice.isActive) {
+        if (typeof voice.deactivate === 'function') {
+          voice.deactivate(0.005);
+        } else {
+          voice.release();
+        }
+      }
+    }
+    this._updatePolyphonicHeadroom();
   }
 
   /**

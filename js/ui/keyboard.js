@@ -832,8 +832,9 @@ export class BraunPlaySurface {
     if (this.engine && typeof this.engine.trackDronePitch === 'function') {
       this.engine.trackDronePitch(midi);
     }
+    let voice = null;
     if (this.engine && typeof this.engine.noteOn === 'function') {
-      this.engine.noteOn(midi, velocity, duration, isHold);
+      voice = this.engine.noteOn(midi, velocity, duration, isHold);
     }
     try {
       const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
@@ -847,7 +848,9 @@ export class BraunPlaySurface {
     if (!this.engine || !this.engine.isInitialized || !this.engine.feltPiano) {
       if (this.engine && this.engine._initPromise) {
         return this.engine._initPromise.then(() => {
-          if (this.engine && this.engine.feltPiano) {
+          if (this.engine && typeof this.engine.noteOn === 'function') {
+            return this.engine.noteOn(midi, velocity, duration, isHold);
+          } else if (this.engine && this.engine.feltPiano && typeof this.engine.feltPiano.playNote === 'function') {
             return this.engine.feltPiano.playNote(freq, velocity, duration, isHold);
           }
           return null;
@@ -856,7 +859,11 @@ export class BraunPlaySurface {
       return null;
     }
 
-    return this.engine.feltPiano.playNote(freq, velocity, duration, isHold);
+    if (!voice && this.engine && this.engine.feltPiano && typeof this.engine.feltPiano.playNote === 'function') {
+      voice = this.engine.feltPiano.playNote(freq, velocity, duration, isHold);
+    }
+
+    return voice;
   }
 
   /**
@@ -948,17 +955,8 @@ export class BraunPlaySurface {
     const triggerChordVoice = (freq, vel, midi) => {
       this.flashKey(midi);
       session.midiNotes.push(midi);
-      if (this.engine && typeof this.engine.noteOn === 'function') {
-        this.engine.noteOn(midi);
-      }
-      try {
-        const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
-        if (backend && typeof backend.emitEvent === 'function' && typeof midi === 'number') {
-          backend.emitEvent('noteOn', { note: Math.round(midi), velocity: vel || 0.65 });
-        }
-      } catch (err) {}
-      const playVoice = (piano) => {
-        const voice = piano.playNote(freq, vel, duration, isHold, true);
+
+      const recordVoice = (voice) => {
         if (voice) {
           session.voices.push(voice);
           if (session.isReleased) {
@@ -968,14 +966,35 @@ export class BraunPlaySurface {
         }
       };
 
-      if (this.engine && this.engine.isInitialized && this.engine.feltPiano) {
-        playVoice(this.engine.feltPiano);
-      } else if (this.engine && this.engine._initPromise) {
-        this.engine._initPromise.then(() => {
-          if (this.engine && this.engine.feltPiano) {
-            playVoice(this.engine.feltPiano);
-          }
-        });
+      try {
+        const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+        if (backend && typeof backend.emitEvent === 'function' && typeof midi === 'number') {
+          backend.emitEvent('noteOn', { note: Math.round(midi), velocity: vel || 0.65 });
+        }
+      } catch (err) {}
+
+      let voice = null;
+      if (this.engine && typeof this.engine.noteOn === 'function') {
+        voice = this.engine.noteOn(midi, vel, duration, isHold, true);
+      }
+
+      if (voice) {
+        recordVoice(voice);
+      } else if (!this.engine || !this.engine.isInitialized || !this.engine.feltPiano) {
+        if (this.engine && this.engine._initPromise) {
+          this.engine._initPromise.then(() => {
+            if (this.engine && typeof this.engine.noteOn === 'function') {
+              const v = this.engine.noteOn(midi, vel, duration, isHold, true);
+              recordVoice(v);
+            } else if (this.engine && this.engine.feltPiano && typeof this.engine.feltPiano.playNote === 'function') {
+              const v = this.engine.feltPiano.playNote(freq, vel, duration, isHold, true);
+              recordVoice(v);
+            }
+          });
+        }
+      } else if (this.engine && this.engine.feltPiano && typeof this.engine.feltPiano.playNote === 'function') {
+        const v = this.engine.feltPiano.playNote(freq, vel, duration, isHold, true);
+        recordVoice(v);
       }
     };
 

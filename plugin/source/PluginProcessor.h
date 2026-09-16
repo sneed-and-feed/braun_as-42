@@ -82,6 +82,7 @@ private:
     // Power, drone voice active states, and drone MIDI tracking state
     std::atomic<bool> isPoweredOn { false };
     std::atomic<bool> powerStateDirty { false };
+    std::atomic<bool> resetRequested { false };
     std::atomic<bool> drone1Active { false };
     std::atomic<bool> drone1StateDirty { false };
     std::atomic<bool> drone2Active { false };

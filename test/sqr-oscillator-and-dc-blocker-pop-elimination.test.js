@@ -319,7 +319,7 @@ describe('SQR Drone Oscillator & DC Blocker Verification', () => {
     }
   });
 
-  it('verifies Master Bus incorporates 15 Hz highpass masterDcBlocker between limiter and analyser', async () => {
+  it('verifies Master Bus incorporates 15 Hz highpass masterDcBlocker preceding masterGain and compressor', async () => {
     const origAudioContext = globalThis.AudioContext;
     globalThis.AudioContext = class extends MockContext {};
 
@@ -332,12 +332,15 @@ describe('SQR Drone Oscillator & DC Blocker Verification', () => {
       assert.strictEqual(engine.masterDcBlocker.frequency.value, 15, 'masterDcBlocker frequency must be 15 Hz');
       assert.strictEqual(engine.masterDcBlocker.Q.value, 0.707, 'masterDcBlocker Q must be Butterworth 0.707');
 
-      // Graph connectivity: masterLimiter -> masterDcBlocker -> analyser -> destination
-      const limiterOutput = engine.masterLimiter.connectedTo;
-      assert.ok(limiterOutput.includes(engine.masterDcBlocker), 'masterLimiter must connect to masterDcBlocker');
+      // Graph connectivity: masterBus -> masterDcBlocker -> masterGain -> masterCompressor
+      const busOutput = engine.masterBus.connectedTo;
+      assert.ok(busOutput.includes(engine.masterDcBlocker), 'masterBus must connect to masterDcBlocker');
 
       const dcBlockerOutput = engine.masterDcBlocker.connectedTo;
-      assert.ok(dcBlockerOutput.includes(engine.analyser), 'masterDcBlocker must connect to analyser');
+      assert.ok(dcBlockerOutput.includes(engine.masterGain), 'masterDcBlocker must connect to masterGain');
+
+      const limiterOutput = engine.masterLimiter.connectedTo;
+      assert.ok(limiterOutput.includes(engine.analyser), 'masterLimiter must connect to analyser');
 
       const analyserOutput = engine.analyser.connectedTo;
       assert.ok(analyserOutput.includes(engine.ctx.destination), 'analyser must connect to destination');

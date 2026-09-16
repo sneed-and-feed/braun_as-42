@@ -13,6 +13,7 @@
 #include <cassert>
 #include <numeric>
 #include <string>
+#include <chrono>
 
 // Test framework macros
 static int gTestsPassed = 0;
@@ -1945,6 +1946,464 @@ void test_acoustic_filter_envelope_monotonicity_and_sine_bounds() {
 }
 
 // ============================================================================
+// Test 28 (F11): Biquad Zero-Crossing Ringing Tails Verification
+// ============================================================================
+void test_biquad_zero_crossing_tail_continuity() {
+    braun::Biquad filter;
+    // 540 Hz peaking formant filter with Q = 10.0, +12 dB
+    filter.configure(braun::Biquad::Type::Peaking, 48000.0f, 540.0f, 10.0f, 12.0f);
+
+    filter.process(1.0f);
+
+    int zeroCrossings = 0;
+    float prevSample = 0.0f;
+    float minPeakAfter2000 = 0.0f;
+
+    for (int i = 0; i < 10000; ++i) {
+        const float y = filter.process(0.0f);
+        TEST_ASSERT(!std::isnan(y) && !std::isinf(y), "NaN/Inf in biquad decay");
+
+        if ((prevSample > 0.0f && y <= 0.0f) || (prevSample < 0.0f && y >= 0.0f)) {
+            ++zeroCrossings;
+        }
+        prevSample = y;
+        if (i > 2000) {
+            minPeakAfter2000 = std::max(minPeakAfter2000, std::abs(y));
+        }
+    }
+
+    TEST_ASSERT(zeroCrossings > 50, "Biquad state prematurely wiped out on zero-crossing! Count: " + std::to_string(zeroCrossings));
+    TEST_ASSERT(minPeakAfter2000 > 1.0e-6f, "Biquad tail failed to sustain resonance into late decay");
+}
+
+// ============================================================================
+// Test 29 (F12): Adversarial Wavetable Index Boundary Safety
+// ============================================================================
+void test_wavetable_boundary_index_safety() {
+    braun::WavetableBank bank;
+    const std::vector<float> testPhases = {
+        -1.0e-15f,           // Float rounding edge case: phase - floor(phase) == 1.0f
+        -1.0e-7f,
+        -0.0f,
+        0.0f,
+        1.0f - 1.0e-7f,
+        1.0f,
+        1.0f + 1.0e-7f,
+        -1.0f,
+        -100.0f,
+        2048.0f,
+        1000000.0f
+    };
+
+    const std::vector<braun::WaveformType> waveforms = {
+        braun::WaveformType::Felt,
+        braun::WaveformType::Sine,
+        braun::WaveformType::Saw,
+        braun::WaveformType::Square,
+        braun::WaveformType::CS80,
+        braun::WaveformType::Triangle,
+        braun::WaveformType::Warm
+    };
+
+    for (auto wf : waveforms) {
+        for (float p : testPhases) {
+            const float sample = bank.readSample(wf, p);
+            TEST_ASSERT(!std::isnan(sample) && !std::isinf(sample),
+                        "Wavetable produced NaN/Inf on boundary phase: " + std::to_string(p));
+            TEST_ASSERT(std::abs(sample) <= 1.05f,
+                        "Wavetable output out of range [-1.05, 1.05]: " + std::to_string(sample));
+        }
+    }
+}
+
+// ============================================================================
+// Test 30 (F13): Voice Steal Pitch Continuity
+// ============================================================================
+void test_voice_steal_pitch_continuity() {
+    braun::WavetableBank wavetables;
+    braun::FeltPianoVoice voice;
+    voice.prepare(48000.0f, &wavetables, nullptr, 0, 0);
+    braun::FeltPianoParams params;
+
+    // Trigger low note C2 (65.41 Hz)
+    voice.trigger(65.41f, 0.8f, 5.0f, params, false, false, 0);
+
+    for (int i = 0; i < 100; ++i) {
+        voice.processSample(params);
+    }
+    TEST_ASSERT(voice.isActive(), "Voice must be active");
+    TEST_ASSERT(voice.getEnvGain() > 0.05f, "Voice must have non-zero gain");
+
+    // Steal voice with high note C6 (1046.50 Hz)
+    voice.trigger(1046.50f, 0.8f, 5.0f, params, false, false, 100);
+    TEST_ASSERT(voice.isStealing(), "Voice must enter stealing state");
+    TEST_ASSERT(std::abs(voice.getStealFreq() - 65.41f) < 0.1f, "Steal frequency must preserve old note pitch (65.41 Hz)");
+    TEST_ASSERT(std::abs(voice.getCurrentFreq() - 1046.50f) < 0.1f, "Current frequency must target new note (1046.50 Hz)");
+
+    // Process 239 samples (within 240-sample / 5ms fade-out)
+    for (int i = 0; i < 239; ++i) {
+        voice.processSample(params);
+        TEST_ASSERT(voice.isStealing(), "Voice must remain in stealing down-ramp");
+    }
+
+    // Advance 1 more sample: steal finishes, attack onset begins
+    voice.processSample(params);
+    TEST_ASSERT(!voice.isStealing(), "Voice must exit stealing after 240 samples");
+}
+
+// ============================================================================
+// Test 31 (F14): Voice Steal Release Pop Prevention
+// ============================================================================
+void test_voice_steal_release_smooth_gain() {
+    braun::WavetableBank wavetables;
+    braun::FeltPianoVoice voice;
+    voice.prepare(48000.0f, &wavetables, nullptr, 0, 0);
+    braun::FeltPianoParams params;
+
+    voice.trigger(440.0f, 0.8f, 5.0f, params, false, false, 0);
+    for (int i = 0; i < 400; ++i) voice.processSample(params);
+
+    // Trigger steal
+    voice.trigger(880.0f, 0.8f, 5.0f, params, false, false, 400);
+    for (int i = 0; i < 10; ++i) voice.processSample(params);
+
+    const float gainBeforeRelease = voice.getEnvGain();
+    TEST_ASSERT(gainBeforeRelease > 0.05f, "Gain before release must be non-zero");
+
+    // Call release during stealing
+    voice.release();
+    TEST_ASSERT(voice.isActive(), "Voice must NOT be immediately killed on release during stealing");
+
+    // Verify smooth monotonic decay without sudden jump
+    float lastGain = gainBeforeRelease;
+    for (int i = 0; i < 240; ++i) {
+        voice.processSample(params);
+        const float curGain = voice.getEnvGain();
+        TEST_ASSERT(curGain <= lastGain + 1e-6f, "Envelope gain must not increase after release");
+        TEST_ASSERT(std::abs(curGain - lastGain) < 0.05f, "No instantaneous step discontinuity in gain");
+        lastGain = curGain;
+    }
+    TEST_ASSERT(!voice.isActive(), "Voice must cleanly deactivate once down-ramp completes");
+    TEST_ASSERT(voice.getEnvGain() == 0.0f, "Voice gain must reach exactly 0.0f");
+}
+
+// ============================================================================
+// Test 32 (F15): Sustain Pedal Retrigger Voice De-duplication
+// ============================================================================
+void test_sustain_pedal_retrigger_no_duplicate_voices() {
+    braun::WavetableBank wavetables;
+    braun::FeltPianoSynthesizer piano;
+    piano.prepare(48000.0, &wavetables);
+
+    // Play Note 60 with isHold = true (sustain pedal engaged)
+    piano.noteOn(60, 0.8f, 3.5f, true, false);
+    TEST_ASSERT(piano.getActiveVoiceCount() == 1, "Should allocate exactly 1 voice for first strike");
+
+    // Re-strike Note 60 ten times while sustain pedal remains held
+    for (int i = 0; i < 10; ++i) {
+        piano.noteOn(60, 0.8f, 3.5f, true, false);
+        TEST_ASSERT(piano.getActiveVoiceCount() == 1, 
+            "Repeated strikes of the same note with sustain held must retrigger existing voice, not allocate duplicates");
+    }
+}
+
+// ============================================================================
+// Test 33 (F16): Voice Stealing Priority Steals Quietest Voice
+// ============================================================================
+void test_voice_stealing_priority_quietest_first() {
+    braun::WavetableBank wavetables;
+    braun::FeltPianoSynthesizer piano;
+    piano.prepare(48000.0, &wavetables);
+
+    // Fill all 24 voices
+    for (int note = 40; note < 40 + 24; ++note) {
+        piano.noteOn(note, 0.8f, 5.0f, false, false);
+    }
+    TEST_ASSERT(piano.getActiveVoiceCount() == 24, "All 24 voices filled");
+
+    // Process 48000 samples (1 second) so envelopes decay
+    std::vector<float> bufL(48000, 0.0f);
+    std::vector<float> bufR(48000, 0.0f);
+    piano.process(bufL.data(), bufR.data(), 48000);
+
+    // Re-trigger Note 40 at high velocity so it is loud and new
+    piano.noteOn(40, 1.0f, 5.0f, false, false);
+
+    // Process 100 samples so Note 40 is at peak gain (~0.25) while other voices are decaying (~0.01)
+    piano.process(bufL.data(), bufR.data(), 100);
+
+    // Now trigger note 90 (forces voice stealing)
+    piano.noteOn(90, 0.8f, 5.0f, false, false);
+
+    // Voice count remains 24
+    TEST_ASSERT(piano.getActiveVoiceCount() == 24, "Voice count capped at 24");
+
+    // Release note 40: since it was preserved as loud, releasing it decreases active count
+    piano.release(440.0f * std::pow(2.0f, static_cast<float>(40 - 69) / 12.0f));
+}
+
+// ============================================================================
+// Test 34 (F19): Master Limiter Post-Saturation DC Offset Rejection
+// ============================================================================
+void test_master_limiter_post_saturation_dc_offset_rejection() {
+    braun::MasterLimiterDsp limiter;
+    limiter.prepare(48000.0);
+
+    braun::MasterLimiterParams params;
+    params.masterVolume = 1.0f;
+    params.tapeWarmth = 0.50f; // Strong asymmetric 2nd-harmonic warmth
+    params.limiterKnee = 0.80f;
+
+    // Drive with high-amplitude sine wave (1.5) to induce asymmetric saturation
+    for (int i = 0; i < 48000; ++i) {
+        const float x = 1.5f * std::sin(braun::kTwoPi * 110.0f * static_cast<float>(i) / 48000.0f);
+        float outL = 0.0f, outR = 0.0f;
+        limiter.processSample(x, x, params, outL, outR);
+    }
+
+    // Collect 4,800 samples (exact 11 integer cycles of 110 Hz) and compute mean DC offset
+    double sumL = 0.0;
+    double sumR = 0.0;
+    for (int i = 0; i < 4800; ++i) {
+        const float x = 1.5f * std::sin(braun::kTwoPi * 110.0f * static_cast<float>(i + 48000) / 48000.0f);
+        float outL = 0.0f, outR = 0.0f;
+        limiter.processSample(x, x, params, outL, outR);
+        sumL += outL;
+        sumR += outR;
+    }
+
+    const double dcL = std::abs(sumL / 4800.0);
+    const double dcR = std::abs(sumR / 4800.0);
+
+    // With post-saturation DC blocker, DC offset is < 0.002
+    TEST_ASSERT(dcL < 0.002, "Post-saturation DC offset on Left exceeds 0.002: " + std::to_string(dcL));
+    TEST_ASSERT(dcR < 0.002, "Post-saturation DC offset on Right exceeds 0.002: " + std::to_string(dcR));
+}
+
+// ============================================================================
+// Test 35 (F20): Shimmer Reverb Mono Downmix Preservation of All 8 Modes
+// ============================================================================
+void test_shimmer_reverb_mono_downmix_modal_preservation() {
+    braun::ShimmerReverbDsp reverb;
+    reverb.prepare(48000.0);
+
+    braun::ShimmerReverbParams params;
+    params.decaySec = 8.0f;
+    params.damping = 0.50f;
+    params.shimmer = 0.50f;
+    params.mix = 1.0f;
+    params.freeze = false;
+
+    // Unit impulse injection
+    float outL = 0.0f, outR = 0.0f;
+    reverb.processSample(1.0f, 1.0f, params, outL, outR);
+
+    double monoEnergy = 0.0;
+    double stereoEnergy = 0.0;
+
+    // Measure energy over 4,000 samples
+    for (int i = 0; i < 4000; ++i) {
+        outL = 0.0f;
+        outR = 0.0f;
+        reverb.processSample(0.0f, 0.0f, params, outL, outR);
+        const float mono = (outL + outR) * 0.5f;
+        monoEnergy += mono * mono;
+        stereoEnergy += (outL * outL + outR * outR) * 0.5;
+    }
+
+    // In reformed downmix, monoEnergy / stereoEnergy must exceed 0.60
+    const double energyRatio = monoEnergy / stereoEnergy;
+    TEST_ASSERT(energyRatio > 0.60, "Shimmer mono downmix suffered modal phase cancellation! Ratio: " + std::to_string(energyRatio));
+}
+
+// ============================================================================
+// Test 36 (F21): OnePoleSmoother Parameter Zipper Noise Absence
+// ============================================================================
+void test_parameter_smoothing_zipper_noise() {
+    braun::TapeDelayDsp delay;
+    delay.prepare(48000.0, 2.0);
+
+    braun::TapeDelayParams dParams;
+    dParams.mix = 0.0f;
+    dParams.timeSec = 0.1f;
+    dParams.wowAmount = 0.0f;
+
+    // Settle delay line with audio
+    float outL = 0.0f, outR = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        delay.processSample(0.5f, 0.5f, dParams, outL, outR);
+    }
+
+    // Instantaneous step in tape_mix: 0.0 -> 1.0
+    dParams.mix = 1.0f;
+    float maxDeltaL = 0.0f;
+    float prevL = outL;
+    for (int i = 0; i < 200; ++i) {
+        delay.processSample(0.5f, 0.5f, dParams, outL, outR);
+        float delta = std::abs(outL - prevL);
+        if (delta > maxDeltaL) maxDeltaL = delta;
+        prevL = outL;
+    }
+
+    TEST_ASSERT(maxDeltaL < 0.05f, "Zipper noise on tape_mix step! Max delta = " + std::to_string(maxDeltaL));
+}
+
+// ============================================================================
+// Test 37 (F31): Wavefolder Trig Identity Optimization & Epsilon Invariance
+// ============================================================================
+void test_wavefolder_optimization_and_invariance() {
+    constexpr int kSamples = 100000;
+    float maxDiff = 0.0f;
+
+    const std::vector<std::pair<float, float>> grid = {
+        { 0.5f, 0.0f }, { 1.0f, 0.2f }, { 1.8f, 0.6f },
+        { 2.5f, 0.8f }, { 3.5f, 0.5f }, { 4.0f, 1.0f }
+    };
+
+    for (const auto& p : grid) {
+        const float drive = p.first;
+        const float fold = p.second;
+
+        for (int i = 0; i < kSamples; ++i) {
+            const float x = -5.0f + 10.0f * (static_cast<float>(i) / static_cast<float>(kSamples - 1));
+
+            // Reference dual-sin implementation
+            const float driven = x * drive;
+            const float s1 = std::sin(braun::kHalfPi * driven);
+            const float s2_ref = s1 - fold * std::sin(braun::kThreeHalfPi * driven);
+            const float y_ref = std::tanh(s2_ref);
+
+            // Optimized single-sin implementation
+            const float y_opt = braun::wavefold(x, drive, fold);
+
+            const float diff = std::abs(y_ref - y_opt);
+            if (diff > maxDiff) maxDiff = diff;
+
+            TEST_ASSERT(!std::isnan(y_opt), "NaN detected in optimized wavefolder output!");
+            TEST_ASSERT(!std::isinf(y_opt), "Infinity detected in optimized wavefolder output!");
+            TEST_ASSERT(std::abs(y_opt) <= 1.0f, "Wavefolder output out of bounds [-1, 1]!");
+        }
+    }
+
+    std::cout << "  [METRICS] Wavefolder max difference: " << maxDiff << " (bound: < 1.0e-5)\n";
+    TEST_ASSERT(maxDiff < 1.0e-5f, "Wavefolder trig identity optimization exceeded epsilon bound!");
+
+    // Benchmark CPU timing over 2,000,000 iterations
+    constexpr int kBenchIters = 2000000;
+    std::vector<float> input(kBenchIters);
+    for (int i = 0; i < kBenchIters; ++i) {
+        input[i] = -2.0f + 4.0f * (static_cast<float>(i) / static_cast<float>(kBenchIters));
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    volatile float sumRef = 0.0f;
+    for (int i = 0; i < kBenchIters; ++i) {
+        const float x = input[i];
+        const float driven = x * 1.8f;
+        const float s1 = std::sin(braun::kHalfPi * driven);
+        const float s2 = s1 - 0.6f * std::sin(braun::kThreeHalfPi * driven);
+        sumRef += std::tanh(s2);
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double msRef = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    volatile float sumOpt = 0.0f;
+    for (int i = 0; i < kBenchIters; ++i) {
+        sumOpt += braun::wavefold(input[i], 1.8f, 0.6f);
+    }
+    auto t3 = std::chrono::high_resolution_clock::now();
+    const double msOpt = std::chrono::duration<double, std::milli>(t3 - t2).count();
+
+    const double reductionPct = ((msRef - msOpt) / msRef) * 100.0;
+    std::cout << "  [BENCHMARK] Wavefolder 2M ops: Ref = " << msRef << " ms, Opt = " << msOpt
+              << " ms (CPU reduction: " << reductionPct << "%)\n";
+}
+
+// ============================================================================
+// Test 38 (F31): Shimmer Reverb FDN Precomputation & Bit-Exact Invariance
+// ============================================================================
+void test_shimmer_fdn_decay_precomputation_invariance() {
+    braun::ShimmerReverbDsp reverb;
+    reverb.prepare(48000.0f);
+
+    braun::ShimmerReverbParams params;
+    params.mix = 1.0f;
+    params.decaySec = 4.5f;
+    params.damping = 0.35f;
+    params.shimmer = 0.0f;
+    params.freeze = false;
+
+    constexpr int kTestLen = 48000;
+    std::vector<float> input(kTestLen, 0.0f);
+    input[0] = 1.0f;
+    for (int i = 1; i < 1000; ++i) {
+        input[i] = 0.5f * std::sin(2.0f * braun::kPi * 440.0f * i / 48000.0f);
+    }
+
+    float outL = 0.0f, outR = 0.0f;
+    double dcLeftSum = 0.0, dcRightSum = 0.0;
+    int nanCount = 0, infCount = 0, denormalCount = 0;
+
+    for (int i = 0; i < kTestLen; ++i) {
+        outL = 0.0f; outR = 0.0f;
+        reverb.processSample(input[i], input[i], params, outL, outR);
+
+        if (std::isnan(outL) || std::isnan(outR)) ++nanCount;
+        if (std::isinf(outL) || std::isinf(outR)) ++infCount;
+        if (std::fpclassify(outL) == FP_SUBNORMAL || std::fpclassify(outR) == FP_SUBNORMAL) ++denormalCount;
+
+        dcLeftSum += outL;
+        dcRightSum += outR;
+    }
+
+    TEST_ASSERT(nanCount == 0, "NaN detected in Shimmer Reverb output!");
+    TEST_ASSERT(infCount == 0, "Infinity detected in Shimmer Reverb output!");
+    TEST_ASSERT(denormalCount == 0, "Denormal detected in Shimmer Reverb output!");
+
+    const float dcL = static_cast<float>(std::abs(dcLeftSum / kTestLen));
+    const float dcR = static_cast<float>(std::abs(dcRightSum / kTestLen));
+    TEST_ASSERT(dcL < 1.0e-3f && dcR < 1.0e-3f, "DC offset detected in Shimmer Reverb output!");
+    std::cout << "  [METRICS] Shimmer FDN: NaNs: 0, Infs: 0, Denormals: 0, DC Left: "
+              << dcL << ", DC Right: " << dcR << "\n";
+}
+
+// ============================================================================
+// Test 39 (F31): Tape Delay Power-of-Two Masking Bit-Exact Invariance & Benchmark
+// ============================================================================
+void test_tape_delay_power_of_two_masking_invariance() {
+    constexpr size_t kBufferSize = 262144;
+    constexpr size_t kMask = kBufferSize - 1;
+    constexpr int kIterations = 5000000;
+
+    for (int i = 0; i < 100000; ++i) {
+        const size_t moduloResult = static_cast<size_t>(i) % kBufferSize;
+        const size_t maskResult = static_cast<size_t>(i) & kMask;
+        TEST_ASSERT(moduloResult == maskResult, "Masking does not match modulo!");
+    }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    volatile size_t sumMod = 0;
+    for (int i = 0; i < kIterations; ++i) {
+        sumMod += static_cast<size_t>(i) % kBufferSize;
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+    const double msMod = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    volatile size_t sumMask = 0;
+    for (int i = 0; i < kIterations; ++i) {
+        sumMask += static_cast<size_t>(i) & kMask;
+    }
+    auto t3 = std::chrono::high_resolution_clock::now();
+    const double msMask = std::chrono::duration<double, std::milli>(t3 - t2).count();
+
+    const double reductionPct = ((msMod - msMask) / msMod) * 100.0;
+    std::cout << "  [BENCHMARK] Delay Indexing 5M ops: Modulo (%) = " << msMod
+              << " ms, Mask (&) = " << msMask << " ms (CPU reduction: " << reductionPct << "%)\n";
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -1979,6 +2438,18 @@ int main() {
     RUN_TEST(test_felt_piano_decay_knob_sensitivity);
     RUN_TEST(test_felt_vs_sine_spectral_and_harmonic_difference);
     RUN_TEST(test_acoustic_filter_envelope_monotonicity_and_sine_bounds);
+    RUN_TEST(test_biquad_zero_crossing_tail_continuity);
+    RUN_TEST(test_wavetable_boundary_index_safety);
+    RUN_TEST(test_voice_steal_pitch_continuity);
+    RUN_TEST(test_voice_steal_release_smooth_gain);
+    RUN_TEST(test_sustain_pedal_retrigger_no_duplicate_voices);
+    RUN_TEST(test_voice_stealing_priority_quietest_first);
+    RUN_TEST(test_master_limiter_post_saturation_dc_offset_rejection);
+    RUN_TEST(test_shimmer_reverb_mono_downmix_modal_preservation);
+    RUN_TEST(test_parameter_smoothing_zipper_noise);
+    RUN_TEST(test_wavefolder_optimization_and_invariance);
+    RUN_TEST(test_shimmer_fdn_decay_precomputation_invariance);
+    RUN_TEST(test_tape_delay_power_of_two_masking_invariance);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

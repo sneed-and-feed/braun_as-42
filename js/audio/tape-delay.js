@@ -208,16 +208,33 @@ export class TapeDelay {
 
     if (this.wowGainL && this.wowGainL.gain) {
       if (force) {
+        let held = false;
         if (typeof this.wowGainL.gain.cancelAndHoldAtTime === 'function') {
-          this.wowGainL.gain.cancelAndHoldAtTime(now);
-          this.wowGainR.gain.cancelAndHoldAtTime(now);
-          this.flutterGainL.gain.cancelAndHoldAtTime(now);
-          this.flutterGainR.gain.cancelAndHoldAtTime(now);
-        } else if (typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
+          try {
+            this.wowGainL.gain.cancelAndHoldAtTime(now);
+            this.wowGainR.gain.cancelAndHoldAtTime(now);
+            this.flutterGainL.gain.cancelAndHoldAtTime(now);
+            this.flutterGainR.gain.cancelAndHoldAtTime(now);
+            held = true;
+          } catch (e) {
+            held = false;
+          }
+        }
+        if (!held && typeof this.wowGainL.gain.cancelScheduledValues === 'function') {
+          const curWowL = (typeof this.wowGainL.gain.value === 'number' && isFinite(this.wowGainL.gain.value)) ? this.wowGainL.gain.value : effWow;
+          const curWowR = (typeof this.wowGainR.gain.value === 'number' && isFinite(this.wowGainR.gain.value)) ? this.wowGainR.gain.value : -effWow;
+          const curFlutL = (typeof this.flutterGainL.gain.value === 'number' && isFinite(this.flutterGainL.gain.value)) ? this.flutterGainL.gain.value : effFlutter;
+          const curFlutR = (typeof this.flutterGainR.gain.value === 'number' && isFinite(this.flutterGainR.gain.value)) ? this.flutterGainR.gain.value : (effFlutter * 0.8);
           this.wowGainL.gain.cancelScheduledValues(now);
           this.wowGainR.gain.cancelScheduledValues(now);
           this.flutterGainL.gain.cancelScheduledValues(now);
           this.flutterGainR.gain.cancelScheduledValues(now);
+          if (typeof this.wowGainL.gain.setValueAtTime === 'function') {
+            this.wowGainL.gain.setValueAtTime(curWowL, now);
+            this.wowGainR.gain.setValueAtTime(curWowR, now);
+            this.flutterGainL.gain.setValueAtTime(curFlutL, now);
+            this.flutterGainR.gain.setValueAtTime(curFlutR, now);
+          }
         }
       }
       if (typeof this.wowGainL.gain.setTargetAtTime === 'function') {
@@ -318,12 +335,19 @@ export class TapeDelay {
     const crossFb = (this.feedback * 0.3) / shaperGain;
     const now = this.ctx.currentTime;
 
+    let held = false;
     if (typeof this.fbGainLL.gain.cancelAndHoldAtTime === 'function') {
-      this.fbGainLL.gain.cancelAndHoldAtTime(now);
-      this.fbGainRR.gain.cancelAndHoldAtTime(now);
-      this.fbGainLR.gain.cancelAndHoldAtTime(now);
-      this.fbGainRL.gain.cancelAndHoldAtTime(now);
-    } else if (typeof this.fbGainLL.gain.cancelScheduledValues === 'function') {
+      try {
+        this.fbGainLL.gain.cancelAndHoldAtTime(now);
+        this.fbGainRR.gain.cancelAndHoldAtTime(now);
+        this.fbGainLR.gain.cancelAndHoldAtTime(now);
+        this.fbGainRL.gain.cancelAndHoldAtTime(now);
+        held = true;
+      } catch (e) {
+        held = false;
+      }
+    }
+    if (!held && typeof this.fbGainLL.gain.cancelScheduledValues === 'function') {
       const curLL = this.fbGainLL.gain.value ?? directFb;
       const curRR = this.fbGainRR.gain.value ?? directFb;
       const curLR = this.fbGainLR.gain.value ?? crossFb;

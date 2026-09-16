@@ -17,6 +17,8 @@
 #include <atomic>
 #include <cstdlib>
 #include <new>
+#include <thread>
+#include <chrono>
 
 // ============================================================================
 // Real-Time Heap Allocation Tracking Hooks
@@ -716,6 +718,62 @@ void test_shimmer_reverb_cs80_adversarial_burst_and_damping_floor() {
 }
 
 // ============================================================================
+// Challenger Test 10 (F17, F18): Concurrent UI Power Reset & Parameter Safety
+// ============================================================================
+void test_concurrent_ui_power_reset_and_midi_tracking() {
+    braun::DspEngine engine;
+    engine.prepare(48000.0, 512);
+
+    std::atomic<bool> keepRunning { true };
+    std::atomic<bool> resetRequested { false };
+    std::atomic<bool> droneTrackMidi { false };
+
+    // Thread 1: UI thread simulating user dragging controls and toggling power
+    std::thread uiThread([&]() {
+        int iter = 0;
+        while (keepRunning.load(std::memory_order_relaxed)) {
+            droneTrackMidi.store((iter % 2 == 0), std::memory_order_relaxed);
+            if (iter % 10 == 0) {
+                resetRequested.store(true, std::memory_order_release);
+            }
+            ++iter;
+            std::this_thread::yield();
+        }
+    });
+
+    // Thread 2: Real-time Audio Thread
+    std::vector<float> bufL(512, 0.0f);
+    std::vector<float> bufR(512, 0.0f);
+    braun::ParameterSnapshot params;
+    params.felt_volume = 0.7f;
+    params.master_volume = 0.8f;
+
+    gTrackAllocations.store(true);
+    for (int block = 0; block < 1000; ++block) {
+        // Audio thread executes deferred reset
+        if (resetRequested.exchange(false, std::memory_order_acq_rel)) {
+            engine.reset();
+        }
+
+        params.drone_track_midi = droneTrackMidi.load(std::memory_order_relaxed);
+        std::fill(bufL.begin(), bufL.end(), 0.0f);
+        std::fill(bufR.begin(), bufR.end(), 0.0f);
+
+        engine.process(bufL.data(), bufR.data(), 512, params, nullptr, 0);
+
+        std::string err;
+        CHALLENGER_ASSERT(checkBufferFiniteAndBounded(bufL.data(), 512, 1.5f, err), "Concurrent audio L: " + err);
+        CHALLENGER_ASSERT(checkBufferFiniteAndBounded(bufR.data(), 512, 1.5f, err), "Concurrent audio R: " + err);
+    }
+    gTrackAllocations.store(false);
+
+    keepRunning.store(false);
+    uiThread.join();
+
+    CHALLENGER_ASSERT(gAllocationCount.load() == 0, "Heap allocation detected during concurrent audio processing");
+}
+
+// ============================================================================
 // Main Challenger Test Runner
 // ============================================================================
 int main() {
@@ -732,6 +790,7 @@ int main() {
     RUN_CHALLENGER_TEST(test_master_limiter_overload_protection);
     RUN_CHALLENGER_TEST(test_realtime_memory_safety_and_allocations);
     RUN_CHALLENGER_TEST(test_shimmer_reverb_cs80_adversarial_burst_and_damping_floor);
+    RUN_CHALLENGER_TEST(test_concurrent_ui_power_reset_and_midi_tracking);
 
     std::cout << "========================================================\n";
     std::cout << "Challenger Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

@@ -105,10 +105,12 @@ public:
             case WaveformType::Felt:     table = mFeltTable.data(); break;
         }
 
-        const float p = phase01 - std::floor(phase01);
+        float p = phase01 - std::floor(phase01);
+        if (p >= 1.0f) p = 0.0f;
         const float pos = p * static_cast<float>(kTableSize);
-        const size_t idx = static_cast<size_t>(pos);
-        const float frac = pos - static_cast<float>(idx);
+        const size_t rawIdx = static_cast<size_t>(pos);
+        const size_t idx = rawIdx & (kTableSize - 1);
+        const float frac = pos - static_cast<float>(rawIdx);
 
         const float s0 = table[idx];
         const float s1 = table[idx + 1];

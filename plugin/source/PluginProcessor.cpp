@@ -116,6 +116,7 @@ void BRAUN_AS42AudioProcessor::changeProgramName(int, const juce::String&)
 void BRAUN_AS42AudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     dspEngine.prepare(sampleRate, samplesPerBlock);
+    resetRequested.store(false, std::memory_order_relaxed);
 }
 
 void BRAUN_AS42AudioProcessor::releaseResources()
@@ -189,6 +190,12 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // As a synthesizer generator with 0 inputs, all output channels must be cleared
     // to prevent leaking uninitialized host buffers, garbage memory, or extra channel data.
     buffer.clear();
+
+    // Safely execute deferred DSP reset on the audio thread between blocks
+    if (resetRequested.exchange(false, std::memory_order_acq_rel))
+    {
+        dspEngine.reset();
+    }
 
     // Convert UI MIDI FIFO events + incoming juce::MidiBuffer to stack-allocated braun::MidiEvent array
     constexpr int kMaxMidiStack = 256;
@@ -365,7 +372,7 @@ void BRAUN_AS42AudioProcessor::setPoweredOn(bool on) noexcept
     powerStateDirty.store(true, std::memory_order_relaxed);
     if (!on)
     {
-        dspEngine.reset();
+        resetRequested.store(true, std::memory_order_release);
     }
 }
 
@@ -415,7 +422,6 @@ void BRAUN_AS42AudioProcessor::setDroneTrackMidi(bool track) noexcept
 {
     droneTrackMidi.store(track, std::memory_order_relaxed);
     droneTrackMidiDirty.store(true, std::memory_order_relaxed);
-    dspEngine.setDroneTrackMidi(track);
 }
 
 bool BRAUN_AS42AudioProcessor::getDroneTrackMidi() const noexcept

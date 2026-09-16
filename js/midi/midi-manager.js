@@ -234,16 +234,19 @@ export class BraunMidiManager {
     const freq = midiToFrequency(note, a4);
     const normVelocity = Math.max(0.001, Math.min(1.0, velocity / 127.0));
 
-    // Track drone pitches in bass/sub register if drone pitch tracking is enabled
-    if (this.engine && typeof this.engine.trackDronePitch === 'function') {
-      this.engine.trackDronePitch(note);
-    }
+    // Delegate to engine.noteOn to track held notes, update drone gating, and allocate the single voice.
+    // Fall back to direct feltPiano.playNote for mock engines in unit tests lacking engine.noteOn.
+    let voice = null;
     if (this.engine && typeof this.engine.noteOn === 'function') {
-      this.engine.noteOn(note);
+      voice = this.engine.noteOn(note, normVelocity, 20.0, true);
+    } else {
+      if (this.engine && typeof this.engine.trackDronePitch === 'function') {
+        this.engine.trackDronePitch(note);
+      }
+      if (this.engine && this.engine.feltPiano && typeof this.engine.feltPiano.playNote === 'function') {
+        voice = this.engine.feltPiano.playNote(freq, normVelocity, 20.0, true);
+      }
     }
-
-    // Continuous sustain hold (20.0s isHold) until physical Note-Off or sustain pedal release
-    const voice = this.engine.feltPiano.playNote(freq, normVelocity, 20.0, true);
 
     if (voice) {
       voice.currentMidi = note;
