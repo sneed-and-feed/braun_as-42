@@ -1,7 +1,7 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-EE592B?style=for-the-badge&logo=github)](https://sneed-and-feed.github.io/)
-[![VST3 Plugin](https://img.shields.io/badge/VST3-Windows%20x64-blue?style=for-the-badge)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.2.4-Windows-x64.zip)
+[![VST3 Plugin](https://img.shields.io/badge/VST3-Windows%20x64-blue?style=for-the-badge)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.0-Windows-x64.zip)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Web Audio API](https://img.shields.io/badge/Web%20Audio-100%25%20Client--Side-4A4A4A?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
@@ -10,8 +10,8 @@
 
 ---
 
-### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.2.4-Windows-x64.zip)
-*Direct download: **`BRAUN_AS42-v1.2.4-Windows-x64.zip`** (6.80 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
+### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.0-Windows-x64.zip)
+*Direct download: **`BRAUN_AS42-v1.3.0-Windows-x64.zip`** (6.81 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
 
 ### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
 *No installation, plugins, or accounts required. Native Web Audio API + Web MIDI support.*
@@ -191,10 +191,36 @@ The project maintains comprehensive verification across both JavaScript Web Audi
 ```bash
 npm test
 ```
-* **399 unit and integration tests across 78 test suites** running via Node.js native test runner.
-* Validates Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, full-width CRT oscilloscope edge-to-edge drawing, 48-bar FFT spectrum, iPadOS WebKit/Brave momentum vertical scrolling, rotary knob touch disambiguation, responsive tablet layout across iOS and Android (16:10 / 4:3), and anti-clipping bus headroom staging.
+* **453 unit and integration tests across 98 test suites** running via Node.js native test runner (0 failures).
+* Validates voice de-duplication, Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, full-width CRT oscilloscope edge-to-edge drawing, 48-bar FFT spectrum, iPadOS WebKit/Brave momentum vertical scrolling, rotary knob touch disambiguation, responsive tablet layout across iOS and Android (16:10 / 4:3), and anti-clipping bus headroom staging.
 
 ### 5.2 Native C++ DSP & Real-Time Safety Tests
-* **DSP Unit Tests (`test\cpp\dsp_tests.exe`):** 13 passed, 0 failed. Validates Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, oscilloscope visualizer ring buffer bounds, and zero idle output.
-* **Adversarial Stress Tests (`test\cpp\challenger_stress_tests.exe`):** 8 passed, 0 failed. Verifies block sizes from 32 to 2048, multiple sample rates (44.1k to 192k), 22-parameter rapid sweeps, polyphonic voice stealing race conditions, and **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
+* **DSP Unit Tests (`test\cpp\dsp_tests.exe`):** 39 passed, 0 failed. Validates biquad state preservation across zero-crossings, voice stealing pitch locks, Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, oscilloscope visualizer ring buffer bounds, and mathematical invariance of DSP optimizations.
+* **Adversarial Stress Tests (`test\cpp\challenger_stress_tests.exe`):** 10 passed, 0 failed. Verifies block sizes from 32 to 2048, multiple sample rates (44.1k to 192k), 22-parameter rapid sweeps, polyphonic voice stealing race conditions, and **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
+* **Adversarial Challenge Suite (`test\cpp\adversarial_challenge_suite.exe`):** 11 passed, 0 failed. Confirms zero NaNs, Infinities, or denormals; DC offset bounded below 0.00025; and continuous voice stealing fades.
 * **Asset & MIME Integrity Audit (`node test/web-assets-and-mime-stress.mjs`):** 18/18 embedded web assets verified against SHA-256 hashes, zero MIME type resolution errors, and 22-parameter bidirectional APVTS roundtrip verified.
+
+---
+
+## 6. What's New in v1.3.0
+
+* **DSP Numerical Stabilization & Thread Safety:**
+  * Implemented `ScopedNoDenormals` RAII hardware guards enabling Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) on x86/x64 and ARM64.
+  * Corrected biquad filter state reset to eliminate micro-clicks at zero-crossings during dynamic cutoff modulation.
+  * Atomic APVTS reset requests (`resetRequested`) ensure thread-safe preset synchronization without stalls.
+* **Pitch-Preserving Voice Stealing:**
+  * Voice pitch is preserved during the 5ms exponential declick fade-out rather than abruptly jumping to new note frequencies, eliminating pitch-snap artifacts during rapid polyphonic playing.
+* **Acoustic Refinement & DC Elimination:**
+  * Relocated 15 Hz highpass DC blocker before the master compressor, reducing limiter pumping from 4.55 dB down to 0.01 dB.
+  * Added DC-blocking highpass filters to shimmer reverb freeze loops to prevent runaway DC bias accumulation.
+  * Balanced Hadamard matrix stereo decorrelation ($kOppScale = \sqrt{2} - 1 \approx 0.4142$) preserves mono downmix phase without comb cancellation.
+  * Sample-rate-aware `OnePoleSmoother` filters eliminate parameter zipper noise across tape delay times, feedback, tone cutoffs, and wet/dry mix.
+* **Non-Breaking Performance Optimizations:**
+  * Replaced redundant transcendental calculations with the triple-angle identity $\sin(3\theta) = \sin\theta(3 - 4\sin^2\theta)$ (**34.3% CPU reduction** in hot wavefolder loops with bit-exact $C^1$ smoothness).
+  * Precomputed FDN decay multipliers in shimmer reverb, saving 384,000 `exp()` calls per second.
+  * Replaced modulo arithmetic in tape delay circular buffers with power-of-2 bitwise masking (**11.2% speedup**).
+  * Compact active-voice bitmask traversal skips silent voices during polyphonic rendering.
+  * Zero-copy `Int16Array` view pooling in `engine.js` eliminates garbage collection spikes during WAV recording.
+  * Cached DOM element selectors in visualizer loops eliminate 60fps layout thrashing.
+* **Expanded Verification:**
+  * Test coverage expanded to 453 Web Audio tests and 60 native C++ tests (513 total tests passing with 0 failures).
