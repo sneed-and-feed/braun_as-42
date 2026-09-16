@@ -16,6 +16,9 @@
 ### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
 *No installation, plugins, or accounts required. Native Web Audio API + Web MIDI support.*
 
+### 🌌 [🏛️ Sibling Reverb: BRAUN RB-26 Master Studio Reverberator](https://github.com/sneed-and-feed/braun_rb-26)
+*Direct package-deal hardware sibling companion. Download precompiled VST3/CLAP/Standalone: [**`BRAUN_RB26-v1.2.0-Windows-x64.zip`**](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_RB26-v1.2.0-Windows-x64.zip) or [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases).*
+
 ---
 
 ## 📐 Technical Blueprint & Engineering Datasheet

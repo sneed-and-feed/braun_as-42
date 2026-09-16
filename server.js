@@ -31,18 +31,6 @@ const server = http.createServer((req, res) => {
     reqPath = '/index.html';
   }
 
-  // Unified Gateway: Route /rb-26 and /rb26 to RB-26 Web Showcase
-  if (reqPath === '/rb-26' || reqPath === '/rb26') {
-    res.writeHead(302, { 'Location': '/rb-26/' });
-    res.end();
-    return;
-  }
-  if (reqPath === '/rb-26/') {
-    reqPath = '/rb-26/web/index.html';
-  } else if (reqPath.startsWith('/rb-26/') && !reqPath.startsWith('/rb-26/web/')) {
-    reqPath = reqPath.replace('/rb-26/', '/rb-26/web/');
-  }
-
   // Prevent directory traversal attacks
   const safePath = path.normalize(reqPath).replace(/^(\.\.[\/\\])+/, '');
   const filePath = path.join(__dirname, safePath);

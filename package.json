@@ -6,7 +6,6 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "start": "node server.js",
-    "rb26": "node rb-26/server.js",
     "deploy": "cmd /c deploy-pages.bat"
   },
   "keywords": [
