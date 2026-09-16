@@ -67,7 +67,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         felt_decay, "Felt Piano Decay",
-        juce::NormalisableRange<float>(0.5f, 2.5f, 0.01f), 1.10f));
+        juce::NormalisableRange<float>(0.2f, 3.5f, 0.01f), 1.0f));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         felt_tone, "Felt Piano Tone",

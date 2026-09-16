@@ -1696,6 +1696,255 @@ void test_shimmer_loop_gain_grid_stability_under_min_damping() {
 }
 
 // ============================================================================
+// Test 24: Acoustic Felt Piano Held Note Decays to Silence
+// ============================================================================
+void test_felt_piano_held_note_decays_to_silence() {
+    braun::WavetableBank wavetables;
+    braun::FeltPianoVoice voice;
+    std::vector<float> hammerNoise(512, 0.05f);
+    voice.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 0);
+
+    braun::FeltPianoParams params;
+    params.waveform = braun::WaveformType::Felt;
+    params.tone = 0.60f;
+    params.decay = 0.5f; // Fast decay for test speed
+    params.hammer = 0.45f;
+    params.volume = 0.80f;
+
+    const float freq = 440.0f; // A4
+    const float velocity = 0.8f;
+
+    // 1. Trigger acoustic felt piano voice with isHold = true
+    voice.trigger(freq, velocity, 3.5f, params, true, false, 0);
+    TEST_ASSERT(voice.isActive(), "Acoustic voice must be active immediately after trigger");
+
+    // Process past attack stage (~9ms -> 432 samples)
+    for (int i = 0; i < 500; ++i) {
+        voice.processSample(params);
+    }
+    const float peakGain = voice.getEnvGain();
+    TEST_ASSERT(peakGain > 0.10f, "Voice envelope gain must be active after attack");
+
+    // Process audio samples without calling release() (held key).
+    // For freq=440, baseDecay ~ 5.6s * 0.5 = 2.8s. In samples at 48kHz: ~134,400 samples.
+    // Process 3.5 seconds (168,000 samples) of held playback.
+    for (int i = 0; i < 170000; ++i) {
+        voice.processSample(params);
+    }
+
+    // While key is still held, the acoustic piano string MUST have decayed to silence and become inactive.
+    TEST_ASSERT(!voice.isActive(), "Acoustic piano held note MUST decay to silence and become inactive");
+    TEST_ASSERT(voice.getEnvGain() <= 0.0001f, "Envelope gain of acoustic held note after decay duration must be <= 0.0001");
+}
+
+// ============================================================================
+// Test 25: Felt Piano Decay Knob Delta Sensitivity & Treble Register Scaling
+// ============================================================================
+void test_felt_piano_decay_knob_sensitivity() {
+    braun::WavetableBank wavetables;
+    std::vector<float> hammerNoise(512, 0.05f);
+
+    // Test 1: Mid register (A4, 440 Hz) sensitivity to decay knob
+    braun::FeltPianoVoice voiceFast;
+    braun::FeltPianoVoice voiceSlow;
+    voiceFast.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 0);
+    voiceSlow.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 1);
+
+    braun::FeltPianoParams paramsFast;
+    paramsFast.waveform = braun::WaveformType::Felt;
+    paramsFast.decay = 0.3f; // Short decay
+
+    braun::FeltPianoParams paramsSlow;
+    paramsSlow.waveform = braun::WaveformType::Felt;
+    paramsSlow.decay = 3.0f; // Long decay
+
+    voiceFast.trigger(440.0f, 0.8f, 3.5f, paramsFast, true, false, 0);
+    voiceSlow.trigger(440.0f, 0.8f, 3.5f, paramsSlow, true, false, 0);
+
+    // Run for 1.2 seconds (57,600 samples)
+    for (int i = 0; i < 57600; ++i) {
+        voiceFast.processSample(paramsFast);
+        voiceSlow.processSample(paramsSlow);
+    }
+
+    TEST_ASSERT(voiceSlow.getEnvGain() > voiceFast.getEnvGain() * 2.0f,
+                "Slow decay envelope gain must be significantly greater than fast decay gain at 1.2s");
+
+    // Test 2: Treble register (C7, 2093 Hz) - verify treble decay scaling is not clobbered
+    braun::FeltPianoVoice trebleFast;
+    braun::FeltPianoVoice trebleSlow;
+    trebleFast.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 2);
+    trebleSlow.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 3);
+
+    paramsFast.decay = 0.2f;
+    paramsSlow.decay = 2.0f;
+
+    trebleFast.trigger(2093.0f, 0.8f, 3.5f, paramsFast, true, false, 0);
+    trebleSlow.trigger(2093.0f, 0.8f, 3.5f, paramsSlow, true, false, 0);
+
+    // Treble baseDecay for decay=0.2 is ~0.26s (~12,500 samples).
+    // After 0.4s (19,200 samples), trebleFast must have decayed to silence.
+    for (int i = 0; i < 19200; ++i) {
+        trebleFast.processSample(paramsFast);
+        trebleSlow.processSample(paramsSlow);
+    }
+
+    TEST_ASSERT(!trebleFast.isActive(), "Treble fast note must have completed decay to silence by 0.4s (no 3.5s clobbering)");
+    TEST_ASSERT(trebleSlow.isActive(), "Treble slow note must still be ringing at 0.4s");
+    TEST_ASSERT(trebleSlow.getEnvGain() > 0.05f, "Treble slow note envelope must still be audible");
+
+    // Test 3: Bass register (A1, 55 Hz) - verify bass decay scaling with decay knob
+    braun::FeltPianoVoice bassFast;
+    braun::FeltPianoVoice bassSlow;
+    bassFast.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 4);
+    bassSlow.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 5);
+
+    paramsFast.decay = 0.2f;
+    paramsSlow.decay = 3.0f;
+
+    bassFast.trigger(55.0f, 0.8f, 3.5f, paramsFast, true, false, 0);
+    bassSlow.trigger(55.0f, 0.8f, 3.5f, paramsSlow, true, false, 0);
+
+    // Run for 3.0 seconds (144,000 samples)
+    for (int i = 0; i < 144000; ++i) {
+        bassFast.processSample(paramsFast);
+        bassSlow.processSample(paramsSlow);
+    }
+    TEST_ASSERT(bassSlow.getEnvGain() > bassFast.getEnvGain() * 2.0f,
+                "Slow decay envelope gain must be significantly greater than fast decay gain in bass register at 3.0s");
+}
+
+// ============================================================================
+// Test 26: Felt vs Sine Spectral and Harmonic Difference
+// ============================================================================
+void test_felt_vs_sine_spectral_and_harmonic_difference() {
+    braun::WavetableBank wavetables;
+
+    // 1. Verify wavetable differences directly
+    const auto& sineTable = wavetables.getSineTable();
+    const auto& feltTable = wavetables.getFeltTable();
+
+    constexpr size_t N = braun::WavetableBank::kTableSize;
+    TEST_ASSERT(std::abs(sineTable[0]) < 1e-4f, "Sine table must start at 0");
+    TEST_ASSERT(std::abs(feltTable[0]) < 1e-4f, "Felt table must start at 0");
+
+    // Felt table includes 2nd harmonic (0.58) and 3rd harmonic (0.28).
+    // Calculate Fourier harmonic energy of 2nd harmonic for both tables:
+    // H2 = (2/N) * sum_i( table[i] * sin(2 * 2pi * i / N) )
+    float sineH2 = 0.0f;
+    float feltH2 = 0.0f;
+    for (size_t i = 0; i < N; ++i) {
+        const float theta = braun::kTwoPi * static_cast<float>(i) / static_cast<float>(N);
+        const float sin2 = std::sin(2.0f * theta);
+        sineH2 += sineTable[i] * sin2;
+        feltH2 += feltTable[i] * sin2;
+    }
+    sineH2 = std::abs(sineH2 * (2.0f / static_cast<float>(N)));
+    feltH2 = std::abs(feltH2 * (2.0f / static_cast<float>(N)));
+
+    TEST_ASSERT(sineH2 < 0.005f, "Sine table 2nd harmonic must be near zero");
+    TEST_ASSERT(feltH2 > 0.30f, "Felt table 2nd harmonic must be prominent (target ~0.58 normalized)");
+
+    // 2. Verify acoustic voice output difference between Felt and Sine
+    std::vector<float> hammerNoise(512, 0.08f);
+    braun::FeltPianoVoice feltVoice;
+    braun::FeltPianoVoice sineVoice;
+    feltVoice.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 0);
+    sineVoice.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 1);
+
+    braun::FeltPianoParams feltParams;
+    feltParams.waveform = braun::WaveformType::Felt;
+    feltParams.tone = 0.60f;
+    feltParams.hammer = 0.50f;
+    feltParams.decay = 1.0f;
+
+    braun::FeltPianoParams sineParams = feltParams;
+    sineParams.waveform = braun::WaveformType::Sine;
+
+    feltVoice.trigger(440.0f, 0.8f, 3.5f, feltParams, true, false, 0);
+    sineVoice.trigger(440.0f, 0.8f, 3.5f, sineParams, true, false, 0);
+
+    // Check transient impulse: Sine voice sets effectiveHammer = 0.0f, Felt voice has hammer active
+    std::vector<float> feltSamples(1024, 0.0f);
+    std::vector<float> sineSamples(1024, 0.0f);
+
+    for (int i = 0; i < 1024; ++i) {
+        feltSamples[i] = feltVoice.processSample(feltParams);
+        sineSamples[i] = sineVoice.processSample(sineParams);
+    }
+
+    // Both voices must produce non-silent output
+    float feltRms = 0.0f;
+    float diffRms = 0.0f;
+    for (int i = 0; i < 1024; ++i) {
+        feltRms += feltSamples[i] * feltSamples[i];
+        const float d = feltSamples[i] - sineSamples[i];
+        diffRms += d * d;
+    }
+    feltRms = std::sqrt(feltRms / 1024.0f);
+    diffRms = std::sqrt(diffRms / 1024.0f);
+
+    TEST_ASSERT(feltRms > 0.01f, "Felt voice output RMS must be audible");
+    TEST_ASSERT(diffRms > 0.02f, "Felt and Sine output waveforms must have distinct spectral/harmonic difference (diffRms > 0.02)");
+}
+
+// ============================================================================
+// Test 27: Acoustic Filter Envelope Monotonicity & High-Register Sine Bounds
+// ============================================================================
+void test_acoustic_filter_envelope_monotonicity_and_sine_bounds() {
+    braun::WavetableBank wavetables;
+    std::vector<float> hammerNoise(512, 0.05f);
+
+    // 1. Soft note with bright tone: verify mMaxFilterCutoff >= mRestFilterCutoff (no inverted quack)
+    braun::FeltPianoVoice softFelt;
+    softFelt.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 0);
+    braun::FeltPianoParams params;
+    params.waveform = braun::WaveformType::Felt;
+    params.tone = 0.85f;
+    params.decay = 1.0f;
+    params.hammer = 0.40f;
+    params.volume = 0.80f;
+
+    softFelt.trigger(440.0f, 0.15f, 3.5f, params, true, false, 0);
+    TEST_ASSERT(softFelt.getMaxFilterCutoff() >= softFelt.getRestFilterCutoff(),
+                "Soft strike max filter cutoff must be >= rest cutoff to prevent inverted quack sweep");
+
+    // 2. High treble note in Sine mode (C7, 2093 Hz): verify chime filter is not capped to 2200 Hz
+    braun::FeltPianoVoice sineTreble;
+    sineTreble.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 1);
+    braun::FeltPianoParams sineParams = params;
+    sineParams.waveform = braun::WaveformType::Sine;
+    sineParams.tone = 0.70f;
+
+    sineTreble.trigger(2093.0f, 0.80f, 3.5f, sineParams, true, false, 0);
+    TEST_ASSERT(sineTreble.getRestFilterCutoff() > 6000.0f,
+                "Treble sine chime rest cutoff must be bright and wide open (> 6000 Hz)");
+    TEST_ASSERT(sineTreble.getMaxFilterCutoff() >= sineTreble.getRestFilterCutoff(),
+                "Treble sine chime max cutoff must be >= rest cutoff");
+
+    // 3. Monotonic filter decay: during decay phase (t > attackSec), cutoff must decay downwards or remain at rest
+    braun::FeltPianoVoice feltMid;
+    feltMid.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 2);
+    feltMid.trigger(440.0f, 0.80f, 3.5f, params, true, false, 0);
+
+    // Process through attack stage (9ms -> 432 samples)
+    for (int i = 0; i < 432; ++i) {
+        feltMid.processSample(params);
+    }
+    const float peakCutoff = feltMid.getCurrentCutoff();
+
+    // Process decay and verify cutoff never rises above peakCutoff
+    float prevCutoff = peakCutoff;
+    for (int i = 0; i < 10000; ++i) {
+        feltMid.processSample(params);
+        const float cur = feltMid.getCurrentCutoff();
+        TEST_ASSERT(cur <= prevCutoff + 1e-4f, "Filter cutoff must never rise during decay stage");
+        prevCutoff = cur;
+    }
+    TEST_ASSERT(prevCutoff <= peakCutoff, "Cutoff after decay must be <= peak attack cutoff");
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -1726,6 +1975,10 @@ int main() {
     RUN_TEST(test_rapid_preset_switching_under_active_midi_polyphony);
     RUN_TEST(test_shimmer_undamped_cs80_resonance_and_stability);
     RUN_TEST(test_shimmer_loop_gain_grid_stability_under_min_damping);
+    RUN_TEST(test_felt_piano_held_note_decays_to_silence);
+    RUN_TEST(test_felt_piano_decay_knob_sensitivity);
+    RUN_TEST(test_felt_vs_sine_spectral_and_harmonic_difference);
+    RUN_TEST(test_acoustic_filter_envelope_monotonicity_and_sine_bounds);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

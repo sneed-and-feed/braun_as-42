@@ -81,6 +81,26 @@ export function generateWarmAnalogCoefficients(numHarmonics = 64) {
 }
 
 /**
+ * Generate Fourier coefficients for a band-limited felt piano wave
+ * Features rich fundamental with warm octave overtones (2nd 0.58, 3rd 0.28, 4th 0.14, 5th 0.07)
+ * Lanczos window attenuation eliminates Gibbs overshoot.
+ * @param {number} [numHarmonics=64]
+ * @returns {{ real: Float32Array, imag: Float32Array }}
+ */
+export function generateFeltCoefficients(numHarmonics = 64) {
+  const real = new Float32Array(numHarmonics + 1);
+  const imag = new Float32Array(numHarmonics + 1);
+
+  const weights = [0, 1.0, 0.58, 0.28, 0.14, 0.07];
+  for (let n = 1; n <= Math.min(numHarmonics, 5); n++) {
+    const window = Math.sin((Math.PI * n) / numHarmonics) / ((Math.PI * n) / numHarmonics);
+    imag[n] = weights[n] * window;
+  }
+
+  return { real, imag };
+}
+
+/**
  * Safely create a PeriodicWave on AudioContext with fallback for older WebKit/Safari
  * @param {AudioContext} ctx
  * @param {Float32Array} real
@@ -113,11 +133,13 @@ export function createWavetableCache(ctx) {
   const squareCoeffs = generateSquareCoefficients(64);
   const triCoeffs = generateTriangleCoefficients(64);
   const warmCoeffs = generateWarmAnalogCoefficients(64);
+  const feltCoeffs = generateFeltCoefficients(64);
 
   const saw = safeCreatePeriodicWave(ctx, sawCoeffs.real, sawCoeffs.imag);
   const square = safeCreatePeriodicWave(ctx, squareCoeffs.real, squareCoeffs.imag);
   const triangle = safeCreatePeriodicWave(ctx, triCoeffs.real, triCoeffs.imag);
   const warm = safeCreatePeriodicWave(ctx, warmCoeffs.real, warmCoeffs.imag);
+  const felt = safeCreatePeriodicWave(ctx, feltCoeffs.real, feltCoeffs.imag);
 
   return {
     saw,
@@ -126,6 +148,7 @@ export function createWavetableCache(ctx) {
     sqr: square,
     triangle,
     tri: triangle,
-    warm
+    warm,
+    felt
   };
 }

@@ -85,6 +85,8 @@ public:
     int getCurrentMidi() const noexcept { return mCurrentMidi; }
     float getEnvGain() const noexcept { return mEnvGain; }
     float getCurrentCutoff() const noexcept { return mCurrentCutoff; }
+    float getMaxFilterCutoff() const noexcept { return mMaxFilterCutoff; }
+    float getRestFilterCutoff() const noexcept { return mRestFilterCutoff; }
     uint64_t getStartSample() const noexcept { return mStartSample; }
 
     void setPitchBend(float cents) noexcept {
@@ -124,9 +126,9 @@ public:
             thumpDuration = 0.032f;
             bodyFormantHz = std::clamp(300.0f + static_cast<float>(mCurrentMidi - 24) * 5.0f, 280.0f, 420.0f);
             mFilterAttackSec = 0.009f;
-            mFilterDecaySec = 0.26f + (1.0f - params.tone) * 0.25f;
+            mFilterDecaySec = (0.26f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.4f, 2.5f);
             mMaxFilterCutoff = std::min(6000.0f, std::max(freq * 1.7f, 360.0f + (params.tone * 2200.0f * mCurrentVelocity)));
-            mRestFilterCutoff = std::min(1400.0f, std::max(120.0f, freq * 1.05f));
+            mRestFilterCutoff = std::clamp(freq * (1.4f + params.tone * 3.6f), 160.0f, 9500.0f);
         } else if (isTreble) {
             registerDecayMult = std::max(0.48f, 1.0f - static_cast<float>(mCurrentMidi - 71) * 0.035f);
             osc1Vol = 0.44f;
@@ -136,9 +138,9 @@ public:
             thumpDuration = 0.016f;
             bodyFormantHz = std::min(950.0f, 680.0f + static_cast<float>(mCurrentMidi - 72) * 12.0f);
             mFilterAttackSec = 0.009f;
-            mFilterDecaySec = 0.12f + (1.0f - params.tone) * 0.25f;
+            mFilterDecaySec = (0.12f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.4f, 2.5f);
             mMaxFilterCutoff = std::min(9500.0f, std::max(freq * 2.2f, 750.0f + (params.tone * 3600.0f * mCurrentVelocity)));
-            mRestFilterCutoff = std::min(3800.0f, std::max(280.0f, freq * 1.35f));
+            mRestFilterCutoff = std::clamp(freq * (1.4f + params.tone * 3.6f), 160.0f, 9500.0f);
         } else {
             registerDecayMult = 1.0f;
             bodyFormantHz = 480.0f + static_cast<float>(mCurrentMidi - 48) * 5.5f;
@@ -146,9 +148,9 @@ public:
             hammerThumpGainMult = 0.20f;
             thumpDuration = 0.025f;
             mFilterAttackSec = 0.009f;
-            mFilterDecaySec = 0.18f + (1.0f - params.tone) * 0.25f;
+            mFilterDecaySec = (0.18f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.4f, 2.5f);
             mMaxFilterCutoff = std::min(7500.0f, std::max(freq * 1.8f, 420.0f + (params.tone * 2600.0f * mCurrentVelocity)));
-            mRestFilterCutoff = std::min(2200.0f, std::max(160.0f, freq * 1.15f));
+            mRestFilterCutoff = std::clamp(freq * (1.4f + params.tone * 3.6f), 160.0f, 9500.0f);
         }
 
         if (mCurrentWaveform == WaveformType::Sine) {
@@ -164,6 +166,10 @@ public:
             mStartFilterCutoff = std::clamp(freq * 1.4f, 280.0f, 2400.0f);
             mMaxFilterCutoff = std::min(16000.0f, std::max(freq * 4.5f, 3200.0f + params.tone * 8000.0f * mCurrentVelocity));
             mRestFilterCutoff = std::min(12000.0f, std::max(freq * 2.5f, 1800.0f + params.tone * 5000.0f * mCurrentVelocity));
+        } else {
+            // Guarantee attack filter cutoff is at least rest cutoff across all acoustic registers, velocities, and waveforms.
+            // Eliminates inverted filter sweeps where cutoff dips on strike and sweeps up during decay.
+            mMaxFilterCutoff = std::max(mMaxFilterCutoff, mRestFilterCutoff);
         }
 
         mOsc1Gain = osc1Vol;
@@ -197,13 +203,12 @@ public:
 
         const float baseDecay = std::clamp(7.5f * std::pow(220.0f / std::max(60.0f, freq), 0.45f), 1.2f, 10.0f)
                                 * params.decay * registerDecayMult;
-        const float decayDuration = isCS80 ? (0.25f * params.decay)
-                                           : std::max(baseDecay, durationSec * params.decay);
+        const float decayDuration = isCS80 ? (0.25f * params.decay) : baseDecay;
         mDecaySamples = std::max(1u, static_cast<uint32_t>(decayDuration * mSampleRate));
         mReleaseSamples = std::max(1u, static_cast<uint32_t>((isCS80 ? 0.65f : 0.40f) * mSampleRate));
 
         // Hammer thump setup
-        const float effectiveHammer = (mCurrentWaveform == WaveformType::Sine) ? (params.hammer * 0.30f) : params.hammer;
+        const float effectiveHammer = (mCurrentWaveform == WaveformType::Sine) ? 0.0f : params.hammer;
         const float chordScale = mIsChord ? 0.40f : 1.0f;
         if (!isCS80 && effectiveHammer > 0.01f && mHammerBuffer != nullptr && mHammerBufferSize > 0) {
             mHammerPlaying = true;
@@ -287,11 +292,12 @@ public:
                 case EnvStage::Decay: {
                     ++mEnvSampleCount;
                     const float frac = std::min(1.0f, static_cast<float>(mEnvSampleCount) / static_cast<float>(mDecaySamples));
-                    // Exponential decay from mPeakGain down to mSustainLevel (or 0.0001 if not held)
-                    const float target = mIsHold ? mSustainLevel : 0.0001f;
+                    // Acoustic piano strings decay to silence even while held. Permanent sustain is reserved for synth pad modes (CS-80).
+                    const bool isCS80 = (mCurrentWaveform == WaveformType::CS80);
+                    const float target = (isCS80 && mIsHold) ? mSustainLevel : 0.0001f;
                     mEnvGain = mPeakGain * std::pow(std::max(0.0001f, target) / mPeakGain, frac);
                     if (mEnvSampleCount >= mDecaySamples) {
-                        if (mIsHold) {
+                        if (isCS80 && mIsHold) {
                             mEnvStage = EnvStage::Sustain;
                             mEnvGain = mSustainLevel;
                         } else {
@@ -415,8 +421,8 @@ public:
                 break;
             case WaveformType::Felt:
             default:
-                wave1 = WaveformType::Sine;
-                wave2 = WaveformType::Triangle;
+                wave1 = WaveformType::Felt;
+                wave2 = WaveformType::Felt;
                 break;
         }
 

@@ -24,7 +24,7 @@ namespace braun {
 struct ParameterSnapshot {
     // Felt Piano parameters
     float felt_volume { 0.80f };
-    float felt_decay { 1.10f };
+    float felt_decay { 1.0f };
     float felt_tone { 0.62f };
     float felt_hammer { 0.45f };
     float felt_space { 0.45f };       // Sympathetic string resonance level

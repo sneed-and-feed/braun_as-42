@@ -71,6 +71,25 @@ public:
             b_n = amp * (n % 2 == 0 ? 0.22f : 0.95f);
             a_n = amp * 0.08f;
         });
+
+        generateFourierTable(mFeltTable, [](int n, float& a_n, float& b_n) {
+            // Felt Piano: Rich fundamental and warm octave harmonics
+            // 1st: 1.0, 2nd: 0.58, 3rd: 0.28, 4th: 0.14, 5th: 0.07 (Lanczos windowed)
+            a_n = 0.0f;
+            b_n = 0.0f;
+            if (n >= 1 && n <= 5) {
+                const float lanczos = std::sin(kPi * n / kNumHarmonics) / (kPi * n / kNumHarmonics);
+                float weight = 0.0f;
+                switch (n) {
+                    case 1: weight = 1.0f; break;
+                    case 2: weight = 0.58f; break;
+                    case 3: weight = 0.28f; break;
+                    case 4: weight = 0.14f; break;
+                    case 5: weight = 0.07f; break;
+                }
+                b_n = weight * lanczos;
+            }
+        });
     }
 
     // High-precision linear table interpolation with guard point
@@ -83,7 +102,7 @@ public:
             case WaveformType::Square:   table = mSquareTable.data(); break;
             case WaveformType::Triangle: table = mTriangleTable.data(); break;
             case WaveformType::Warm:     table = mWarmTable.data(); break;
-            case WaveformType::Felt:     table = mSineTable.data(); break;
+            case WaveformType::Felt:     table = mFeltTable.data(); break;
         }
 
         const float p = phase01 - std::floor(phase01);
@@ -101,6 +120,7 @@ public:
     const std::array<float, kTableSize + 1>& getSquareTable() const noexcept { return mSquareTable; }
     const std::array<float, kTableSize + 1>& getTriangleTable() const noexcept { return mTriangleTable; }
     const std::array<float, kTableSize + 1>& getWarmTable() const noexcept { return mWarmTable; }
+    const std::array<float, kTableSize + 1>& getFeltTable() const noexcept { return mFeltTable; }
 
 private:
     void generateSineTable(std::array<float, kTableSize + 1>& table) {
@@ -147,6 +167,7 @@ private:
     std::array<float, kTableSize + 1> mSquareTable { 0.0f };
     std::array<float, kTableSize + 1> mTriangleTable { 0.0f };
     std::array<float, kTableSize + 1> mWarmTable { 0.0f };
+    std::array<float, kTableSize + 1> mFeltTable { 0.0f };
 };
 
 } // namespace braun

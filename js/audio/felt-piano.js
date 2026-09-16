@@ -276,13 +276,18 @@ export class FeltPianoVoice {
       if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
       if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
     } else { // 'felt' / 'triangle' default
-      this.osc1.type = 'sine';
-      if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
-      if (this.wavetables && this.wavetables.triangle) {
-        this.osc2.setPeriodicWave(this.wavetables.triangle);
+      if (this.wavetables && this.wavetables.felt) {
+        this.osc1.setPeriodicWave(this.wavetables.felt);
+        this.osc2.setPeriodicWave(this.wavetables.felt);
       } else {
-        this.osc2.type = 'triangle';
-        if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
+        this.osc1.type = 'sine';
+        if (this.osc1.periodicWave !== undefined) this.osc1.periodicWave = null;
+        if (this.wavetables && this.wavetables.triangle) {
+          this.osc2.setPeriodicWave(this.wavetables.triangle);
+        } else {
+          this.osc2.type = 'triangle';
+          if (this.osc2.periodicWave !== undefined) this.osc2.periodicWave = null;
+        }
       }
     }
   }
@@ -460,7 +465,7 @@ export class FeltPianoVoice {
       bodyFormantHz = Math.max(280, Math.min(420, 300 + (midi - 24) * 5));
       filterDecayBase = 0.26;
       maxCutoff = Math.min(6000, Math.max(freq * 1.7, 360 + (feltDamp * 2200 * velocity)));
-      restCutoff = Math.min(1400, Math.max(120, freq * 1.05));
+      restCutoff = Math.min(9500, Math.max(160, freq * (1.4 + feltDamp * 3.6)));
     } else if (isTreble) {
       // Treble octaves 5-6: brighter acoustic bell presence and quicker decay
       registerDecayMult = Math.max(0.48, 1.0 - (midi - 71) * 0.035);
@@ -473,7 +478,7 @@ export class FeltPianoVoice {
       filterAttackTime = 0.004;
       filterDecayBase = 0.12;
       maxCutoff = Math.min(9500, Math.max(freq * 2.2, 750 + (feltDamp * 3600 * velocity)));
-      restCutoff = Math.min(3800, Math.max(280, freq * 1.35));
+      restCutoff = Math.min(9500, Math.max(160, freq * (1.4 + feltDamp * 3.6)));
     } else {
       // Mid octaves 3-4: rich resonant wooden body formant and singing sustain
       registerDecayMult = 1.0;
@@ -483,7 +488,7 @@ export class FeltPianoVoice {
       thumpDuration = 0.025;
       filterDecayBase = 0.18;
       maxCutoff = Math.min(7500, Math.max(freq * 1.8, 420 + (feltDamp * 2600 * velocity)));
-      restCutoff = Math.min(2200, Math.max(160, freq * 1.15));
+      restCutoff = Math.min(9500, Math.max(160, freq * (1.4 + feltDamp * 3.6)));
     }
 
     if (isCS80) {
@@ -833,12 +838,15 @@ export class FeltPianoVoice {
         // Pure sine wave has no upper harmonics: capping filter cutoff prevents resonant noise burst
         effectiveMaxCutoff = Math.min(2200, Math.max(freq * 1.5, 600 + feltDamp * 600 * velocity));
       }
+      if (!isCS80) {
+        effectiveMaxCutoff = Math.max(effectiveMaxCutoff, restCutoff);
+      }
 
       this.filter1.frequency.linearRampToValueAtTime(effectiveMaxCutoff, filterAttackTarget);
       this.filter2.frequency.linearRampToValueAtTime(effectiveMaxCutoff, filterAttackTarget);
 
       // Rapid exponential decay down to fundamental
-      const filterDecayTime = filterDecayBase + (1.0 - feltDamp) * 0.25;
+      const filterDecayTime = (filterDecayBase + (1.0 - feltDamp) * 0.25) * Math.min(2.5, Math.max(0.4, decayMultiplier));
       const filterDecayTarget = Math.max(noteStartTime + effectiveFilterAttack + filterDecayTime, filterAttackTarget + 0.01);
       this.filter1.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
       this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
@@ -909,7 +917,7 @@ export class FeltPianoVoice {
       this._lastSustainLevel = sustainLevel;
       this._lastSustainTarget = sustainTarget;
       if (!hold) {
-        const stringDecay = Math.max(baseDecay, (duration || 3.5) * decayMultiplier);
+        const stringDecay = baseDecay;
         const decayEndTarget = Math.max(noteStartTime + attackTime + stringDecay + releaseTime, sustainTarget + 0.1);
         this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, decayEndTarget);
         this._lastDecayEndTarget = decayEndTarget;
@@ -1489,7 +1497,7 @@ export class FeltPianoSynthesizer {
   }
 
   setDecay(val) {
-    this.params.decay = Math.max(0.2, Math.min(3.0, val));
+    this.params.decay = Math.max(0.2, Math.min(3.5, val));
   }
 
   setRelease(val) {

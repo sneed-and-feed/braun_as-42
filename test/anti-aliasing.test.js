@@ -4,7 +4,8 @@ import {
   generateSawCoefficients,
   generateSquareCoefficients,
   generateTriangleCoefficients,
-  generateWarmAnalogCoefficients
+  generateWarmAnalogCoefficients,
+  generateFeltCoefficients
 } from '../js/audio/anti-aliasing.js';
 
 describe('Anti-Aliased Wavetable Synthesis', () => {
@@ -45,5 +46,22 @@ describe('Anti-Aliased Wavetable Synthesis', () => {
     const { real, imag } = generateWarmAnalogCoefficients(64);
     // 2nd harmonic should be non-zero for warm analog color
     assert.ok(imag[2] > 0);
+  });
+
+  it('generates felt piano coefficients with rich fundamental and octave harmonics', () => {
+    const { real, imag } = generateFeltCoefficients(64);
+    assert.strictEqual(real.length, 65);
+    assert.strictEqual(imag.length, 65);
+    assert.strictEqual(real[0], 0); // Zero DC offset
+    assert.strictEqual(imag[0], 0);
+    // Fundamental present
+    assert.ok(imag[1] > 0.8);
+    // 2nd harmonic present (~0.58 scaled with Lanczos)
+    assert.ok(imag[2] > 0.50);
+    // 3rd harmonic present (~0.28)
+    assert.ok(imag[3] > 0.20);
+    // Harmonics beyond 5th are zero
+    assert.strictEqual(imag[6], 0);
+    assert.strictEqual(imag[64], 0);
   });
 });
