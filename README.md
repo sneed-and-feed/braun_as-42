@@ -11,7 +11,7 @@
 ---
 
 ### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.2.4-Windows-x64.zip)
-*Direct download: **`BRAUN_AS42-v1.2.4-Windows-x64.zip`** (6.41 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
+*Direct download: **`BRAUN_AS42-v1.2.4-Windows-x64.zip`** (6.80 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
 
 ### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
 *No installation, plugins, or accounts required. Native Web Audio API + Web MIDI support.*
