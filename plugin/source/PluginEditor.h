@@ -26,11 +26,14 @@ public:
     void handleNoteOffFromWeb(const juce::var& data);
     void handleAllNotesOffFromWeb(const juce::var& data);
     void handlePitchBendFromWeb(const juce::var& data);
+    void handleStartRecordingFromWeb();
+    void handleStopRecordingFromWeb();
 
     void sendParameterUpdateToWeb(const juce::String& paramID, float newValue);
     void sendPowerUpdateToWeb(bool isPoweredOn);
     void sendDroneActiveUpdateToWeb(int droneId, bool active);
     void sendDroneTrackUpdateToWeb(bool track);
+    void sendRecordingStateUpdateToWeb(bool isRecording);
     void syncAllParametersToWeb();
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
 

@@ -55,10 +55,14 @@ BRAUN_AS42AudioProcessor::BRAUN_AS42AudioProcessor()
 
     // 6. Master Bus
     paramMasterVolume    = apvts.getRawParameterValue("master_volume");
+
+    recorderThread.startThread();
 }
 
 BRAUN_AS42AudioProcessor::~BRAUN_AS42AudioProcessor()
 {
+    stopRecording();
+    recorderThread.stopThread(2000);
 }
 
 const juce::String BRAUN_AS42AudioProcessor::getName() const
@@ -178,7 +182,7 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     juce::ScopedNoDenormals noDenormals;
 
     const int numSamples = buffer.getNumSamples();
-    if (numSamples <= 0)
+    if (numSamples <= 0 || buffer.getNumChannels() <= 0)
         return;
 
     // Unconditionally clear the audio buffer before synthesis.
@@ -304,6 +308,17 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     dspEngine.process(left, right, numSamples, snapshot, midiEventsStack, eventCount);
 
+    if (auto* writer = activeWriter.load(std::memory_order_acquire))
+    {
+        activeWriterWorkers.fetch_add(1, std::memory_order_acquire);
+        if (activeWriter.load(std::memory_order_relaxed) != nullptr)
+        {
+            const float* channels[] = { left, right };
+            writer->write(channels, numSamples);
+        }
+        activeWriterWorkers.fetch_sub(1, std::memory_order_release);
+    }
+
     pushScopeSamples(left, right, numSamples);
 }
 
@@ -411,6 +426,88 @@ bool BRAUN_AS42AudioProcessor::getDroneTrackMidi() const noexcept
 bool BRAUN_AS42AudioProcessor::consumeDroneTrackMidiDirty() noexcept
 {
     return droneTrackMidiDirty.exchange(false, std::memory_order_relaxed);
+}
+
+void BRAUN_AS42AudioProcessor::startRecording()
+{
+    const juce::ScopedLock sl(recorderLock);
+    if (activeWriter.load(std::memory_order_relaxed) != nullptr || threadedWriter != nullptr)
+        return;
+
+    const double sampleRateToUse = getSampleRate() > 0.0 ? getSampleRate() : 44100.0;
+
+    auto musicDir = juce::File::getSpecialLocation(juce::File::SpecialLocationType::userMusicDirectory);
+    if (!musicDir.isDirectory())
+    {
+        musicDir = juce::File::getSpecialLocation(juce::File::SpecialLocationType::userDocumentsDirectory);
+        if (!musicDir.isDirectory())
+            musicDir = juce::File::getSpecialLocation(juce::File::SpecialLocationType::userHomeDirectory);
+    }
+
+    const auto recordingsDir = musicDir.getChildFile("Braun AS-42 Recordings");
+    if (!recordingsDir.exists())
+    {
+        const auto result = recordingsDir.createDirectory();
+        if (result.failed())
+            return;
+    }
+
+    const juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y-%m-%d-%H-%M-%S");
+    const juce::File wavFile = recordingsDir.getNonexistentChildFile("braun-ambient-" + timestamp, ".wav");
+
+    if (auto stream = wavFile.createOutputStream())
+    {
+        juce::WavAudioFormat wavFormat;
+        if (auto* rawWriter = wavFormat.createWriterFor(stream.get(), sampleRateToUse, 2, 16, {}, 0))
+        {
+            stream.release();
+            lastRecordedFile = wavFile;
+            threadedWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(rawWriter, recorderThread, 131072);
+            activeWriter.store(threadedWriter.get(), std::memory_order_release);
+        }
+    }
+}
+
+void BRAUN_AS42AudioProcessor::stopRecording()
+{
+    const juce::ScopedLock sl(recorderLock);
+    if (activeWriter.load(std::memory_order_relaxed) == nullptr && threadedWriter == nullptr)
+        return;
+
+    {
+        const juce::ScopedLock slCb(getCallbackLock());
+        activeWriter.store(nullptr, std::memory_order_release);
+    }
+
+    while (activeWriterWorkers.load(std::memory_order_acquire) > 0)
+    {
+        juce::Thread::yield();
+    }
+
+    threadedWriter.reset();
+
+    recordingSavedDirty.store(true, std::memory_order_relaxed);
+
+    if (lastRecordedFile.existsAsFile())
+    {
+        lastRecordedFile.revealToUser();
+    }
+}
+
+bool BRAUN_AS42AudioProcessor::isRecording() const noexcept
+{
+    return activeWriter.load(std::memory_order_relaxed) != nullptr;
+}
+
+juce::File BRAUN_AS42AudioProcessor::getLastRecordedFile() const
+{
+    const juce::ScopedLock sl(recorderLock);
+    return lastRecordedFile;
+}
+
+bool BRAUN_AS42AudioProcessor::consumeRecordingSavedDirty() noexcept
+{
+    return recordingSavedDirty.exchange(false, std::memory_order_relaxed);
 }
 
 bool BRAUN_AS42AudioProcessor::hasEditor() const

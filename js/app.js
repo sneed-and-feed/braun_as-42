@@ -237,6 +237,7 @@ export class AmbientApp {
       typeof window !== 'undefined' &&
       (window.__IS_JUCE__ || window.__JUCE__?.backend || window.location?.hostname === 'juce.backend')
     );
+    this._isJuceRecording = false;
     this._initialized = false;
     this._knobsBuilt = false;
     this._isApplyingPreset = false;
@@ -489,7 +490,40 @@ export class AmbientApp {
     if (recordBtn) {
       recordBtn.addEventListener('click', async () => {
         if (!this.isPowerOn) {
-          await this.startAudio();
+          try {
+            await this.startAudio();
+          } catch (err) {
+            console.warn('startAudio failed on record click:', err);
+          }
+        }
+
+        if (this.isJuce) {
+          this._isJuceRecording = !this._isJuceRecording;
+          const textEl = recordBtn.querySelector('.braun-record-text');
+          if (this._isJuceRecording) {
+            recordBtn.classList.add('is-recording');
+            if (textEl) textEl.textContent = 'RECORDING...';
+            try {
+              const backend = window.__JUCE__?.backend;
+              if (backend && typeof backend.emitEvent === 'function') {
+                backend.emitEvent('startRecording', {});
+              }
+            } catch (err) {
+              console.warn('JUCE backend emitEvent startRecording error:', err);
+            }
+          } else {
+            recordBtn.classList.remove('is-recording');
+            if (textEl) textEl.textContent = 'RECORD WAV';
+            try {
+              const backend = window.__JUCE__?.backend;
+              if (backend && typeof backend.emitEvent === 'function') {
+                backend.emitEvent('stopRecording', {});
+              }
+            } catch (err) {
+              console.warn('JUCE backend emitEvent stopRecording error:', err);
+            }
+          }
+          return;
         }
 
         if (!this.engine.isRecording) {
@@ -1447,7 +1481,23 @@ export class AmbientApp {
       }
 
       // Stop recording if active when powering down
-      if (!this.isJuce && this.engine.isRecording) {
+      if (this.isJuce && this._isJuceRecording) {
+        this._isJuceRecording = false;
+        const recordBtn = document.getElementById('btn-record');
+        if (recordBtn) {
+          recordBtn.classList.remove('is-recording');
+          const textEl = recordBtn.querySelector('.braun-record-text');
+          if (textEl) textEl.textContent = 'RECORD WAV';
+        }
+        try {
+          const backend = window.__JUCE__?.backend;
+          if (backend && typeof backend.emitEvent === 'function') {
+            backend.emitEvent('stopRecording', {});
+          }
+        } catch (err) {
+          console.warn('JUCE backend emitEvent stopRecording error:', err);
+        }
+      } else if (!this.isJuce && this.engine.isRecording) {
         const recordBtn = document.getElementById('btn-record');
         this.engine.stopRecording();
         if (recordBtn) {
@@ -2024,6 +2074,16 @@ export class AmbientApp {
             this.setDroneTrackMidi(track, { emitToNative: false });
             return;
           }
+          if ((id === 'recording' || id === 'isRecording') && typeof value === 'number') {
+            this._isJuceRecording = (value > 0.5);
+            const recordBtn = document.getElementById('btn-record');
+            if (recordBtn) {
+              recordBtn.classList.toggle('is-recording', this._isJuceRecording);
+              const textEl = recordBtn.querySelector('.braun-record-text');
+              if (textEl) textEl.textContent = this._isJuceRecording ? 'RECORDING...' : 'RECORD WAV';
+            }
+            return;
+          }
           let knob = this.knobs[id];
           if (!knob) {
             if (id === 'felt_tone') knob = this.knobs.feltTone;
@@ -2089,7 +2149,23 @@ export class AmbientApp {
         });
       }
 
-      // 3. Connect knob changes to window.__JUCE__.backend.emitEvent("paramChange", { id, value })
+      // 3. Listen for recordingSaved event from JUCE C++ WAV recorder
+      if (typeof backend.addEventListener === 'function') {
+        backend.addEventListener('recordingSaved', (payload) => {
+          this._isJuceRecording = false;
+          const recordBtn = document.getElementById('btn-record');
+          if (recordBtn) {
+            recordBtn.classList.remove('is-recording');
+            const textEl = recordBtn.querySelector('.braun-record-text');
+            if (textEl) textEl.textContent = 'RECORD WAV';
+          }
+          if (payload && payload.path) {
+            console.log('[JUCE] Lossless WAV recording saved to:', payload.path);
+          }
+        });
+      }
+
+      // 4. Connect knob changes to window.__JUCE__.backend.emitEvent("paramChange", { id, value })
       for (const [id, knob] of Object.entries(this.knobs)) {
         if (!knob) continue;
         const originalOnChange = knob.onChange;

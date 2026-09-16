@@ -134,6 +134,12 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
         })
         .withEventListener("pitchBend", [&editor](const juce::var& data) {
             editor.handlePitchBendFromWeb(data);
+        })
+        .withEventListener("startRecording", [&editor](const juce::var& /*data*/) {
+            editor.handleStartRecordingFromWeb();
+        })
+        .withEventListener("stopRecording", [&editor](const juce::var& /*data*/) {
+            editor.handleStopRecordingFromWeb();
         });
 
     return options;
@@ -298,6 +304,12 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
     {
         sendDroneTrackUpdateToWeb(processorRef.getDroneTrackMidi());
     }
+    if (processorRef.consumeRecordingSavedDirty())
+    {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("path", processorRef.getLastRecordedFile().getFullPathName());
+        webComponent.emitEventIfBrowserIsVisible("recordingSaved", juce::var(obj));
+    }
 
     // Coalesced dirty parameter dispatch at a smooth, stable 25 Hz
     for (size_t i = 0; i < std::size(kParamMap); ++i)
@@ -386,12 +398,21 @@ void BRAUN_AS42AudioProcessorEditor::sendDroneTrackUpdateToWeb(bool track)
     webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
 }
 
+void BRAUN_AS42AudioProcessorEditor::sendRecordingStateUpdateToWeb(bool isRecording)
+{
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("id", "isRecording");
+    obj->setProperty("value", isRecording ? 1.0f : 0.0f);
+    webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+}
+
 void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
 {
     sendPowerUpdateToWeb(processorRef.getPoweredOn());
     sendDroneActiveUpdateToWeb(1, processorRef.getDrone1Active());
     sendDroneActiveUpdateToWeb(2, processorRef.getDrone2Active());
     sendDroneTrackUpdateToWeb(processorRef.getDroneTrackMidi());
+    sendRecordingStateUpdateToWeb(processorRef.isRecording());
 
     for (const auto& item : kParamMap)
     {
@@ -442,6 +463,16 @@ void BRAUN_AS42AudioProcessorEditor::handlePitchBendFromWeb(const juce::var& dat
     processorRef.pushUIPitchBend(cents);
 }
 
+void BRAUN_AS42AudioProcessorEditor::handleStartRecordingFromWeb()
+{
+    processorRef.startRecording();
+}
+
+void BRAUN_AS42AudioProcessorEditor::handleStopRecordingFromWeb()
+{
+    processorRef.stopRecording();
+}
+
 void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& data)
 {
     if (!data.isObject())
@@ -454,6 +485,18 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
     const juce::String incomingId = obj->getProperty("id").toString();
     const juce::var rawVal = obj->getProperty("value");
     const float incomingVal = rawVal.isString() ? static_cast<float>(rawVal.toString().getDoubleValue()) : static_cast<float>(rawVal);
+
+    // Handle recording commands sent as paramChange
+    if (incomingId.equalsIgnoreCase("startRecording"))
+    {
+        processorRef.startRecording();
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("stopRecording"))
+    {
+        processorRef.stopRecording();
+        return;
+    }
 
     // Handle state sync request from WebView2
     if (incomingId.equalsIgnoreCase("requestSync") || incomingId.equalsIgnoreCase("requestState"))
