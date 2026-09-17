@@ -1,9 +1,9 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
-[![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=google-chrome&logoColor=white)](https://sneed-and-feed.github.io/)
-[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](#option-c-native-multi-platform-plugin--standalone-build-cmake)
+[![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](#build-macos)
 [![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
-[![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#option-c-native-multi-platform-plugin--standalone-build-cmake)
+[![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#build-linux)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 > **A Dieter Rams functionalist digital-analog ambient instrument and microtonal drone synthesizer.**
@@ -21,16 +21,16 @@
 
 | Platform | Distribution | Supported Formats | Quick Action / Build One-Liner |
 | :--- | :--- | :--- | :--- |
-| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.2-Windows-x64.zip` (6.81 MB)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip) |
-| **macOS** | **Build from Source** (Universal) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
+| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.2-Windows-x64.zip` (6.81 MB)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
+| **macOS** | **Build from Source** (Universal) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | `cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && cmake --build build --config Release` |
 | **Linux** | **Build from Source** (GCC/Clang) | VST3 · Standalone | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
 
-* **Windows x64:** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.
+* **Windows x64:** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app (or build cleanly from source via CMake).
 * **macOS (Apple Silicon ARM64 & Intel x86_64):** Builds cleanly from source via standard CMake. Generates universal Audio Unit (`.component` for Logic Pro & GarageBand), VST3 (`.vst3`), and standalone `.app` with native WKWebView GPU acceleration.
 * **Linux (Ubuntu, Debian, Fedora, Arch):** Builds cleanly from source via standard CMake with WebKitGTK, producing native VST3 (`.vst3`) and standalone binaries for Reaper, Bitwig, Ardour, and ALSA/JACK/PipeWire.
 
 ### 🌌 [🏛️ Sibling Reverb: BRAUN RB-26 Master Studio Reverberator](https://github.com/sneed-and-feed/braun_rb-26)
-*Direct package-deal hardware sibling companion. Download precompiled VST3/CLAP/Standalone: [**`BRAUN_RB26-v1.2.0-Windows-x64.zip`**](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_RB26-v1.2.0-Windows-x64.zip) or [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases).*
+*Direct package-deal hardware sibling companion. Available on [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases) (Universal macOS AU/VST3/CLAP, Linux VST3/CLAP, and precompiled [**Windows-x64.zip**](https://github.com/sneed-and-feed/braun_rb-26/releases/download/v1.3.1/BRAUN_RB26-v1.3.1-Windows-x64.zip)).*
 
 ---
 
@@ -273,12 +273,16 @@ One-click launch scripts are provided for all operating systems:
 * **macOS & Linux:**
   ```bash
   ./start.sh
+  # or: ./run.sh
   ```
 * **Windows:** Double-click `start.bat` (or `run.bat`)
 
 Both scripts verify your local environment (Node.js or Python fallback), launch the local static web server, and open `http://localhost:3000` in your default web browser automatically.
 
 ### Option C: Native Multi-Platform Plugin & Standalone Build (CMake)
+<a id="option-c-native-multi-platform-plugin--standalone-build-cmake"></a>
+<a id="build-from-source"></a>
+
 Build the native C++20 plugin (AUv2, VST3) and standalone desktop application directly from source on **macOS**, **Linux**, or **Windows**:
 
 1. **Prerequisites:**
@@ -291,18 +295,21 @@ Build the native C++20 plugin (AUv2, VST3) and standalone desktop application di
 
 2. **One-Liner Build Commands by Operating System:**
 
+   <a id="build-macos"></a>
    * **macOS (Universal AUv2 + VST3 + Standalone App):**
      ```bash
      cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && cmake --build build --config Release
      ```
      *(Builds universal Apple Silicon ARM64 + Intel x86_64 binaries. Generates AU `.component`, VST3 `.vst3`, and standalone `.app`)*
 
+   <a id="build-linux"></a>
    * **Linux (VST3 + Standalone App):**
      ```bash
      cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release
      ```
      *(Builds 64-bit VST3 plugin and native standalone executable using WebKitGTK)*
 
+   <a id="build-windows"></a>
    * **Windows (VST3 + Standalone Exe):**
      ```bash
      cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release
@@ -347,9 +354,9 @@ npm test
 * Validates voice de-duplication, Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, full-width CRT oscilloscope edge-to-edge drawing, 48-bar FFT spectrum, iPadOS WebKit/Brave momentum vertical scrolling, rotary knob touch disambiguation, responsive tablet layout across iOS and Android (16:10 / 4:3), and anti-clipping bus headroom staging.
 
 ### 5.2 Native C++ DSP & Real-Time Safety Tests
-* **DSP Unit Tests (`test\cpp\dsp_tests.exe`):** 39 passed, 0 failed. Validates biquad state preservation across zero-crossings, voice stealing pitch locks, Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, oscilloscope visualizer ring buffer bounds, and mathematical invariance of DSP optimizations.
-* **Adversarial Stress Tests (`test\cpp\challenger_stress_tests.exe`):** 10 passed, 0 failed. Verifies block sizes from 32 to 2048, multiple sample rates (44.1k to 192k), 22-parameter rapid sweeps, polyphonic voice stealing race conditions, and **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
-* **Adversarial Challenge Suite (`test\cpp\adversarial_challenge_suite.exe`):** 11 passed, 0 failed. Confirms zero NaNs, Infinities, or denormals; DC offset bounded below 0.00025; and continuous voice stealing fades.
+* **DSP Unit Tests (`test/cpp/dsp_tests`):** 39 passed, 0 failed. Validates biquad state preservation across zero-crossings, voice stealing pitch locks, Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, oscilloscope visualizer ring buffer bounds, and mathematical invariance of DSP optimizations.
+* **Adversarial Stress Tests (`test/cpp/challenger_stress_tests`):** 10 passed, 0 failed. Verifies block sizes from 32 to 2048, multiple sample rates (44.1k to 192k), 22-parameter rapid sweeps, polyphonic voice stealing race conditions, and **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
+* **Adversarial Challenge Suite (`test/cpp/adversarial_challenge_suite`):** 11 passed, 0 failed. Confirms zero NaNs, Infinities, or denormals; DC offset bounded below 0.00025; and continuous voice stealing fades.
 * **Asset & MIME Integrity Audit (`node test/web-assets-and-mime-stress.mjs`):** 18/18 embedded web assets verified against SHA-256 hashes, zero MIME type resolution errors, and 22-parameter bidirectional APVTS roundtrip verified.
 
 ---

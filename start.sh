@@ -12,10 +12,14 @@ echo ""
 
 open_browser() {
     local url="http://localhost:3000"
-    if command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "$url" >/dev/null 2>&1 &
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        open "$url" >/dev/null 2>&1 || true
+    elif command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$url" >/dev/null 2>&1 || true
     elif command -v open >/dev/null 2>&1; then
-        open "$url" >/dev/null 2>&1 &
+        open "$url" >/dev/null 2>&1 || true
+    elif command -v cmd.exe >/dev/null 2>&1; then
+        cmd.exe /c start "$url" >/dev/null 2>&1 || true
     fi
 }
 
