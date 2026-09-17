@@ -97,9 +97,9 @@ export class FeltPianoVoice {
     this.hammerGain.gain.setValueAtTime(0, ctx.currentTime);
 
     this.hammerFilter = ctx.createBiquadFilter();
-    this.hammerFilter.type = 'bandpass';
+    this.hammerFilter.type = 'lowpass';
     this.hammerFilter.frequency.setValueAtTime(280, ctx.currentTime);
-    this.hammerFilter.Q.setValueAtTime(1.2, ctx.currentTime);
+    this.hammerFilter.Q.setValueAtTime(0.85, ctx.currentTime);
 
     // Oscillators: Osc 1 (Fundamental core) & Osc 2 (Detuned overtone)
     // Calibrated internal voice levels so 5-6 voice chord clusters never clip internal saturation shaper
@@ -444,9 +444,9 @@ export class FeltPianoVoice {
     const isTreble = midi >= 72;
 
     let registerDecayMult = 1.0;
-    let hammerCutoff = 280;
-    let hammerThumpGainMult = 2.80;
-    let thumpDuration = 0.025; // 25ms
+    let hammerCutoff = 320;
+    let hammerThumpGainMult = 0.90;
+    let thumpDuration = 0.026; // 26ms
     let bodyFormantHz = 540;
     let osc1Vol = 0.48;
     let osc2Vol = 0.16;
@@ -462,7 +462,7 @@ export class FeltPianoVoice {
       osc1Vol = 0.60;
       osc2Vol = 0.12;
       hammerCutoff = Math.min(220, Math.max(110, freq * 1.3));
-      hammerThumpGainMult = 3.20;
+      hammerThumpGainMult = 1.10;
       thumpDuration = 0.032;
       bodyFormantHz = Math.max(280, Math.min(420, 300 + (midi - 24) * 5));
       filterDecayBase = 0.26;
@@ -473,9 +473,9 @@ export class FeltPianoVoice {
       registerDecayMult = Math.max(0.48, 1.0 - (midi - 71) * 0.035);
       osc1Vol = 0.44;
       osc2Vol = 0.18;
-      hammerCutoff = Math.min(1400, Math.max(550, freq * 0.9));
-      hammerThumpGainMult = 2.00;
-      thumpDuration = 0.016;
+      hammerCutoff = Math.min(750, Math.max(550, freq * 0.70));
+      hammerThumpGainMult = 0.70;
+      thumpDuration = 0.018;
       bodyFormantHz = Math.min(950, 680 + (midi - 72) * 12);
       filterAttackTime = 0.004;
       filterDecayBase = 0.12;
@@ -485,9 +485,9 @@ export class FeltPianoVoice {
       // Mid octaves 3-4: rich resonant wooden body formant and singing sustain
       registerDecayMult = 1.0;
       bodyFormantHz = 480 + (midi - 48) * 5.5; // Spruce piano soundboard formant ~480-605 Hz
-      hammerCutoff = Math.min(450, Math.max(240, freq * 1.2));
-      hammerThumpGainMult = 2.80;
-      thumpDuration = 0.025;
+      hammerCutoff = Math.min(420, Math.max(220, freq * 1.1));
+      hammerThumpGainMult = 0.90;
+      thumpDuration = 0.026;
       filterDecayBase = 0.18;
       maxCutoff = Math.min(7500, Math.max(freq * 1.8, 420 + (feltDamp * 2600 * velocity)));
       restCutoff = Math.min(9500, Math.max(160, freq * (1.4 + feltDamp * 3.6)));
@@ -726,8 +726,14 @@ export class FeltPianoVoice {
       if (!hfHeld && typeof this.hammerFilter.frequency.cancelScheduledValues === 'function') {
         this.hammerFilter.frequency.cancelScheduledValues(cancelTime);
       }
+      if (this.hammerFilter.type !== 'lowpass') {
+        this.hammerFilter.type = 'lowpass';
+      }
+      if (this.hammerFilter.Q && typeof this.hammerFilter.Q.setValueAtTime === 'function') {
+        this.hammerFilter.Q.setValueAtTime(0.85, cancelTime);
+      }
       if (typeof this.hammerFilter.frequency.setTargetAtTime === 'function') {
-        this.hammerFilter.frequency.setTargetAtTime(hammerCutoff, cancelTime, 0.015);
+        this.hammerFilter.frequency.setTargetAtTime(hammerCutoff, cancelTime, 0.004);
       } else {
         this.hammerFilter.frequency.setValueAtTime(hammerCutoff, noteStartTime);
       }
@@ -740,8 +746,10 @@ export class FeltPianoVoice {
       // Scale hammer thump down for chord clusters so multiple simultaneous noise bursts don't constructively peak
       const chordHammerScale = this.isChord ? 0.40 : 1.0;
       const targetHammerGain = Math.max(0.0001, velocity * effectiveHammerThump * hammerThumpGainMult * chordHammerScale);
-      // Smooth micro-attack to peak, then exponential decay down to silence with future-guaranteed targets
-      const hammerAttackTime = (this.currentWaveform === 'sine') ? 0.0065 : 0.0055; // 5.5-6.5ms smooth micro-fade eliminates high-velocity transient impulse pop
+      // Smooth felt compression attack to peak (no high-frequency spike), then exponential decay
+      const hammerAttackTime = (this.currentWaveform === 'sine')
+        ? 0.0070
+        : (isBass ? 0.0065 : isTreble ? 0.0045 : 0.0055);
       const hammerAttackTarget = Math.max(noteStartTime + hammerAttackTime, ctx.currentTime + 0.004);
       const hammerDecayTarget = Math.max(noteStartTime + thumpDuration, hammerAttackTarget + 0.006);
       // Anchor hammerGain at noteStartTime so ramp starts from zero right as noise buffer starts (only when not already ramped to 0.0001)
@@ -749,8 +757,9 @@ export class FeltPianoVoice {
         this.hammerGain.gain.setValueAtTime(0.0001, noteStartTime);
       }
       this.hammerGain.gain.linearRampToValueAtTime(targetHammerGain, hammerAttackTarget);
-      this.hammerGain.gain.exponentialRampToValueAtTime(0.0001, hammerDecayTarget);
-      this.hammerGain.gain.linearRampToValueAtTime(0.0, hammerDecayTarget + 0.003);
+      const hammerEndGain = Math.max(0.0001, targetHammerGain * 0.0183);
+      this.hammerGain.gain.exponentialRampToValueAtTime(hammerEndGain, hammerDecayTarget);
+      this.hammerGain.gain.linearRampToValueAtTime(0.0, hammerDecayTarget + 0.004);
 
       noiseSource.start(noteStartTime);
       noiseSource.stop(hammerDecayTarget + 0.008);
@@ -1246,32 +1255,49 @@ export class FeltPianoSynthesizer {
       sympathetic: 0.45 // EP-1320 sympathetic string soundboard coupling level
     };
 
-    // Pre-allocate single hammer noise burst buffer once for all voices
+    // Pre-allocate single hammer acoustic transient buffer once for all voices
+    // Warm wooden soundboard thump + velvety low-passed felt compression texture
     // Ensure zero DC offset and smooth windowed attack & decay to prevent click/pop
-    const thumpDuration = 0.040; // 40ms to safely encompass bass register (32ms), mid (25ms), and treble (16ms)
+    const thumpDuration = 0.040; // 40ms to safely encompass bass register (32ms), mid (26ms), and treble (18ms)
     const thumpSamples = Math.floor(ctx.sampleRate * thumpDuration);
     this.hammerBuffer = ctx.createBuffer(1, thumpSamples, ctx.sampleRate);
     const d = this.hammerBuffer.getChannelData(0);
 
-    // 1. Generate zero-mean raw noise
-    let rawSum = 0;
+    // 1. Generate low-passed velvety felt noise texture (Brownian/lowpass filtered)
+    // Deterministic PRNG seeded at 1337 matches C++ standalone DSP
+    let rngState = 1337;
+    const nextRand = () => {
+      rngState = (rngState * 1664525 + 1013904223) >>> 0;
+      return (rngState / 4294967296) * 2 - 1;
+    };
+
+    const rawNoise = new Float32Array(thumpSamples);
+    let pole1 = 0;
     for (let i = 0; i < thumpSamples; i++) {
-      const s = Math.random() * 2 - 1;
-      d[i] = s;
-      rawSum += s;
+      pole1 = pole1 * 0.82 + nextRand() * 0.18;
+      rawNoise[i] = pole1;
     }
-    const mean = rawSum / thumpSamples;
+    let pole2 = 0;
     for (let i = 0; i < thumpSamples; i++) {
-      d[i] -= mean;
+      pole2 = pole2 * 0.82 + rawNoise[i] * 0.18;
+      rawNoise[i] = pole2;
     }
 
-    // 2. Windowed exponential decay with smooth Hann attack & release windows
-    const attackSamples = Math.max(2, Math.floor(ctx.sampleRate * 0.0035)); // 3.5ms smooth attack
-    const releaseSamples = Math.max(2, Math.floor(ctx.sampleRate * 0.006)); // 6ms smooth decay
+    // 2. Synthesize warm wooden body modal impulse (damped ~135 Hz soundboard knock)
+    // Blended with low-passed felt compression texture
+    for (let i = 0; i < thumpSamples; i++) {
+      const t = i / ctx.sampleRate;
+      const woodThump = Math.sin(2 * Math.PI * 135 * t) * Math.exp(-t / 0.010);
+      d[i] = 0.65 * woodThump + 0.35 * rawNoise[i];
+    }
+
+    // 3. Windowed exponential decay with smooth Hann attack & release windows
+    const attackSamples = Math.max(2, Math.floor(ctx.sampleRate * 0.0050)); // 5.0ms smooth felt attack
+    const releaseSamples = Math.max(2, Math.floor(ctx.sampleRate * 0.0060)); // 6.0ms smooth decay
     const releaseStart = thumpSamples - releaseSamples;
 
     for (let i = 0; i < thumpSamples; i++) {
-      let s = d[i] * Math.exp(-i / (ctx.sampleRate * 0.007));
+      let s = d[i] * Math.exp(-i / (ctx.sampleRate * 0.0090));
       if (i < attackSamples) {
         // Hann / raised-cosine window starting smoothly at 0.0 with 0 derivative
         s *= 0.5 * (1 - Math.cos((Math.PI * i) / attackSamples));
@@ -1283,7 +1309,7 @@ export class FeltPianoSynthesizer {
       d[i] = s;
     }
 
-    // 3. High-precision zero-boundary DC removal: subtract weighted DC baseline that tapers to 0 at boundaries
+    // 4. High-precision zero-boundary DC removal: subtract weighted DC baseline that tapers to 0 at boundaries
     // Using sin^2(pi*i/(N-1)) ensures BOTH the value AND its first derivative are exactly 0 at boundaries (i=0 and i=N-1)
     let sumD = 0;
     let sumW = 0;

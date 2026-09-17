@@ -115,9 +115,9 @@ public:
         const bool isTreble = mCurrentMidi >= 72;
 
         float registerDecayMult = 1.0f;
-        float hammerCutoff = 280.0f;
-        float hammerThumpGainMult = 2.80f;
-        float thumpDuration = 0.025f;
+        float hammerCutoff = 320.0f;
+        float hammerThumpGainMult = 0.90f;
+        float thumpDuration = 0.026f;
         float bodyFormantHz = 540.0f;
         float osc1Vol = 0.48f;
         float osc2Vol = 0.16f;
@@ -128,7 +128,7 @@ public:
             osc1Vol = 0.60f;
             osc2Vol = 0.12f;
             hammerCutoff = std::min(220.0f, std::max(110.0f, freq * 1.3f));
-            hammerThumpGainMult = 3.20f;
+            hammerThumpGainMult = 1.10f;
             thumpDuration = 0.032f;
             bodyFormantHz = std::clamp(300.0f + static_cast<float>(mCurrentMidi - 24) * 5.0f, 280.0f, 420.0f);
             mFilterAttackSec = 0.009f;
@@ -139,9 +139,9 @@ public:
             registerDecayMult = std::max(0.48f, 1.0f - static_cast<float>(mCurrentMidi - 71) * 0.035f);
             osc1Vol = 0.44f;
             osc2Vol = 0.18f;
-            hammerCutoff = std::min(1400.0f, std::max(550.0f, freq * 0.9f));
-            hammerThumpGainMult = 2.00f;
-            thumpDuration = 0.016f;
+            hammerCutoff = std::min(750.0f, std::max(550.0f, freq * 0.70f));
+            hammerThumpGainMult = 0.70f;
+            thumpDuration = 0.018f;
             bodyFormantHz = std::min(950.0f, 680.0f + static_cast<float>(mCurrentMidi - 72) * 12.0f);
             mFilterAttackSec = 0.009f;
             mFilterDecaySec = (0.12f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.2f, 3.5f);
@@ -150,9 +150,9 @@ public:
         } else {
             registerDecayMult = 1.0f;
             bodyFormantHz = 480.0f + static_cast<float>(mCurrentMidi - 48) * 5.5f;
-            hammerCutoff = std::min(450.0f, std::max(240.0f, freq * 1.2f));
-            hammerThumpGainMult = 2.80f;
-            thumpDuration = 0.025f;
+            hammerCutoff = std::min(420.0f, std::max(220.0f, freq * 1.1f));
+            hammerThumpGainMult = 0.90f;
+            thumpDuration = 0.026f;
             mFilterAttackSec = 0.009f;
             mFilterDecaySec = (0.18f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.2f, 3.5f);
             mMaxFilterCutoff = std::min(7500.0f, std::max(freq * 1.8f, 420.0f + (params.tone * 2600.0f * mCurrentVelocity)));
@@ -194,8 +194,8 @@ public:
         // Configure body soundboard peaking formant filter
         mBodyFilter.configure(Biquad::Type::Peaking, mSampleRate, bodyFormantHz, 1.2f, 1.5f);
 
-        // Configure hammer filter
-        mHammerFilter.configure(Biquad::Type::Bandpass, mSampleRate, hammerCutoff, 1.2f);
+        // Configure hammer filter with smooth lowpass damping
+        mHammerFilter.configure(Biquad::Type::Lowpass, mSampleRate, hammerCutoff, 0.85f);
 
         // Amplitude envelope timings
         const float baseAttack = isCS80 ? 0.024f : 0.0080f;
@@ -222,7 +222,7 @@ public:
         const float relTime = isCS80 ? 0.65f : (0.10f + 0.32f * std::pow(relScale, 1.35f));
         mReleaseSamples = std::max(1u, static_cast<uint32_t>(relTime * mSampleRate));
 
-        // Hammer thump setup
+        // Hammer thump setup: soft felt compression attack, warm wooden body decay
         const float effectiveHammer = (mCurrentWaveform == WaveformType::Sine) ? 0.0f : params.hammer;
         const float chordScale = mIsChord ? 0.40f : 1.0f;
         if (!isCS80 && effectiveHammer > 0.01f && mHammerBuffer != nullptr && mHammerBufferSize > 0) {
@@ -230,7 +230,10 @@ public:
             mHammerIndex = 0;
             mHammerTargetGain = mCurrentVelocity * effectiveHammer * hammerThumpGainMult * chordScale;
             mHammerGain = 0.0f;
-            mHammerAttackSamples = static_cast<uint32_t>((mCurrentWaveform == WaveformType::Sine ? 0.0065f : 0.0035f) * mSampleRate);
+            const float hammerAttackTime = (mCurrentWaveform == WaveformType::Sine)
+                ? 0.0070f
+                : (isBass ? 0.0065f : isTreble ? 0.0045f : 0.0055f);
+            mHammerAttackSamples = static_cast<uint32_t>(hammerAttackTime * mSampleRate);
             mHammerDecaySamples = static_cast<uint32_t>(thumpDuration * mSampleRate);
             mHammerStep = 0;
         } else {
@@ -884,32 +887,41 @@ private:
     }
 
     void generateHammerBuffer() {
-        // 40ms noise buffer with zero DC offset and Hann attack & release
+        // 40ms acoustic hammer transient buffer with zero DC offset and Hann attack & release
         const size_t thumpSamples = static_cast<size_t>(mSampleRate * 0.040f);
         mHammerBuffer.assign(thumpSamples, 0.0f);
 
-        // 1. Generate zero-mean raw noise
+        // 1. Generate low-passed velvety felt noise texture (Brownian/lowpass filtered)
         std::mt19937 rng(1337);
         std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
 
-        float rawSum = 0.0f;
+        std::vector<float> feltNoise(thumpSamples, 0.0f);
+        float pole1 = 0.0f;
         for (size_t i = 0; i < thumpSamples; ++i) {
-            const float s = dist(rng);
-            mHammerBuffer[i] = s;
-            rawSum += s;
+            pole1 = pole1 * 0.82f + dist(rng) * 0.18f;
+            feltNoise[i] = pole1;
         }
-        const float mean = rawSum / static_cast<float>(thumpSamples);
+        float pole2 = 0.0f;
         for (size_t i = 0; i < thumpSamples; ++i) {
-            mHammerBuffer[i] -= mean;
+            pole2 = pole2 * 0.82f + feltNoise[i] * 0.18f;
+            feltNoise[i] = pole2;
         }
 
-        // 2. Windowed exponential decay with smooth Hann attack & release windows
-        const size_t attackSamples = std::max(size_t(2), static_cast<size_t>(mSampleRate * 0.0035f));
-        const size_t releaseSamples = std::max(size_t(2), static_cast<size_t>(mSampleRate * 0.006f));
+        // 2. Synthesize warm wooden body modal impulse (damped ~135 Hz soundboard knock)
+        // Blended with low-passed felt compression texture
+        for (size_t i = 0; i < thumpSamples; ++i) {
+            const float t = static_cast<float>(i) / mSampleRate;
+            const float woodThump = std::sin(kTwoPi * 135.0f * t) * std::exp(-t / 0.010f);
+            mHammerBuffer[i] = 0.65f * woodThump + 0.35f * feltNoise[i];
+        }
+
+        // 3. Windowed exponential decay with smooth Hann attack & release windows
+        const size_t attackSamples = std::max(size_t(2), static_cast<size_t>(mSampleRate * 0.0050f));
+        const size_t releaseSamples = std::max(size_t(2), static_cast<size_t>(mSampleRate * 0.0060f));
         const size_t releaseStart = thumpSamples - releaseSamples;
 
         for (size_t i = 0; i < thumpSamples; ++i) {
-            float s = mHammerBuffer[i] * std::exp(-static_cast<float>(i) / (mSampleRate * 0.007f));
+            float s = mHammerBuffer[i] * std::exp(-static_cast<float>(i) / (mSampleRate * 0.0090f));
             if (i < attackSamples) {
                 s *= 0.5f * (1.0f - std::cos(kPi * static_cast<float>(i) / static_cast<float>(attackSamples)));
             } else if (i >= releaseStart) {
@@ -919,7 +931,7 @@ private:
             mHammerBuffer[i] = s;
         }
 
-        // 3. High-precision zero-boundary DC removal using sin^2(pi*i / (N-1))
+        // 4. High-precision zero-boundary DC removal using sin^2(pi*i / (N-1))
         float sumD = 0.0f;
         float sumW = 0.0f;
         std::vector<float> weights(thumpSamples, 0.0f);
