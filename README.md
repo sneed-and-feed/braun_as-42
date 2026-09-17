@@ -1,24 +1,33 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-EE592B?style=for-the-badge&logo=github)](https://sneed-and-feed.github.io/)
-[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple)](#option-c-native-multi-platform-plugin--standalone-build-cmake)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-blue?style=for-the-badge&logo=windows)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
-[![Web Audio API](https://img.shields.io/badge/Web%20Audio-100%25%20Client--Side-4A4A4A?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
-[![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=google-chrome&logoColor=white)](https://sneed-and-feed.github.io/)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](#option-c-native-multi-platform-plugin--standalone-build-cmake)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
+[![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#option-c-native-multi-platform-plugin--standalone-build-cmake)
+[![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 > **A Dieter Rams functionalist digital-analog ambient instrument and microtonal drone synthesizer.**
 > Inspired by **Harold Budd**, **Brian Eno**, and the **Elta Solar 42n**.
 
+**Platforms:** macOS · Windows · Linux · Web Browser (Desktop, iOS, Android)  
+**Formats:** Audio Unit (AUv2) · VST3 · Standalone Desktop Application · Web Audio API
+
 ---
 
-### 🌐 [🔊 Play Live in Your Browser (macOS, Windows, iOS, Android, Linux)](https://sneed-and-feed.github.io/)
-*Zero installation, accounts, or plugins required. 100% client-side Web Audio API + Web MIDI support in Safari, Chrome, Edge, and Firefox.*
+### 🌐 [🔊 Play Live in Your Browser (macOS · Windows · Linux · iOS · Android)](https://sneed-and-feed.github.io/)
+*Zero installation, accounts, or plugins required. 100% client-side Web Audio API + Web MIDI engine in Safari, Chrome, Edge, and Firefox.*
 
-### 🎛️ [💾 Download Precompiled Windows x64 VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
-*Direct download: **`BRAUN_AS42-v1.3.2-Windows-x64.zip`** (6.81 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
+### 🎛️ Native Plugins & Desktop Applications
 
-### 🍎 [🍏 macOS Native Audio Unit (AU), VST3 & Standalone Build](#option-c-native-multi-platform-plugin--standalone-build-cmake)
-*Natively supported via CMake + JUCE 8! Compiles universal binaries (Apple Silicon ARM64 + Intel x86_64) generating Audio Unit (`.component`) for Logic Pro / GarageBand, VST3 (`.vst3`) for Ableton / Reaper / Bitwig, and Standalone (`.app`) with native WKWebView GPU acceleration.*
+| Platform | Distribution | Supported Formats | Quick Action / Build One-Liner |
+| :--- | :--- | :--- | :--- |
+| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.2-Windows-x64.zip` (6.81 MB)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip) |
+| **macOS** | **Build from Source** (Universal) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
+| **Linux** | **Build from Source** (GCC/Clang) | VST3 · Standalone | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
+
+* **Windows x64:** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.
+* **macOS (Apple Silicon ARM64 & Intel x86_64):** Builds cleanly from source via standard CMake. Generates universal Audio Unit (`.component` for Logic Pro & GarageBand), VST3 (`.vst3`), and standalone `.app` with native WKWebView GPU acceleration.
+* **Linux (Ubuntu, Debian, Fedora, Arch):** Builds cleanly from source via standard CMake with WebKitGTK, producing native VST3 (`.vst3`) and standalone binaries for Reaper, Bitwig, Ardour, and ALSA/JACK/PipeWire.
 
 ### 🌌 [🏛️ Sibling Reverb: BRAUN RB-26 Master Studio Reverberator](https://github.com/sneed-and-feed/braun_rb-26)
 *Direct package-deal hardware sibling companion. Download precompiled VST3/CLAP/Standalone: [**`BRAUN_RB26-v1.2.0-Windows-x64.zip`**](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_RB26-v1.2.0-Windows-x64.zip) or [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases).*
@@ -27,7 +36,7 @@
 
 ## 🎹 Quick Start: How to Actually Play It
 
-Whether you are auditioning in your web browser, tracking in Logic Pro on macOS, or producing in Ableton / FL Studio on Windows, the AS 42 is designed to let you make evocative ambient sound immediately:
+Whether you are auditioning in your web browser, tracking in Logic Pro on macOS, sequencing in Bitwig / Reaper on Linux, or producing in Ableton / FL Studio on Windows, the AS 42 is designed to let you make evocative ambient sound immediately:
 
 ```text
 +-----------------------------------------------------------------------------------------+
@@ -137,24 +146,31 @@ The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into
 * **West-Coast Wavefolder:** Multi-stage wavefolding transfer function ($y = \tanh(\sin(0.5\pi D x) - F \sin(1.5\pi D x))$) folding waveform peaks inward with 4x oversampled anti-aliasing.
 * **4-Pole Resonant Ladder Lowpass Filter:** Dual cascaded biquad filters with resonance up to self-oscillation and slow breathing LFO drift.
 
-### 1.4 Native Multi-Format Plugin & Cross-Platform DAW Integration (AU / VST3 / Standalone)
+### 1.4 Cross-Platform Webview GUI Architecture & DAW Integration (AU / VST3 / Standalone)
 
-The BRAUN AS 42 is engineered as a true cross-platform hybrid instrument combining an ultra-low-latency, hard real-time C++20 DSP engine with GPU-accelerated web UI rendering:
+The BRAUN AS 42 is engineered as a unified cross-platform hybrid instrument combining an ultra-low-latency, hard real-time C++20 DSP engine with hardware-accelerated web UI rendering. Rather than bundling bloated embedded Chromium distributions (such as Electron or CEF), the plugin embeds each operating system's native GPU-accelerated webview via JUCE 8's `WebBrowserComponent`:
 
-* **macOS (Audio Unit, VST3, Standalone):**
-  * **Native Apple WKWebView Integration:** Built with JUCE 8's `WebBrowserComponent` utilizing Apple's native `WKWebView` under AppKit / Cocoa. Requires zero external runtime downloads or third-party webview packages.
-  * **Universal Binary (Apple Silicon & Intel):** Full native architecture compilation for Apple Silicon (M1, M2, M3, M4 / ARM64) and Intel (x86_64).
-  * **Audio Unit (AUv2) Support:** Automatically compiles `BRAUN_AS42.component` for seamless integration in **Logic Pro**, **GarageBand**, and **Studio One**.
-  * **VST3 & Standalone:** Also outputs `BRAUN_AS42.vst3` and `BRAUN_AS42.app` for macOS hosts (**Ableton Live**, **Reaper**, **Bitwig Studio**, **Cubase**).
-* **Windows (VST3, Standalone):**
-  * **Microsoft WebView2 Integration:** DirectComposition hardware GPU rendering via evergreen Edge/Chromium runtime.
-  * **Opaque Surface (`setOpaque(true)`):** Eliminates 32-bit alpha compositing overhead in Windows Desktop Window Manager (DWM) and FL Studio.
-  * **Full Win32 HWND Hierarchy Clipping:** Enforces `WS_CLIPCHILDREN | WS_CLIPSIBLINGS` with `SetWindowPos(..., SWP_FRAMECHANGED)` across the plugin HWND and child WebView2 render windows, preventing solitaire-style drag trails.
-  * **Elimination of Global DWM Occlusion Hooks:** Disables background window throttling and strips `--disable-features=CalculateNativeWinOcclusion`, eliminating desktop-wide DWM message queue lag.
-* **Linux (VST3, Standalone):**
-  * Native build support via JUCE 8 with WebKitGTK (`webkit2gtk-4.0` / `webkit2gtk-4.1`).
-* **Universal Web Audio Application (Zero-Install):**
-  * Runs 100% client-side across all modern desktop and mobile browsers (macOS Safari, iOS Safari/Brave, Windows Edge/Chrome/Firefox, Android Chrome/Samsung Internet, Linux Chromium/Firefox) with Web Audio API + Web MIDI API support.
+* **Unified Native Webview Implementations:**
+  * **macOS (Apple WKWebView):** Built with Apple's native `WKWebView` under AppKit / Cocoa with Metal GPU acceleration. Requires zero external runtime downloads, extra libraries, or third-party webview packages.
+  * **Linux (WebKitGTK):** Integrates the distribution-native `WebKitGTK` runtime (`webkit2gtk-4.0` / `webkit2gtk-4.1`) under X11 and Wayland compositors for lightweight, responsive GTK surface presentation.
+  * **Windows (Microsoft WebView2):** Embeds Microsoft's evergreen Edge/Chromium runtime using DirectComposition hardware rendering.
+  * **Web Browser (Universal Zero-Install):** Runs 100% client-side across all modern desktop and mobile browsers (macOS Safari, Windows Edge/Chrome/Firefox, Linux Chromium/Firefox, iOS Safari/Brave, Android) with Web Audio API + Web MIDI API support.
+
+* **Target Formats & Host DAW Compatibility:**
+  * **macOS (Audio Unit, VST3, Standalone):**
+    * Universal Binary compilation for Apple Silicon (M1, M2, M3, M4 / ARM64) and Intel (x86_64).
+    * Audio Unit (AUv2) automatically compiles `BRAUN_AS42.component` for seamless integration in **Logic Pro**, **GarageBand**, and **Studio One**.
+    * VST3 (`BRAUN_AS42.vst3`) and Standalone (`BRAUN_AS42.app`) for **Ableton Live**, **Reaper**, **Bitwig Studio**, and **Cubase**.
+  * **Linux (VST3, Standalone):**
+    * Native 64-bit and ARM64 VST3 (`BRAUN_AS42.vst3`) and Standalone binary for **Reaper**, **Bitwig Studio**, **Ardour**, and JACK/PipeWire/ALSA setups.
+  * **Windows (VST3, Standalone):**
+    * 64-bit VST3 (`BRAUN_AS42.vst3`) and Standalone executable (`BRAUN_AS42.exe`) for **Ableton Live**, **FL Studio**, **Reaper**, **Cubase**, and **Bitwig Studio**.
+
+* **Platform Compositing & Window Management Notes:**
+  * *macOS:* Hosted in an `NSView` layer-backed hierarchy with automatic HiDPI Retina scale factor synchronization and native macOS window drag behavior.
+  * *Linux:* Rendered into standard GTK window surfaces with native X11 / Wayland surface scaling and composited buffer presentation.
+  * *Windows:* Employs an opaque surface (`setOpaque(true)`) to eliminate 32-bit alpha compositing overhead in Windows Desktop Window Manager (DWM) and FL Studio. Win32 HWND hierarchy clipping enforces `WS_CLIPCHILDREN | WS_CLIPSIBLINGS` with `SetWindowPos(..., SWP_FRAMECHANGED)` across plugin and child WebView2 windows to prevent drag artifacts, and background window throttling hooks are disabled to avoid message queue latency.
+
 * **Hard Real-Time Audio Safety (All Platforms):**
   * **0 Dynamic Memory Allocations:** Audio processing (`processBlock()`) allocates strictly 0 bytes of heap memory during real-time playback.
   * **0 Mutexes / Locks:** Audio thread never locks or waits on UI threads.
@@ -162,6 +178,7 @@ The BRAUN AS 42 is engineered as a true cross-platform hybrid instrument combini
   * **Hardware Denormal Flushing:** `ScopedNoDenormals` RAII guards enable Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) across both x86/x64 (SSE) and ARM64 (NEON).
   * **Batched CRT Vector Graticule & Idle Silence Throttling:** Oscilloscope automatically steps down to 5 FPS when idle, saving host CPU cycles in dense DAW arrangements.
   * **Atomic APVTS Parameter Synchronization:** Direct atomic parameter binding prevents logarithmic curve skew, and boots without clobbering saved DAW project parameters.
+
 * **Default Plugin Installation Directories:**
   * **macOS Audio Unit (AU):**
     ```text
@@ -171,13 +188,13 @@ The BRAUN AS 42 is engineered as a true cross-platform hybrid instrument combini
     ```text
     ~/Library/Audio/Plug-Ins/VST3/BRAUN_AS42.vst3
     ```
-  * **Windows VST3:**
-    ```text
-    C:\Program Files\Common Files\VST3\BRAUN_AS42.vst3
-    ```
   * **Linux VST3:**
     ```text
     ~/.vst3/BRAUN_AS42.vst3
+    ```
+  * **Windows VST3:**
+    ```text
+    C:\Program Files\Common Files\VST3\BRAUN_AS42.vst3
     ```
 
 ---
@@ -236,69 +253,78 @@ Designed for musicians who create intuitively by ear without formal music theory
 
 ## 4. Getting Started & Running Locally
 
-### Option A: 1-Click Windows Launcher (`.bat`)
-Simply double-click:
-```bat
-start.bat
-```
-*(or `run.bat`)* — it automatically checks for Node.js (or Python), launches the local static server on `http://localhost:3000`, and opens your default browser!
+### Option A: Standard Cross-Platform Terminal (`npm start`)
+Works out of the box on **macOS**, **Linux**, and **Windows**:
 
-### Option B: Node.js Terminal
 1. **Start the local server:**
    ```bash
    npm start
    # or: node server.js
-   # or: python -m http.server 3000
+   # or: python3 -m http.server 3000
    ```
 2. **Open in your web browser:**
-   ```
+   ```text
    http://localhost:3000
    ```
-3. **Turn on the instrument:** Click the orange **POWER ON** button at the top right to start the Web Audio API context.
+3. **Turn on the instrument:** Click the orange **POWER ON** rocker switch at the top right to start the Web Audio API context.
+
+### Option B: Quick Desktop Launch Scripts
+One-click launch scripts are provided for all operating systems:
+* **macOS & Linux:**
+  ```bash
+  ./start.sh
+  ```
+* **Windows:** Double-click `start.bat` (or `run.bat`)
+
+Both scripts verify your local environment (Node.js or Python fallback), launch the local static web server, and open `http://localhost:3000` in your default web browser automatically.
 
 ### Option C: Native Multi-Platform Plugin & Standalone Build (CMake)
-Build the native C++ plugin (AU, VST3) and standalone desktop application directly from source on **macOS**, **Windows**, or **Linux**:
+Build the native C++20 plugin (AUv2, VST3) and standalone desktop application directly from source on **macOS**, **Linux**, or **Windows**:
 
 1. **Prerequisites:**
    * CMake 3.22 or higher
    * C++20 compliant compiler:
      * **macOS:** Xcode Command Line Tools (`clang++`)
-     * **Windows:** Visual Studio 2022 (MSVC with C++ Desktop Development)
-     * **Linux:** GCC 11+ or Clang 14+ (`build-essential`, `libwebkit2gtk-4.0-dev` or `4.1`)
-   * Git (FetchContent automatically clones JUCE 8.0.6)
+     * **Linux:** GCC 11+ or Clang 14+ (`sudo apt install build-essential cmake libwebkit2gtk-4.1-dev libasound2-dev libjack-jackd2-dev`)
+     * **Windows:** Visual Studio 2022 (MSVC with "Desktop development with C++")
+   * Git (FetchContent automatically fetches and configures JUCE 8.0.6)
 
-2. **Configure & Build:**
-   ```bash
-   # Clone repository (if building outside existing tree)
-   git clone https://github.com/sneed-and-feed/braun_as-42.git
-   cd braun_as-42
+2. **One-Liner Build Commands by Operating System:**
 
-   # Configure build with CMake
-   # macOS: Automatically detects Apple platform and registers Audio Unit (AU), VST3, and Standalone
-   # Windows: Automatically provisions Microsoft.Web.WebView2 and targets VST3 and Standalone
-   cmake -B build -DCMAKE_BUILD_TYPE=Release
+   * **macOS (Universal AUv2 + VST3 + Standalone App):**
+     ```bash
+     cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && cmake --build build --config Release
+     ```
+     *(Builds universal Apple Silicon ARM64 + Intel x86_64 binaries. Generates AU `.component`, VST3 `.vst3`, and standalone `.app`)*
 
-   # Optional (macOS): build Universal Binaries for Apple Silicon (ARM64) + Intel (x86_64)
-   # cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+   * **Linux (VST3 + Standalone App):**
+     ```bash
+     cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release
+     ```
+     *(Builds 64-bit VST3 plugin and native standalone executable using WebKitGTK)*
 
-   # Compile all plugin and standalone targets
-   cmake --build build --config Release
+   * **Windows (VST3 + Standalone Exe):**
+     ```bash
+     cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release
+     ```
+     *(Automatically provisions Microsoft WebView2 package and builds 64-bit VST3 and standalone `.exe`)*
 
-   # Optional (macOS): validate Audio Unit component in terminal with Apple auval
-   # auval -v aumu As42 Brun
-   ```
-
-3. **Output Artefacts:**
+3. **Output Artefacts & Destination Folders:**
    * **macOS:**
-     * **Audio Unit (AU):** `build/BRAUN_AS42_artefacts/Release/AU/BRAUN_AS42.component`
-     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`
+     * **Audio Unit (AUv2):** `build/BRAUN_AS42_artefacts/Release/AU/BRAUN_AS42.component`  
+       *(Install to `~/Library/Audio/Plug-Ins/Components/`)*
+     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`  
+       *(Install to `~/Library/Audio/Plug-Ins/VST3/`)*
      * **Standalone App:** `build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42.app`
-   * **Windows:**
-     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`
-     * **Standalone Exe:** `build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42.exe`
+     * *(Optional AU validation):* `auval -v aumu As42 Brun`
    * **Linux:**
-     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`
-     * **Standalone App:** `build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42`
+     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`  
+       *(Install to `~/.vst3/`)*
+     * **Standalone Binary:** `build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42`
+   * **Windows:**
+     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`  
+       *(Install to `C:\Program Files\Common Files\VST3\`)*
+     * **Standalone Exe:** `build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42.exe`
 
 ### Keyboard Shortcuts & Gestures
 * **A, S, D, F, G, H, J, K, L, ;, ':** Play the 11 modal scale degrees on the serene single-row harmonic chime strip (spanning octaves 3 through 5, click-free with key repeat protection and continuous hold sustain). Additional bass chime shortcuts `Z, X, C, V` are also supported.
