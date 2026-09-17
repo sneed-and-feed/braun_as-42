@@ -1,7 +1,7 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-EE592B?style=for-the-badge&logo=github)](https://sneed-and-feed.github.io/)
-[![VST3 Plugin](https://img.shields.io/badge/VST3-Windows%20x64-blue?style=for-the-badge)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.1-Windows-x64.zip)
+[![VST3 Plugin](https://img.shields.io/badge/VST3-Windows%20x64-blue?style=for-the-badge)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Web Audio API](https://img.shields.io/badge/Web%20Audio-100%25%20Client--Side-4A4A4A?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
@@ -10,8 +10,8 @@
 
 ---
 
-### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.1-Windows-x64.zip)
-*Direct download: **`BRAUN_AS42-v1.3.1-Windows-x64.zip`** (6.81 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
+### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
+*Direct download: **`BRAUN_AS42-v1.3.2-Windows-x64.zip`** (6.81 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
 
 ### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
 *No installation, plugins, or accounts required. Native Web Audio API + Web MIDI support.*
@@ -202,7 +202,20 @@ npm test
 
 ---
 
-## 6. What's New in v1.3.1
+## 6. What's New in v1.3.2
+
+* **Elimination of Web Audio Transient Click Discontinuity:**
+  * Resolved 1-sample rectangular impulse spike caused by idle `AudioParam.value` persistence in WebKit/Chromium re-triggering stale gain values.
+  * Idle voices strictly anchor at `0.0` with full `_hammerEndTime` lifecycle tracking, preventing stale gain resurrection.
+* **Warm Wooden Modal Soundboard & Velvety Felt Transient Synthesis:**
+  * Replaced synthetic white noise with a physically-modeled ~135 Hz damped wooden soundboard modal impulse blended with 2-pole lowpass-filtered Brownian felt texture.
+  * Tightened hammer lowpass filter transition to a 0.5 ms time constant (`setTargetAtTime(hammerCutoff, cancelTime, 0.0005)`), locking cutoffs instantly before the transient peak.
+* **Browser Cache Busting:**
+  * Updated web deployment with module versioning (`app.js?v=1.3.2`) to prevent stale browser disk caching.
+
+---
+
+## 7. What's New in v1.3.1
 
 * **Acoustic Hammer Transient Decoupling & Tactile Punch:**
   * Rerouted hammer impact burst around the string attack amplitude envelope directly into the piano soundboard peaking formant filter, eliminating severe envelope attenuation and increasing transient punch ~4x (+11.3 dB).
@@ -218,7 +231,7 @@ npm test
 
 ---
 
-## 7. What's New in v1.3.0
+## 8. What's New in v1.3.0
 
 * **DSP Numerical Stabilization & Thread Safety:**
   * Implemented `ScopedNoDenormals` RAII hardware guards enabling Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) on x86/x64 and ARM64.
