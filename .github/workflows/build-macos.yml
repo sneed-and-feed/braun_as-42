@@ -56,7 +56,8 @@ jobs:
             break
           done
 
-          cp LICENSE README.md package/
+          [ -f LICENSE ] && cp LICENSE package/ || true
+          [ -f README.md ] && cp README.md package/ || true
           cd package
           zip -r ../BRAUN_AS42-v1.3.2-macOS-Universal.zip *
           cd ..
