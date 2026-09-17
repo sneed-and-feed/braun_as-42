@@ -1,0 +1,54 @@
+name: Build macOS Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS Universal (ARM64 & x86_64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DAS42_BUILD_TESTS=OFF
+
+      - name: Compile Release Targets
+        run: |
+          cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+
+      - name: Package Distribution Zip
+        run: |
+          mkdir -p package/VST3 package/AU package/Standalone
+          cp -R build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3 package/VST3/
+          cp -R build/BRAUN_AS42_artefacts/Release/AU/BRAUN_AS42.component package/AU/
+          cp -R build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42.app package/Standalone/
+          cp LICENSE README.md package/
+          cd package
+          zip -r ../BRAUN_AS42-v1.3.2-macOS-Universal.zip *
+          cd ..
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRAUN_AS42-v1.3.2-macOS-Universal
+          path: BRAUN_AS42-v1.3.2-macOS-Universal.zip
+
+      - name: Attach to GitHub Release (Tag Triggers)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: BRAUN_AS42-v1.3.2-macOS-Universal.zip
