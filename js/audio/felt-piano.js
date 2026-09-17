@@ -95,6 +95,7 @@ export class FeltPianoVoice {
     // Hammer noise thump generator
     this.hammerGain = ctx.createGain();
     this.hammerGain.gain.setValueAtTime(0, ctx.currentTime);
+    this._hammerEndTime = 0;
 
     this.hammerFilter = ctx.createBiquadFilter();
     this.hammerFilter.type = 'lowpass';
@@ -566,20 +567,10 @@ export class FeltPianoVoice {
         if (!mHeld && typeof this.oscMixer.gain.cancelScheduledValues === 'function') {
           this.oscMixer.gain.cancelScheduledValues(cancelTime);
         }
-        const curMixer = (typeof this.oscMixer.gain.value === 'number' && isFinite(this.oscMixer.gain.value)) ? this.oscMixer.gain.value : 0.0;
-        if (curMixer <= 0.0001) {
-          if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
-            this.oscMixer.gain.setValueAtTime(0.0, cancelTime);
-          } else {
-            this.oscMixer.gain.value = 0.0;
-          }
+        if (typeof this.oscMixer.gain.setValueAtTime === 'function') {
+          this.oscMixer.gain.setValueAtTime(0.0, cancelTime);
         } else {
-          if (!mHeld && typeof this.oscMixer.gain.setValueAtTime === 'function') {
-            this.oscMixer.gain.setValueAtTime(curMixer, cancelTime);
-          }
-          if (typeof this.oscMixer.gain.linearRampToValueAtTime === 'function') {
-            this.oscMixer.gain.linearRampToValueAtTime(0.0, noteStartTime);
-          }
+          this.oscMixer.gain.value = 0.0;
         }
       }
     }
@@ -673,9 +664,9 @@ export class FeltPianoVoice {
       this.currentHammerSource = null;
     }
 
-    // Smoothly de-click hammer gain if voice was stolen, avoiding abrupt step drop
-    const curHammerGain = this.hammerGain.gain.value || 0;
-    if (isStealing || curHammerGain > 0.001) {
+    // Smoothly de-click hammer gain if voice was stolen while hammer was still in-flight
+    const hammerInFlight = Boolean(this._hammerEndTime && cancelTime < this._hammerEndTime);
+    if (isStealing) {
       let hHeld = false;
       if (typeof this.hammerGain.gain.cancelAndHoldAtTime === 'function') {
         try {
@@ -687,7 +678,10 @@ export class FeltPianoVoice {
       }
       if (!hHeld) {
         this.hammerGain.gain.cancelScheduledValues(cancelTime);
-        this.hammerGain.gain.setValueAtTime(curHammerGain, cancelTime);
+        const safeHammerGain = hammerInFlight
+          ? ((typeof this.hammerGain.gain.value === 'number' && isFinite(this.hammerGain.gain.value)) ? this.hammerGain.gain.value : 0.0001)
+          : 0.0001;
+        this.hammerGain.gain.setValueAtTime(safeHammerGain, cancelTime);
       }
       this.hammerGain.gain.linearRampToValueAtTime(0.0001, noteStartTime);
     } else {
@@ -733,8 +727,8 @@ export class FeltPianoVoice {
         this.hammerFilter.Q.setValueAtTime(0.85, cancelTime);
       }
       if (typeof this.hammerFilter.frequency.setTargetAtTime === 'function') {
-        this.hammerFilter.frequency.setTargetAtTime(hammerCutoff, cancelTime, 0.004);
-      } else {
+        this.hammerFilter.frequency.setTargetAtTime(hammerCutoff, cancelTime, 0.0005);
+      } else if (typeof this.hammerFilter.frequency.setValueAtTime === 'function') {
         this.hammerFilter.frequency.setValueAtTime(hammerCutoff, noteStartTime);
       }
 
@@ -760,10 +754,13 @@ export class FeltPianoVoice {
       const hammerEndGain = Math.max(0.0001, targetHammerGain * 0.0183);
       this.hammerGain.gain.exponentialRampToValueAtTime(hammerEndGain, hammerDecayTarget);
       this.hammerGain.gain.linearRampToValueAtTime(0.0, hammerDecayTarget + 0.004);
+      this._hammerEndTime = hammerDecayTarget + 0.004;
 
       noiseSource.start(noteStartTime);
       noiseSource.stop(hammerDecayTarget + 0.008);
       this.currentHammerSource = noiseSource;
+    } else {
+      this._hammerEndTime = 0;
     }
 
     if (isCS80) {
@@ -1192,6 +1189,7 @@ export class FeltPianoVoice {
       } catch (e) {}
       this.currentHammerSource = null;
     }
+    this._hammerEndTime = 0;
 
     if (this._pendingOscillatorWaveform) {
       this.applyOscillatorWaveforms(this._pendingOscillatorWaveform);

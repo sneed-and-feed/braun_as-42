@@ -241,6 +241,48 @@ describe('Rapid Note Re-Triggering & Voice Stealing De-Clicking', () => {
     assert.strictEqual(jumpTo1, undefined, 'Gain must not jump to 1.0 when interrupted mid-attack');
   });
 
+  it('verifies idle voice re-trigger does not resurrect stale hammerGain or oscMixer into a 0-sample click', () => {
+    const ctx = createDSPMockCtx();
+    const synth = new FeltPianoSynthesizer(ctx);
+
+    ctx.currentTime = 10.0;
+    const voice = synth.playNote(440, 0.75, 3.5, false, false);
+    assert.ok(voice, 'Voice must be active');
+
+    // Simulate note completing and decaying to idle, with browser AudioParam.value retaining stale automation peak
+    voice.isActive = false;
+    voice._hammerEndTime = 10.035;
+    voice.hammerGain.gain.value = 0.28; // Stale browser AudioParam peak
+    voice.oscMixer.gain.value = 1.0;    // Stale browser AudioParam peak
+    voice.voiceGain.gain.value = 0.0;
+    voice._currentVoiceGain = 0.0;
+
+    // Reset event logs before retriggering the idle voice
+    voice.hammerGain.gain.events.length = 0;
+    voice.oscMixer.gain.events.length = 0;
+
+    ctx.currentTime = 12.0; // 2 seconds later (idle note strike)
+    voice.trigger(440, 0.80, 3.5, synth.params, false);
+
+    // 1. Verify hammerGain does NOT set stale value (0.28) and does NOT ramp to near-zero at the same instant
+    const hammerSetEvents = voice.hammerGain.gain.events.filter(e => e.type === 'setValueAtTime');
+    const hammerStaleSpike = hammerSetEvents.find(e => e.v >= 0.1 && e.t === 12.0);
+    assert.strictEqual(hammerStaleSpike, undefined, 'hammerGain must not resurrect stale peak value on idle trigger');
+
+    // 2. Verify hammerGain starts from clean anchor (0.0001) at noteStartTime
+    const hammerAnchor = hammerSetEvents.find(e => Math.abs(e.v - 0.0001) < 1e-6 && e.t === 12.0);
+    assert.ok(hammerAnchor, 'hammerGain must anchor at 0.0001 at noteStartTime');
+
+    // 3. Verify oscMixer does NOT jump to 1.0 at noteStartTime
+    const mixerSetEvents = voice.oscMixer.gain.events.filter(e => e.type === 'setValueAtTime');
+    const mixerStaleSpike = mixerSetEvents.find(e => e.v >= 0.5 && e.t === 12.0);
+    assert.strictEqual(mixerStaleSpike, undefined, 'oscMixer must not jump to 1.0 at cancelTime on idle trigger');
+
+    // 4. Verify oscMixer anchors at 0.0 at note onset
+    const mixerZeroAnchor = mixerSetEvents.find(e => e.v === 0.0 && e.t === 12.0);
+    assert.ok(mixerZeroAnchor, 'oscMixer must be anchored at 0.0 at note onset');
+  });
+
   it('stabilizes polyphonic headroom calculation and eliminates gain jitter on steady chords', () => {
     const ctx = createDSPMockCtx();
     const synth = new FeltPianoSynthesizer(ctx);
