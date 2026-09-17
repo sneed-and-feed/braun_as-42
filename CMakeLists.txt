@@ -80,6 +80,14 @@ if(APPLE)
     list(APPEND PLUGIN_FORMATS AU)
 endif()
 
+set(AS42_EXTRA_PLUGIN_ARGS "")
+if(WIN32)
+    list(APPEND AS42_EXTRA_PLUGIN_ARGS NEEDS_WEBVIEW2 TRUE)
+endif()
+if(UNIX AND NOT APPLE)
+    list(APPEND AS42_EXTRA_PLUGIN_ARGS NEEDS_WEB_BROWSER TRUE)
+endif()
+
 juce_add_plugin(BRAUN_AS42
     COMPANY_NAME "Braun"
     VERSION 1.3.2
@@ -93,7 +101,7 @@ juce_add_plugin(BRAUN_AS42
     PLUGIN_CODE As42
     FORMATS ${PLUGIN_FORMATS}
     PRODUCT_NAME "BRAUN_AS42"
-    NEEDS_WEBVIEW2 TRUE
+    ${AS42_EXTRA_PLUGIN_ARGS}
 )
 
 target_sources(BRAUN_AS42
@@ -146,32 +154,46 @@ target_link_libraries(BRAUN_AS42
         juce::juce_recommended_warning_flags
 )
 
+if(UNIX AND NOT APPLE)
+    find_package(CURL REQUIRED)
+    target_link_libraries(BRAUN_AS42 PRIVATE CURL::libcurl)
+endif()
+
 # ==============================================================================
 # 5. C++ DSP Test Executables
 # ==============================================================================
-add_executable(dsp_tests
-    test/cpp/dsp_tests.cpp
-    plugin/source/dsp/DspEngine.cpp
-)
-target_include_directories(dsp_tests PRIVATE
-    plugin/source
-    plugin/source/dsp
-)
+option(AS42_BUILD_TESTS "Build AS-42 test executables" ON)
 
-add_executable(challenger_stress_tests
-    test/cpp/challenger_stress_tests.cpp
-    plugin/source/dsp/DspEngine.cpp
-)
-target_include_directories(challenger_stress_tests PRIVATE
-    plugin/source
-    plugin/source/dsp
-)
+if(AS42_BUILD_TESTS)
+    enable_testing()
 
-add_executable(adversarial_challenge_suite
-    test/cpp/adversarial_challenge_suite.cpp
-    plugin/source/dsp/DspEngine.cpp
-)
-target_include_directories(adversarial_challenge_suite PRIVATE
-    plugin/source
-    plugin/source/dsp
-)
+    add_executable(dsp_tests
+        test/cpp/dsp_tests.cpp
+        plugin/source/dsp/DspEngine.cpp
+    )
+    target_include_directories(dsp_tests PRIVATE
+        plugin/source
+        plugin/source/dsp
+    )
+    add_test(NAME dsp_tests COMMAND dsp_tests)
+
+    add_executable(challenger_stress_tests
+        test/cpp/challenger_stress_tests.cpp
+        plugin/source/dsp/DspEngine.cpp
+    )
+    target_include_directories(challenger_stress_tests PRIVATE
+        plugin/source
+        plugin/source/dsp
+    )
+    add_test(NAME challenger_stress_tests COMMAND challenger_stress_tests)
+
+    add_executable(adversarial_challenge_suite
+        test/cpp/adversarial_challenge_suite.cpp
+        plugin/source/dsp/DspEngine.cpp
+    )
+    target_include_directories(adversarial_challenge_suite PRIVATE
+        plugin/source
+        plugin/source/dsp
+    )
+    add_test(NAME adversarial_challenge_suite COMMAND adversarial_challenge_suite)
+endif()
