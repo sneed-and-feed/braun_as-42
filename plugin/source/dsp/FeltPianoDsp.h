@@ -116,22 +116,23 @@ public:
 
         float registerDecayMult = 1.0f;
         float hammerCutoff = 280.0f;
-        float hammerThumpGainMult = 0.20f;
+        float hammerThumpGainMult = 2.80f;
         float thumpDuration = 0.025f;
         float bodyFormantHz = 540.0f;
         float osc1Vol = 0.48f;
         float osc2Vol = 0.16f;
+        mCurrentTone = params.tone;
 
         if (isBass) {
             registerDecayMult = 1.45f + std::max(0.0f, static_cast<float>(48 - mCurrentMidi) * 0.04f);
             osc1Vol = 0.60f;
             osc2Vol = 0.12f;
             hammerCutoff = std::min(220.0f, std::max(110.0f, freq * 1.3f));
-            hammerThumpGainMult = 0.26f;
+            hammerThumpGainMult = 3.20f;
             thumpDuration = 0.032f;
             bodyFormantHz = std::clamp(300.0f + static_cast<float>(mCurrentMidi - 24) * 5.0f, 280.0f, 420.0f);
             mFilterAttackSec = 0.009f;
-            mFilterDecaySec = (0.26f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.4f, 2.5f);
+            mFilterDecaySec = (0.26f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.2f, 3.5f);
             mMaxFilterCutoff = std::min(6000.0f, std::max(freq * 1.7f, 360.0f + (params.tone * 2200.0f * mCurrentVelocity)));
             mRestFilterCutoff = std::clamp(freq * (1.4f + params.tone * 3.6f), 160.0f, 9500.0f);
         } else if (isTreble) {
@@ -139,21 +140,21 @@ public:
             osc1Vol = 0.44f;
             osc2Vol = 0.18f;
             hammerCutoff = std::min(1400.0f, std::max(550.0f, freq * 0.9f));
-            hammerThumpGainMult = 0.16f;
+            hammerThumpGainMult = 2.00f;
             thumpDuration = 0.016f;
             bodyFormantHz = std::min(950.0f, 680.0f + static_cast<float>(mCurrentMidi - 72) * 12.0f);
             mFilterAttackSec = 0.009f;
-            mFilterDecaySec = (0.12f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.4f, 2.5f);
+            mFilterDecaySec = (0.12f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.2f, 3.5f);
             mMaxFilterCutoff = std::min(9500.0f, std::max(freq * 2.2f, 750.0f + (params.tone * 3600.0f * mCurrentVelocity)));
             mRestFilterCutoff = std::clamp(freq * (1.4f + params.tone * 3.6f), 160.0f, 9500.0f);
         } else {
             registerDecayMult = 1.0f;
             bodyFormantHz = 480.0f + static_cast<float>(mCurrentMidi - 48) * 5.5f;
             hammerCutoff = std::min(450.0f, std::max(240.0f, freq * 1.2f));
-            hammerThumpGainMult = 0.20f;
+            hammerThumpGainMult = 2.80f;
             thumpDuration = 0.025f;
             mFilterAttackSec = 0.009f;
-            mFilterDecaySec = (0.18f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.4f, 2.5f);
+            mFilterDecaySec = (0.18f + (1.0f - params.tone) * 0.25f) * std::clamp(params.decay, 0.2f, 3.5f);
             mMaxFilterCutoff = std::min(7500.0f, std::max(freq * 1.8f, 420.0f + (params.tone * 2600.0f * mCurrentVelocity)));
             mRestFilterCutoff = std::clamp(freq * (1.4f + params.tone * 3.6f), 160.0f, 9500.0f);
         }
@@ -194,7 +195,7 @@ public:
         mBodyFilter.configure(Biquad::Type::Peaking, mSampleRate, bodyFormantHz, 1.2f, 1.5f);
 
         // Configure hammer filter
-        mHammerFilter.configure(Biquad::Type::Bandpass, mSampleRate, hammerCutoff, 2.0f);
+        mHammerFilter.configure(Biquad::Type::Bandpass, mSampleRate, hammerCutoff, 1.2f);
 
         // Amplitude envelope timings
         const float baseAttack = isCS80 ? 0.024f : 0.0080f;
@@ -210,7 +211,16 @@ public:
                                 * params.decay * registerDecayMult;
         const float decayDuration = isCS80 ? (0.25f * params.decay) : baseDecay;
         mDecaySamples = std::max(1u, static_cast<uint32_t>(decayDuration * mSampleRate));
-        mReleaseSamples = std::max(1u, static_cast<uint32_t>((isCS80 ? 0.65f : 0.40f) * mSampleRate));
+
+        // Dynamically scale note release time with decay parameter:
+        // - Decay at minimum (0.20): ~0.13s tight muted staccato release.
+        // - Decay at default (1.00): ~0.48s natural acoustic release.
+        // - Decay at boost (2.50): ~1.74s singing release tail.
+        // - Decay at max (3.50): ~2.93s expansive ambient sustain.
+        // CS-80 brass voice maintains authentic fixed 0.65s release.
+        const float relScale = std::clamp(params.decay, 0.20f, 3.5f);
+        const float relTime = isCS80 ? 0.65f : (0.10f + 0.32f * std::pow(relScale, 1.35f));
+        mReleaseSamples = std::max(1u, static_cast<uint32_t>(relTime * mSampleRate));
 
         // Hammer thump setup
         const float effectiveHammer = (mCurrentWaveform == WaveformType::Sine) ? 0.0f : params.hammer;
@@ -220,7 +230,7 @@ public:
             mHammerIndex = 0;
             mHammerTargetGain = mCurrentVelocity * effectiveHammer * hammerThumpGainMult * chordScale;
             mHammerGain = 0.0f;
-            mHammerAttackSamples = static_cast<uint32_t>((mCurrentWaveform == WaveformType::Sine ? 0.0065f : 0.0050f) * mSampleRate);
+            mHammerAttackSamples = static_cast<uint32_t>((mCurrentWaveform == WaveformType::Sine ? 0.0065f : 0.0035f) * mSampleRate);
             mHammerDecaySamples = static_cast<uint32_t>(thumpDuration * mSampleRate);
             mHammerStep = 0;
         } else {
@@ -262,6 +272,40 @@ public:
         mReleaseStartCutoff = mCurrentCutoff;
         mEnvSampleCount = 0;
         mFilterSubBlockCounter = 0;
+    }
+
+    void updateDecay(float newDecay) noexcept {
+        if (!mIsActive) return;
+        const bool isCS80 = (mCurrentWaveform == WaveformType::CS80);
+        const float registerDecayMult = (mCurrentMidi >= 72)
+            ? std::max(0.48f, 1.0f - static_cast<float>(mCurrentMidi - 71) * 0.035f)
+            : 1.0f;
+        const float baseDecay = std::clamp(7.5f * std::pow(220.0f / std::max(60.0f, mCurrentFreq), 0.45f), 1.2f, 10.0f)
+                                * newDecay * registerDecayMult;
+        const float decayDuration = isCS80 ? (0.25f * newDecay) : baseDecay;
+        const uint32_t newDecaySamples = std::max(1u, static_cast<uint32_t>(decayDuration * mSampleRate));
+
+        if (mEnvStage == EnvStage::Decay && mDecaySamples > 0) {
+            const float progress = static_cast<float>(mEnvSampleCount) / static_cast<float>(mDecaySamples);
+            mDecaySamples = newDecaySamples;
+            mEnvSampleCount = static_cast<uint32_t>(std::clamp(progress * static_cast<float>(newDecaySamples), 0.0f, static_cast<float>(newDecaySamples)));
+        } else {
+            mDecaySamples = newDecaySamples;
+        }
+
+        const float relScale = std::clamp(newDecay, 0.20f, 3.5f);
+        const float relTime = isCS80 ? 0.65f : (0.10f + 0.32f * std::pow(relScale, 1.35f));
+        const uint32_t newReleaseSamples = std::max(1u, static_cast<uint32_t>(relTime * mSampleRate));
+
+        if (mEnvStage == EnvStage::Release && mReleaseSamples > 0) {
+            const float progress = static_cast<float>(mEnvSampleCount) / static_cast<float>(mReleaseSamples);
+            mReleaseSamples = newReleaseSamples;
+            mEnvSampleCount = static_cast<uint32_t>(std::clamp(progress * static_cast<float>(newReleaseSamples), 0.0f, static_cast<float>(newReleaseSamples)));
+        } else {
+            mReleaseSamples = newReleaseSamples;
+        }
+
+        mFilterDecaySec = (0.18f + (1.0f - mCurrentTone) * 0.25f) * std::clamp(newDecay, 0.2f, 3.5f);
     }
 
     inline float processSample(const FeltPianoParams& /*params*/) noexcept {
@@ -473,13 +517,16 @@ public:
             }
         }
 
-        // 7. Filter cascade: (SaturatedOsc + Hammer) -> Filter 1 -> Filter 2 -> Body Peaking -> VoiceGain -> TimbreTrim
-        const float filterIn = saturatedOsc + hammerOut;
-        const float f1 = mFilter1.process(filterIn);
+        // 7. Filter cascade:
+        // SaturatedOsc -> Filter 1 -> Filter 2 -> StringGain (mEnvGain)
+        // Soundboard: (StringGain + HammerOut) -> Body Peaking -> TimbreTrim
+        const float f1 = mFilter1.process(saturatedOsc);
         const float f2 = mFilter2.process(f1);
-        const float body = mBodyFilter.process(f2);
+        const float stringSignal = f2 * mEnvGain;
+        const float soundboardIn = stringSignal + hammerOut;
+        const float body = mBodyFilter.process(soundboardIn);
 
-        return body * mEnvGain * mTimbreTrim;
+        return body * mTimbreTrim;
     }
 
 private:
@@ -506,6 +553,7 @@ private:
     float mCurrentFreq { 220.0f };
     int mCurrentMidi { 57 };
     float mCurrentVelocity { 0.6f };
+    float mCurrentTone { 0.60f };
     float mDurationSec { 3.5f };
     WaveformType mCurrentWaveform { WaveformType::Felt };
 
@@ -579,6 +627,10 @@ public:
             mVoices[i].prepare(mSampleRate, mWavetables, mHammerBuffer.data(), mHammerBuffer.size(), static_cast<int>(i));
         }
 
+        mSymDelayBuffer.fill(0.0f);
+        mSymDelayPos = 0;
+        mSymTailSamples = 0;
+
         updateSympatheticFilters();
 
         mHeadroomSmoother.setSampleRate(mSampleRate);
@@ -597,6 +649,9 @@ public:
         }
         mSympatheticFilter1.reset();
         mSympatheticFilter2.reset();
+        mSymDelayBuffer.fill(0.0f);
+        mSymDelayPos = 0;
+        mSymTailSamples = 0;
         mHeadroomSmoother.reset(0.38f);
         mVoiceIndex = 0;
         mCurrentSampleCount = 0;
@@ -735,9 +790,18 @@ public:
     }
 
     void setParams(const FeltPianoParams& params) noexcept {
+        const float oldDecay = mParams.decay;
         mParams = params;
         updateHeadroomTarget();
         updateSympatheticFilters();
+
+        if (std::abs(params.decay - oldDecay) > 0.005f) {
+            for (auto& v : mVoices) {
+                if (v.isActive()) {
+                    v.updateDecay(params.decay);
+                }
+            }
+        }
     }
 
     // Process a block of samples, summing into left and right
@@ -746,7 +810,9 @@ public:
             return;
         }
 
-        const float symGain = (0.08f + mParams.tone * 0.10f) * (mParams.sympathetic / 0.45f);
+        const float symScale = mParams.sympathetic / 0.45f;
+        const float symGain = (0.08f + mParams.tone * 0.10f) * symScale;
+        const float feedbackAmt = 0.28f * std::clamp(symScale, 0.0f, 1.5f);
 
         for (int s = 0; s < numSamples; ++s) {
             ++mCurrentSampleCount;
@@ -766,6 +832,16 @@ public:
             }
             mNumActiveVoices = writeIdx;
 
+            if (mNumActiveVoices > 0) {
+                mSymTailSamples = static_cast<uint32_t>(mSampleRate * 0.25f);
+            } else if (mSymTailSamples > 0) {
+                --mSymTailSamples;
+            }
+
+            if (mNumActiveVoices == 0 && mSymTailSamples == 0) {
+                continue;
+            }
+
             // Check if active voice count changed for headroom scaling
             if (activeCount != mLastActiveCount) {
                 mLastActiveCount = activeCount;
@@ -774,9 +850,13 @@ public:
 
             const float headroom = mHeadroomSmoother.next();
 
-            // Sympathetic string resonance: dual bandpass filters in parallel with tone and sympathetic tracking
-            const float sym1 = mSympatheticFilter1.process(voiceSum);
-            const float sym2 = mSympatheticFilter2.process(voiceSum);
+            // Sympathetic string resonance: dual bandpass filters with acoustic soundboard circulation
+            const float delayed = mSymDelayBuffer[mSymDelayPos];
+            const float symIn = voiceSum + delayed * feedbackAmt;
+            const float sym1 = mSympatheticFilter1.process(symIn);
+            const float sym2 = mSympatheticFilter2.process(symIn);
+            mSymDelayBuffer[mSymDelayPos] = softClip((sym1 + sym2) * 0.35f, 0.95f);
+            mSymDelayPos = (mSymDelayPos + 1) % kSymDelaySize;
             const float symCoupling = (sym1 + sym2) * symGain;
 
             const float finalSample = (voiceSum + symCoupling) * headroom;
@@ -799,8 +879,8 @@ private:
     void updateSympatheticFilters() noexcept {
         const float f1 = 220.0f + mParams.tone * 120.0f;
         const float f2 = 440.0f + mParams.tone * 200.0f;
-        mSympatheticFilter1.configure(Biquad::Type::Bandpass, mSampleRate, f1, 3.2f);
-        mSympatheticFilter2.configure(Biquad::Type::Bandpass, mSampleRate, f2, 3.5f);
+        mSympatheticFilter1.configure(Biquad::Type::Bandpass, mSampleRate, f1, 2.0f);
+        mSympatheticFilter2.configure(Biquad::Type::Bandpass, mSampleRate, f2, 2.2f);
     }
 
     void generateHammerBuffer() {
@@ -872,6 +952,10 @@ private:
 
     Biquad mSympatheticFilter1;
     Biquad mSympatheticFilter2;
+    static constexpr size_t kSymDelaySize = 512;
+    std::array<float, kSymDelaySize> mSymDelayBuffer {};
+    size_t mSymDelayPos { 0 };
+    uint32_t mSymTailSamples { 0 };
     OnePoleSmoother mHeadroomSmoother;
 
     float mPitchBendCents { 0.0f };

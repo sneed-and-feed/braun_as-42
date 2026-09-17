@@ -624,14 +624,29 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
             targetApvtsId = "drone1_isSubBass";
             targetApvtsVal = (incomingVal > 0.5f) ? 1.0f : 0.0f;
         }
-        else if (incomingId.equalsIgnoreCase("pianoLevel") || incomingId.equalsIgnoreCase("pianoVolume") || incomingId.equalsIgnoreCase("feltVolume") || incomingId.equalsIgnoreCase("felt_volume"))
+        else if (incomingId.equalsIgnoreCase("pianoLevel") || incomingId.equalsIgnoreCase("pianoVolume") || incomingId.equalsIgnoreCase("feltVolume") || incomingId.equalsIgnoreCase("felt_volume") || incomingId.equalsIgnoreCase("feltLevel"))
         {
             targetApvtsId = "felt_volume";
             targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
         }
-        else if (incomingId.equalsIgnoreCase("feltSympathetic") || incomingId.equalsIgnoreCase("felt_space") || incomingId.equalsIgnoreCase("feltSpace"))
+        else if (incomingId.equalsIgnoreCase("feltSympathetic") || incomingId.equalsIgnoreCase("felt_space") || incomingId.equalsIgnoreCase("feltSpace") || incomingId.equalsIgnoreCase("sympathetic") || incomingId.equalsIgnoreCase("feltSymp") || incomingId.equalsIgnoreCase("symp"))
         {
             targetApvtsId = "felt_space";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("feltHammer") || incomingId.equalsIgnoreCase("hammer") || incomingId.equalsIgnoreCase("felt_hammer"))
+        {
+            targetApvtsId = "felt_hammer";
+            targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("feltDecay") || incomingId.equalsIgnoreCase("decay") || incomingId.equalsIgnoreCase("felt_decay"))
+        {
+            targetApvtsId = "felt_decay";
+            targetApvtsVal = incomingVal;
+        }
+        else if (incomingId.equalsIgnoreCase("feltTone") || incomingId.equalsIgnoreCase("tone") || incomingId.equalsIgnoreCase("felt_tone") || incomingId.equalsIgnoreCase("feltDamp") || incomingId.equalsIgnoreCase("damp"))
+        {
+            targetApvtsId = "felt_tone";
             targetApvtsVal = (incomingVal > 1.0f) ? (incomingVal * 0.01f) : incomingVal;
         }
         else if (incomingId.equalsIgnoreCase("tapeMix") || incomingId.equalsIgnoreCase("delayMix") || incomingId.equalsIgnoreCase("tape_mix") || incomingId.equalsIgnoreCase("delay_wet") || incomingId.equalsIgnoreCase("delayWet"))

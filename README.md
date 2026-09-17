@@ -1,7 +1,7 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-EE592B?style=for-the-badge&logo=github)](https://sneed-and-feed.github.io/)
-[![VST3 Plugin](https://img.shields.io/badge/VST3-Windows%20x64-blue?style=for-the-badge)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.0-Windows-x64.zip)
+[![VST3 Plugin](https://img.shields.io/badge/VST3-Windows%20x64-blue?style=for-the-badge)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.1-Windows-x64.zip)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Web Audio API](https://img.shields.io/badge/Web%20Audio-100%25%20Client--Side-4A4A4A?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
@@ -10,8 +10,8 @@
 
 ---
 
-### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.0-Windows-x64.zip)
-*Direct download: **`BRAUN_AS42-v1.3.0-Windows-x64.zip`** (6.81 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
+### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.1-Windows-x64.zip)
+*Direct download: **`BRAUN_AS42-v1.3.1-Windows-x64.zip`** (6.81 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
 
 ### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
 *No installation, plugins, or accounts required. Native Web Audio API + Web MIDI support.*
@@ -202,7 +202,23 @@ npm test
 
 ---
 
-## 6. What's New in v1.3.0
+## 6. What's New in v1.3.1
+
+* **Acoustic Hammer Transient Decoupling & Tactile Punch:**
+  * Rerouted hammer impact burst around the string attack amplitude envelope directly into the piano soundboard peaking formant filter, eliminating severe envelope attenuation and increasing transient punch ~4x (+11.3 dB).
+  * Retuned acoustic register multipliers (Bass: `3.20`, Mid: `2.80`, Treble: `2.00`) and widened bandpass $Q$ to `1.2` for warm, physical wooden thud at high hammer settings while keeping zero impact at minimum.
+* **Continuous Acoustic Decay & Dynamic Release Scaling:**
+  * Dynamic release time formula: $t_{\text{rel}} = 0.10\text{s} + 0.32\text{s} \times (\text{relScale})^{1.35}$, spanning ~0.14s (tight staccato at `0.2x`) to ~1.84s (long singing sustain tail at `3.5x`).
+  * Implemented real-time voice decay updates (`updateDecay`) on both C++ and Web Audio engines so adjusting the decay dial immediately affects currently held and ringing notes.
+  * Expanded UI decay knob boundaries from `[0.5, 2.5]` to `[0.2, 3.5]` and widened internal filter decay clamps to `[0.2, 3.5]`.
+* **Soundboard Circulation & Sympathetic Resonance Bloom:**
+  * Implemented 512-sample circular soundboard feedback loop (~10.6 ms) with soft-clipped circulation and a 250 ms resonance tail counter, ensuring natural acoustic bloom after notes are released instead of premature cutoff.
+* **Host IPC Bridge Hardening:**
+  * Added fallback alias mappings in `PluginEditor.cpp` for `feltHammer`, `hammer`, `feltDecay`, `decay`, `feltTone`, `tone`, `feltSymp`, and `sympathetic`.
+
+---
+
+## 7. What's New in v1.3.0
 
 * **DSP Numerical Stabilization & Thread Safety:**
   * Implemented `ScopedNoDenormals` RAII hardware guards enabling Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) on x86/x64 and ARM64.

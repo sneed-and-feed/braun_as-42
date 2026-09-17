@@ -1696,8 +1696,8 @@ export class AmbientApp {
 
     this.knobs.feltDecay = new BraunKnob(document.getElementById('knob-felt-decay'), {
       label: 'DECAY',
-      min: 0.5,
-      max: 2.5,
+      min: 0.2,
+      max: 3.5,
       step: 0.1,
       value: 1.1,
       unit: 'x',

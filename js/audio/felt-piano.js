@@ -99,7 +99,7 @@ export class FeltPianoVoice {
     this.hammerFilter = ctx.createBiquadFilter();
     this.hammerFilter.type = 'bandpass';
     this.hammerFilter.frequency.setValueAtTime(280, ctx.currentTime);
-    this.hammerFilter.Q.setValueAtTime(2.0, ctx.currentTime);
+    this.hammerFilter.Q.setValueAtTime(1.2, ctx.currentTime);
 
     // Oscillators: Osc 1 (Fundamental core) & Osc 2 (Detuned overtone)
     // Calibrated internal voice levels so 5-6 voice chord clusters never clip internal saturation shaper
@@ -145,17 +145,17 @@ export class FeltPianoVoice {
     this.osc1Gain.connect(this.oscMixer);
     this.osc2Gain.connect(this.oscMixer);
 
-    // Hammer thump connects to filter
+    // Hammer thump connects to bodyFilter alongside voiceGain
     this.hammerGain.connect(this.hammerFilter);
-    this.hammerFilter.connect(this.filter1);
+    this.hammerFilter.connect(this.bodyFilter);
 
-    // Voice routing: OscMixer -> Saturation -> Filter1 -> Filter2 -> BodyFilter -> VoiceGain -> TimbreTrim -> Destination
+    // Voice routing: OscMixer -> Saturation -> Filter1 -> Filter2 -> VoiceGain -> BodyFilter -> TimbreTrim -> Destination
     this.oscMixer.connect(this.saturationShaper);
     this.saturationShaper.connect(this.filter1);
     this.filter1.connect(this.filter2);
-    this.filter2.connect(this.bodyFilter);
-    this.bodyFilter.connect(this.voiceGain);
-    this.voiceGain.connect(this.timbreTrim);
+    this.filter2.connect(this.voiceGain);
+    this.voiceGain.connect(this.bodyFilter);
+    this.bodyFilter.connect(this.timbreTrim);
     this.timbreTrim.connect(this.destination);
 
     this.osc1.start();
@@ -351,7 +351,8 @@ export class FeltPianoVoice {
     if (this._isReleased && this._releaseTime) {
       const tRel = now - this._releaseTime;
       const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
-      const relDuration = isCS80 ? 0.65 : 0.40;
+      const relScale = Math.max(0.20, Math.min(3.5, this._decayMultiplier ?? 1.0));
+      const relDuration = isCS80 ? 0.65 : (0.10 + 0.32 * Math.pow(relScale, 1.35));
       if (tRel >= relDuration) return 0.0001;
       const startG = Math.max(0.001, this._releaseStartGain || 0.1);
       const frac = Math.max(0, Math.min(1, tRel / relDuration));
@@ -426,6 +427,7 @@ export class FeltPianoVoice {
     const hammerThump = isCS80 ? 0 : (params.hammer ?? 0.50); // Bypassed in CS-80 mode
     const decayMultiplier = params.decay ?? 1.0;
     const releaseTime = params.release ?? 1.8;
+    this._decayMultiplier = decayMultiplier;
 
     this.currentFreq = freq;
     this.currentVelocity = velocity;
@@ -443,7 +445,7 @@ export class FeltPianoVoice {
 
     let registerDecayMult = 1.0;
     let hammerCutoff = 280;
-    let hammerThumpGainMult = 0.20;
+    let hammerThumpGainMult = 2.80;
     let thumpDuration = 0.025; // 25ms
     let bodyFormantHz = 540;
     let osc1Vol = 0.48;
@@ -460,7 +462,7 @@ export class FeltPianoVoice {
       osc1Vol = 0.60;
       osc2Vol = 0.12;
       hammerCutoff = Math.min(220, Math.max(110, freq * 1.3));
-      hammerThumpGainMult = 0.26;
+      hammerThumpGainMult = 3.20;
       thumpDuration = 0.032;
       bodyFormantHz = Math.max(280, Math.min(420, 300 + (midi - 24) * 5));
       filterDecayBase = 0.26;
@@ -472,7 +474,7 @@ export class FeltPianoVoice {
       osc1Vol = 0.44;
       osc2Vol = 0.18;
       hammerCutoff = Math.min(1400, Math.max(550, freq * 0.9));
-      hammerThumpGainMult = 0.16;
+      hammerThumpGainMult = 2.00;
       thumpDuration = 0.016;
       bodyFormantHz = Math.min(950, 680 + (midi - 72) * 12);
       filterAttackTime = 0.004;
@@ -484,7 +486,7 @@ export class FeltPianoVoice {
       registerDecayMult = 1.0;
       bodyFormantHz = 480 + (midi - 48) * 5.5; // Spruce piano soundboard formant ~480-605 Hz
       hammerCutoff = Math.min(450, Math.max(240, freq * 1.2));
-      hammerThumpGainMult = 0.20;
+      hammerThumpGainMult = 2.80;
       thumpDuration = 0.025;
       filterDecayBase = 0.18;
       maxCutoff = Math.min(7500, Math.max(freq * 1.8, 420 + (feltDamp * 2600 * velocity)));
@@ -732,14 +734,14 @@ export class FeltPianoVoice {
 
       // In sine chime mode, scale hammer thump down so crystalline chime does not produce an audible pop
       const effectiveHammerThump = (this.currentWaveform === 'sine')
-        ? hammerThump * 0.30
+        ? hammerThump * 0.02
         : hammerThump;
 
       // Scale hammer thump down for chord clusters so multiple simultaneous noise bursts don't constructively peak
       const chordHammerScale = this.isChord ? 0.40 : 1.0;
       const targetHammerGain = Math.max(0.0001, velocity * effectiveHammerThump * hammerThumpGainMult * chordHammerScale);
       // Smooth micro-attack to peak, then exponential decay down to silence with future-guaranteed targets
-      const hammerAttackTime = (this.currentWaveform === 'sine') ? 0.0065 : 0.0050; // 5-6.5ms smooth micro-fade eliminates high-velocity transient impulse pop
+      const hammerAttackTime = (this.currentWaveform === 'sine') ? 0.0065 : 0.0055; // 5.5-6.5ms smooth micro-fade eliminates high-velocity transient impulse pop
       const hammerAttackTarget = Math.max(noteStartTime + hammerAttackTime, ctx.currentTime + 0.004);
       const hammerDecayTarget = Math.max(noteStartTime + thumpDuration, hammerAttackTarget + 0.006);
       // Anchor hammerGain at noteStartTime so ramp starts from zero right as noise buffer starts (only when not already ramped to 0.0001)
@@ -846,7 +848,7 @@ export class FeltPianoVoice {
       this.filter2.frequency.linearRampToValueAtTime(effectiveMaxCutoff, filterAttackTarget);
 
       // Rapid exponential decay down to fundamental
-      const filterDecayTime = (filterDecayBase + (1.0 - feltDamp) * 0.25) * Math.min(2.5, Math.max(0.4, decayMultiplier));
+      const filterDecayTime = (filterDecayBase + (1.0 - feltDamp) * 0.25) * Math.min(3.5, Math.max(0.2, decayMultiplier));
       const filterDecayTarget = Math.max(noteStartTime + effectiveFilterAttack + filterDecayTime, filterAttackTarget + 0.01);
       this.filter1.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
       this.filter2.frequency.exponentialRampToValueAtTime(restCutoff, filterDecayTarget);
@@ -994,7 +996,8 @@ export class FeltPianoVoice {
       this.voiceGain.gain.setValueAtTime(safeCurGain, cancelTime);
     }
     const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
-    const relDuration = isCS80 ? 0.65 : 0.40;
+    const relScale = Math.max(0.20, Math.min(3.5, this._decayMultiplier ?? 1.0));
+    const relDuration = isCS80 ? 0.65 : (0.10 + 0.32 * Math.pow(relScale, 1.35));
     const releaseTarget = Math.max(cancelTime + relDuration, this.ctx.currentTime + 0.01);
     this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, releaseTarget);
     if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
@@ -1057,6 +1060,44 @@ export class FeltPianoVoice {
       }
       this._releaseTimer = null;
     }, releaseLifetimeMs);
+  }
+
+  /**
+   * Dynamically update decay multiplier on active voice
+   * @param {number} newDecay
+   */
+  updateDecay(newDecay) {
+    if (!this.isActive) return;
+    this._decayMultiplier = Math.max(0.2, Math.min(3.5, newDecay));
+    const now = this.ctx.currentTime;
+    const isCS80 = (this.currentWaveform === 'cs80' || this.currentWaveform === 'vangelis');
+    const relScale = this._decayMultiplier;
+    const relDuration = isCS80 ? 0.65 : (0.10 + 0.32 * Math.pow(relScale, 1.35));
+
+    if (this._isReleased && this._releaseTime) {
+      const cancelTime = Math.max(now, this.ctx.currentTime);
+      let held = false;
+      if (typeof this.voiceGain.gain.cancelAndHoldAtTime === 'function') {
+        try {
+          this.voiceGain.gain.cancelAndHoldAtTime(cancelTime);
+          held = true;
+        } catch (e) {
+          held = false;
+        }
+      }
+      if (!held && typeof this.voiceGain.gain.cancelScheduledValues === 'function') {
+        this.voiceGain.gain.cancelScheduledValues(cancelTime);
+      }
+      const curGain = this.getEstimatedGain(cancelTime);
+      if (typeof this.voiceGain.gain.setValueAtTime === 'function') {
+        this.voiceGain.gain.setValueAtTime(Math.max(0.0002, curGain), cancelTime);
+      }
+      const releaseTarget = Math.max(cancelTime + relDuration, this.ctx.currentTime + 0.01);
+      this.voiceGain.gain.exponentialRampToValueAtTime(0.0001, releaseTarget);
+      if (typeof this.voiceGain.gain.linearRampToValueAtTime === 'function') {
+        this.voiceGain.gain.linearRampToValueAtTime(0.0, releaseTarget + 0.005);
+      }
+    }
   }
 
   /**
@@ -1604,6 +1645,13 @@ export class FeltPianoSynthesizer {
 
   setDecay(val) {
     this.params.decay = Math.max(0.2, Math.min(3.5, val));
+    if (this.voices) {
+      for (const voice of this.voices) {
+        if (voice && voice.isActive && typeof voice.updateDecay === 'function') {
+          voice.updateDecay(this.params.decay);
+        }
+      }
+    }
   }
 
   setRelease(val) {
