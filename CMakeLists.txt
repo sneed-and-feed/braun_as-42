@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 
+# Configure Apple deployment target before project()
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS deployment target")
+    if(NOT CMAKE_OSX_ARCHITECTURES)
+        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
+    endif()
+endif()
+
 project(BRAUN_AS42_PROJECT VERSION 1.3.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -133,10 +141,15 @@ target_include_directories(BRAUN_AS42
 target_compile_definitions(BRAUN_AS42
     PUBLIC
         JUCE_WEB_BROWSER=1
-        JUCE_USE_WIN_WEBVIEW2=1
-        JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
         JUCE_VST3_CAN_REPLACE_VST2=0
 )
+if(WIN32)
+    target_compile_definitions(BRAUN_AS42
+        PUBLIC
+            JUCE_USE_WIN_WEBVIEW2=1
+            JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
+    )
+endif()
 
 target_link_libraries(BRAUN_AS42
     PRIVATE
