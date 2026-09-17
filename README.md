@@ -1,23 +1,74 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-EE592B?style=for-the-badge&logo=github)](https://sneed-and-feed.github.io/)
-[![VST3 Plugin](https://img.shields.io/badge/VST3-Windows%20x64-blue?style=for-the-badge)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
-[![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple)](#-option-c-native-multi-platform-plugin--standalone-build-cmake)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-blue?style=for-the-badge&logo=windows)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
 [![Web Audio API](https://img.shields.io/badge/Web%20Audio-100%25%20Client--Side-4A4A4A?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
+[![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 > **A Dieter Rams functionalist digital-analog ambient instrument and microtonal drone synthesizer.**
 > Inspired by **Harold Budd**, **Brian Eno**, and the **Elta Solar 42n**.
 
 ---
 
-### 🎛️ [💾 Download Precompiled VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
+### 🌐 [🔊 Play Live in Your Browser (macOS, Windows, iOS, Android, Linux)](https://sneed-and-feed.github.io/)
+*Zero installation, accounts, or plugins required. 100% client-side Web Audio API + Web MIDI support in Safari, Chrome, Edge, and Firefox.*
+
+### 🎛️ [💾 Download Precompiled Windows x64 VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
 *Direct download: **`BRAUN_AS42-v1.3.2-Windows-x64.zip`** (6.81 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
 
-### 🌐 [🔊 Play Live in Your Browser: https://sneed-and-feed.github.io/](https://sneed-and-feed.github.io/)
-*No installation, plugins, or accounts required. Native Web Audio API + Web MIDI support.*
+### 🍎 [🍏 macOS Native Audio Unit (AU), VST3 & Standalone Build](#-option-c-native-multi-platform-plugin--standalone-build-cmake)
+*Natively supported via CMake + JUCE 8! Compiles universal binaries (Apple Silicon ARM64 + Intel x86_64) generating Audio Unit (`.component`) for Logic Pro / GarageBand, VST3 (`.vst3`) for Ableton / Reaper / Bitwig, and Standalone (`.app`) with native WKWebView GPU acceleration.*
 
 ### 🌌 [🏛️ Sibling Reverb: BRAUN RB-26 Master Studio Reverberator](https://github.com/sneed-and-feed/braun_rb-26)
 *Direct package-deal hardware sibling companion. Download precompiled VST3/CLAP/Standalone: [**`BRAUN_RB26-v1.2.0-Windows-x64.zip`**](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_RB26-v1.2.0-Windows-x64.zip) or [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases).*
+
+---
+
+## 🎹 Quick Start: How to Actually Play It
+
+Whether you are auditioning in your web browser, tracking in Logic Pro on macOS, or producing in Ableton / FL Studio on Windows, the AS 42 is designed to let you make evocative ambient sound immediately:
+
+```text
++-----------------------------------------------------------------------------------------+
+|  [POWER ON] (Top-right orange switch to wake Web Audio / audio engine)                  |
+|                                                                                         |
+|  1. CHIMES & KEYS     2. CHORD CLUSTERS       3. TWIN DRONES        4. TAPE & SHIMMER   |
+|  Keys [A] to [']      Keys [1] to [=]         [DRONE 1] [DRONE 2]   [TAPE MIX]          |
+|  or click & glissando (12 Harold Budd chords) [MIDI TRACK] on/off   [SHIMMER MIX]       |
+|  11 modal scale notes Strum: SLOW/FAST/BLOCK  Quick-Snap buttons    [SPACEBAR] = FREEZE |
++-----------------------------------------------------------------------------------------+
+```
+
+### 1. Power On
+Click the iconic orange **POWER ON** rocker switch at the top-right corner (or press any key) to initialize the audio engine and Web Audio context.
+
+### 2. Play Melodic Chimes
+* **Computer Keyboard (`A` through `K`, `L`, `;`, `'`):** Single-row keyboard keys map directly to the 11 harmonic modal scale degrees across octaves 3–5 (with `Z, X, C, V` providing deep bass chimes). Because every note is dynamically quantized to the active modal scale (e.g., *Budd Felt Pentatonic*, *Lydian Ambient*), **there are zero discordant notes**—every combination sounds resonant and consonant.
+* **Click & Drag Glissando:** Click and sweep your mouse or finger horizontally across the ivory chime strip for an expressive harp or bell glissando.
+* **Hardware MIDI Keyboard:** Connect any USB or Bluetooth MIDI controller. It is automatically detected via Web MIDI / DAW host MIDI with velocity sensitivity, pitch bend, and sustain pedal support.
+
+### 3. Trigger Harold Budd Chord Voicings
+* **Keys `1` through `9`, `0`, `-`, `=`:** Instantly voice 12 curated harmonic chord clusters (including `PAVILION SUS`, `PLATEAUX MAJ9`, `ETHEREAL 11TH`, and `LYDIAN CASCADE`).
+* **STRUM Toggle:** Switch between `SLOW` (120ms gentle harp roll), `MED` (50ms), `FAST` (20ms), and `INSTANT` (simultaneous block chord) to shape how voices articulate over ambient beds.
+
+### 4. Engage Hypnotic Drones
+* Toggle **DRONE 1** and **DRONE 2** on to introduce an organic, microtonal underbed.
+* Click the **Dieter Rams Quick-Snap** tuning buttons (`SUB BASS`, `DEEP TONIC`, `PERFECT 5TH`, `BEATING UNISON`) to lock into resonant intervals instantly without hunting.
+* Turn on **MIDI TRACK** to have the drones automatically follow your piano chord root notes with smooth 40ms portamento and gentle release gating.
+
+### 5. Start Eno's Generative Cloud
+* Turn up the **GEN SPEED** dial—the Harold Budd Poisson point-process engine will begin dropping notes like gentle rain with organic, continuously shifting intervals.
+
+### 6. Wash in Shimmer Reverb & Tape Delay
+* Turn up **TAPE MIX** and **FEEDBACK** for warm polyrhythmic tape delay repeats with vintage wow and flutter.
+* Turn up **SHIMMER MIX** to bloom chords into an octave-up (+12st) celestial cloud.
+* Tap **SPACEBAR** at any point to lock the reverb loop into **INFINITE FREEZE**, suspending the ambient cloud forever while you improvise freely over top.
+
+### 🎛️ 3 Instant Starting Presets:
+* **Intimate Harold Budd Felt Piano**: Drones `OFF`, Timbre = `FELT`, Hammer = `70%`, Tone = `60%`, Tape Mix = `20%`, Shimmer = `15%`.
+* **Brian Eno "Music for Airports"**: Drones `ON` (`SUB BASS` + `PERFECT 5TH`), Generative Speed = `35%`, Shimmer Mix = `65%`, tap `SPACEBAR` when a voicing blooms.
+* **Blade Runner / Solar Microtonal Drift**: Drones `ON`, Wavefolder = `60%`, Beat Detune = `1.2 Hz`, Keys = `CS-80`, Strum = `SLOW`.
 
 ---
 
@@ -66,7 +117,7 @@ The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into
 
 ### 1.3 Elta Solar 42n: Microtonal Twin-Oscillator Drone Voices
 * **Calibrated Output Volume Balancing:** Drone bus gain is calibrated to -8.5dB relative to the keys bus, ensuring the twin drones serve as a warm, lush, non-overpowering ambient underbed while piano chords and chime melodies sit distinctly on top with crystalline clarity.
-* **Dynamic Piano Roll & MIDI Pitch Tracking (v1.2.0):**
+* **Dynamic Piano Roll & MIDI Pitch Tracking:**
   * In addition to manual pitch knob operation, the drones dynamically follow notes played in the piano roll or MIDI keyboard.
   * *Drone 1 (Tonic):* Follows the played root note transposed into the deep sub/bass register ($32.7\text{ Hz} - 130.8\text{ Hz}$) with smooth 40 ms portamento frequency slewing (no sudden pops or jumps).
   * *Drone 2 (Harmony):* Tracks Drone 1 locked to the selected harmonic ratio (Unison, Sus 4th, Perfect 5th, Octave, Major 9th, 10th).
@@ -82,21 +133,48 @@ The BRAUN AS 42 synthesizes three complementary ambient acoustic traditions into
 * **West-Coast Wavefolder:** Multi-stage wavefolding transfer function ($y = \tanh(\sin(0.5\pi D x) - F \sin(1.5\pi D x))$) folding waveform peaks inward with 4x oversampled anti-aliasing.
 * **4-Pole Resonant Ladder Lowpass Filter:** Dual cascaded biquad filters with resonance up to self-oscillation and slow breathing LFO drift.
 
-### 1.4 Native VST3 Plugin & DAW Integration
-* **Hybrid C++ / WebView2 Architecture:** Built with JUCE 8 and Microsoft WebView2. The UI is rendered with high-DPI GPU acceleration, while the DSP engine runs entirely in native, highly optimized C++ with **0 heap allocations** on the audio thread.
-* **DAW Compositor & Performance Optimization:**
+### 1.4 Native Multi-Format Plugin & Cross-Platform DAW Integration (AU / VST3 / Standalone)
+
+The BRAUN AS 42 is engineered as a true cross-platform hybrid instrument combining an ultra-low-latency, hard real-time C++20 DSP engine with GPU-accelerated web UI rendering:
+
+* **macOS (Audio Unit, VST3, Standalone):**
+  * **Native Apple WKWebView Integration:** Built with JUCE 8's `WebBrowserComponent` utilizing Apple's native `WKWebView` under AppKit / Cocoa. Requires zero external runtime downloads or third-party webview packages.
+  * **Universal Binary (Apple Silicon & Intel):** Full native architecture compilation for Apple Silicon (M1, M2, M3, M4 / ARM64) and Intel (x86_64).
+  * **Audio Unit (AUv2) Support:** Automatically compiles `BRAUN_AS42.component` for seamless integration in **Logic Pro**, **GarageBand**, and **Studio One**.
+  * **VST3 & Standalone:** Also outputs `BRAUN_AS42.vst3` and `BRAUN_AS42.app` for macOS hosts (**Ableton Live**, **Reaper**, **Bitwig Studio**, **Cubase**).
+* **Windows (VST3, Standalone):**
+  * **Microsoft WebView2 Integration:** DirectComposition hardware GPU rendering via evergreen Edge/Chromium runtime.
   * **Opaque Surface (`setOpaque(true)`):** Eliminates 32-bit alpha compositing overhead in Windows Desktop Window Manager (DWM) and FL Studio.
-  * **Full Win32 HWND Hierarchy Clipping:** Enforces `WS_CLIPCHILDREN | WS_CLIPSIBLINGS` with `SetWindowPos(..., SWP_FRAMECHANGED)` across the entire parent chain and child WebView2 render windows, preventing solitaire-style drag trails.
-  * **Elimination of Global DWM Occlusion Hooks:** Strips `--disable-features=CalculateNativeWinOcclusion` and disables background window throttling, eliminating desktop-wide DWM message queue lag.
-  * **Batched CRT Vector Graticule:** Oscilloscope grid lines are batched into a single path call.
-  * **Idle Silence Throttling:** Oscilloscope automatically steps down to 5 FPS when no audio is passing, freeing host GUI cycles in dense DAW arrangements.
-  * **Accurate APVTS Sync & Preset Preservation:** Direct atomic parameter binding prevents logarithmic curve skew, and boots without clobbering saved DAW project parameters.
-* **DAW Installation:**
-  Copy `BRAUN_AS42.vst3` into your system VST3 directory:
-  ```
-  C:\Program Files\Common Files\VST3\
-  ```
-  Compatible with FL Studio, Ableton Live, Reaper, Cubase, Bitwig, Studio One, and other VST3 hosts.
+  * **Full Win32 HWND Hierarchy Clipping:** Enforces `WS_CLIPCHILDREN | WS_CLIPSIBLINGS` with `SetWindowPos(..., SWP_FRAMECHANGED)` across the plugin HWND and child WebView2 render windows, preventing solitaire-style drag trails.
+  * **Elimination of Global DWM Occlusion Hooks:** Disables background window throttling and strips `--disable-features=CalculateNativeWinOcclusion`, eliminating desktop-wide DWM message queue lag.
+* **Linux (VST3, Standalone):**
+  * Native build support via JUCE 8 with WebKitGTK (`webkit2gtk-4.0` / `webkit2gtk-4.1`).
+* **Universal Web Audio Application (Zero-Install):**
+  * Runs 100% client-side across all modern desktop and mobile browsers (macOS Safari, iOS Safari/Brave, Windows Edge/Chrome/Firefox, Android Chrome/Samsung Internet, Linux Chromium/Firefox) with Web Audio API + Web MIDI API support.
+* **Hard Real-Time Audio Safety (All Platforms):**
+  * **0 Dynamic Memory Allocations:** Audio processing (`processBlock()`) allocates strictly 0 bytes of heap memory during real-time playback.
+  * **0 Mutexes / Locks:** Audio thread never locks or waits on UI threads.
+  * **Lock-Free Telemetry Ring Buffers:** Single-producer single-consumer (SPSC) lock-free FIFO visualizer queues stream 60fps CRT oscilloscope and FFT telemetry to the UI with zero audio thread contention.
+  * **Hardware Denormal Flushing:** `ScopedNoDenormals` RAII guards enable Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) across both x86/x64 (SSE) and ARM64 (NEON).
+  * **Batched CRT Vector Graticule & Idle Silence Throttling:** Oscilloscope automatically steps down to 5 FPS when idle, saving host CPU cycles in dense DAW arrangements.
+  * **Atomic APVTS Parameter Synchronization:** Direct atomic parameter binding prevents logarithmic curve skew, and boots without clobbering saved DAW project parameters.
+* **Default Plugin Installation Directories:**
+  * **macOS Audio Unit (AU):**
+    ```text
+    ~/Library/Audio/Plug-Ins/Components/BRAUN_AS42.component
+    ```
+  * **macOS VST3:**
+    ```text
+    ~/Library/Audio/Plug-Ins/VST3/BRAUN_AS42.vst3
+    ```
+  * **Windows VST3:**
+    ```text
+    C:\Program Files\Common Files\VST3\BRAUN_AS42.vst3
+    ```
+  * **Linux VST3:**
+    ```text
+    ~/.vst3/BRAUN_AS42.vst3
+    ```
 
 ---
 
@@ -173,6 +251,44 @@ start.bat
    http://localhost:3000
    ```
 3. **Turn on the instrument:** Click the orange **POWER ON** button at the top right to start the Web Audio API context.
+
+### Option C: Native Multi-Platform Plugin & Standalone Build (CMake)
+Build the native C++ plugin (AU, VST3) and standalone desktop application directly from source on **macOS**, **Windows**, or **Linux**:
+
+1. **Prerequisites:**
+   * CMake 3.22 or higher
+   * C++20 compliant compiler:
+     * **macOS:** Xcode Command Line Tools (`clang++`)
+     * **Windows:** Visual Studio 2022 (MSVC with C++ Desktop Development)
+     * **Linux:** GCC 11+ or Clang 14+ (`build-essential`, `libwebkit2gtk-4.0-dev` or `4.1`)
+   * Git (FetchContent automatically clones JUCE 8.0.6)
+
+2. **Configure & Build:**
+   ```bash
+   # Clone repository (if building outside existing tree)
+   git clone https://github.com/sneed-and-feed/braun_as-42.git
+   cd braun_as-42
+
+   # Configure build with CMake
+   # macOS: Automatically detects Apple platform and registers Audio Unit (AU), VST3, and Standalone
+   # Windows: Automatically provisions Microsoft.Web.WebView2 and targets VST3 and Standalone
+   cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+   # Compile all plugin and standalone targets
+   cmake --build build --config Release
+   ```
+
+3. **Output Artefacts:**
+   * **macOS:**
+     * **Audio Unit (AU):** `build/BRAUN_AS42_artefacts/Release/AU/BRAUN_AS42.component`
+     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`
+     * **Standalone App:** `build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42.app`
+   * **Windows:**
+     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`
+     * **Standalone Exe:** `build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42.exe`
+   * **Linux:**
+     * **VST3:** `build/BRAUN_AS42_artefacts/Release/VST3/BRAUN_AS42.vst3`
+     * **Standalone App:** `build/BRAUN_AS42_artefacts/Release/Standalone/BRAUN_AS42`
 
 ### Keyboard Shortcuts & Gestures
 * **A, S, D, F, G, H, J, K, L, ;, ':** Play the 11 modal scale degrees on the serene single-row harmonic chime strip (spanning octaves 3 through 5, click-free with key repeat protection and continuous hold sustain). Additional bass chime shortcuts `Z, X, C, V` are also supported.
