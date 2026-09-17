@@ -1,7 +1,7 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-EE592B?style=for-the-badge&logo=github)](https://sneed-and-feed.github.io/)
-[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple)](#-option-c-native-multi-platform-plugin--standalone-build-cmake)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple)](#option-c-native-multi-platform-plugin--standalone-build-cmake)
 [![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-blue?style=for-the-badge&logo=windows)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
 [![Web Audio API](https://img.shields.io/badge/Web%20Audio-100%25%20Client--Side-4A4A4A?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -17,7 +17,7 @@
 ### 🎛️ [💾 Download Precompiled Windows x64 VST3 & Standalone (.zip)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.2-Windows-x64.zip)
 *Direct download: **`BRAUN_AS42-v1.3.2-Windows-x64.zip`** (6.81 MB). Includes `BRAUN_AS42.vst3` for DAWs (Ableton, FL Studio, Reaper, Cubase, Bitwig) and `BRAUN_AS42.exe` standalone desktop app.*
 
-### 🍎 [🍏 macOS Native Audio Unit (AU), VST3 & Standalone Build](#-option-c-native-multi-platform-plugin--standalone-build-cmake)
+### 🍎 [🍏 macOS Native Audio Unit (AU), VST3 & Standalone Build](#option-c-native-multi-platform-plugin--standalone-build-cmake)
 *Natively supported via CMake + JUCE 8! Compiles universal binaries (Apple Silicon ARM64 + Intel x86_64) generating Audio Unit (`.component`) for Logic Pro / GarageBand, VST3 (`.vst3`) for Ableton / Reaper / Bitwig, and Standalone (`.app`) with native WKWebView GPU acceleration.*
 
 ### 🌌 [🏛️ Sibling Reverb: BRAUN RB-26 Master Studio Reverberator](https://github.com/sneed-and-feed/braun_rb-26)
@@ -65,10 +65,14 @@ Click the iconic orange **POWER ON** rocker switch at the top-right corner (or p
 * Turn up **SHIMMER MIX** to bloom chords into an octave-up (+12st) celestial cloud.
 * Tap **SPACEBAR** at any point to lock the reverb loop into **INFINITE FREEZE**, suspending the ambient cloud forever while you improvise freely over top.
 
-### 🎛️ 3 Instant Starting Presets:
-* **Intimate Harold Budd Felt Piano**: Drones `OFF`, Timbre = `FELT`, Hammer = `70%`, Tone = `60%`, Tape Mix = `20%`, Shimmer = `15%`.
-* **Brian Eno "Music for Airports"**: Drones `ON` (`SUB BASS` + `PERFECT 5TH`), Generative Speed = `35%`, Shimmer Mix = `65%`, tap `SPACEBAR` when a voicing blooms.
-* **Blade Runner / Solar Microtonal Drift**: Drones `ON`, Wavefolder = `60%`, Beat Detune = `1.2 Hz`, Keys = `CS-80`, Strum = `SLOW`.
+### 7. Instant Curated Presets (1-Click)
+Instead of dialing in individual knobs, use the **PRESET** dropdown in the top toolbar to instantly morph the instrument between curated soundscapes:
+* **HAROLD BUDD · PAVILION**: Intimate felt piano with soft una corda damping, acoustic hammer transient punch, warm wooden soundboard resonance, subtle tape wow, and floating celestial shimmer.
+* **ENO · MUSIC FOR AIRPORTS**: Hypnotic sub-bass & beating-unison twin drones, slow Poisson generative rain, and lush octave-up shimmer reverb bloom (tap `SPACEBAR` when a voicing blooms to freeze it infinitely).
+* **VANGELIS · CS-80 BRASS**: Rich dual-oscillator detuned brass timbre, fast chord strumming, warm ladder filter resonance, and expansive stereophonic tape delay.
+* **CALIBRATED DEFAULT**: The balanced, canonical Dieter Rams baseline configuration.
+
+*(Musicians can also save, export, and load unlimited custom JSON patches at any time via the **EXPORT** and **LOAD** buttons).*
 
 ---
 
@@ -274,8 +278,14 @@ Build the native C++ plugin (AU, VST3) and standalone desktop application direct
    # Windows: Automatically provisions Microsoft.Web.WebView2 and targets VST3 and Standalone
    cmake -B build -DCMAKE_BUILD_TYPE=Release
 
+   # Optional (macOS): build Universal Binaries for Apple Silicon (ARM64) + Intel (x86_64)
+   # cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
    # Compile all plugin and standalone targets
    cmake --build build --config Release
+
+   # Optional (macOS): validate Audio Unit component in terminal with Apple auval
+   # auval -v aumu As42 Brun
    ```
 
 3. **Output Artefacts:**
@@ -307,7 +317,7 @@ The project maintains comprehensive verification across both JavaScript Web Audi
 ```bash
 npm test
 ```
-* **453 unit and integration tests across 98 test suites** running via Node.js native test runner (0 failures).
+* **454 unit and integration tests across 98 test suites** running via Node.js native test runner (0 failures).
 * Validates voice de-duplication, Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, full-width CRT oscilloscope edge-to-edge drawing, 48-bar FFT spectrum, iPadOS WebKit/Brave momentum vertical scrolling, rotary knob touch disambiguation, responsive tablet layout across iOS and Android (16:10 / 4:3), and anti-clipping bus headroom staging.
 
 ### 5.2 Native C++ DSP & Real-Time Safety Tests
@@ -368,4 +378,4 @@ npm test
   * Zero-copy `Int16Array` view pooling in `engine.js` eliminates garbage collection spikes during WAV recording.
   * Cached DOM element selectors in visualizer loops eliminate 60fps layout thrashing.
 * **Expanded Verification:**
-  * Test coverage expanded to 453 Web Audio tests and 60 native C++ tests (513 total tests passing with 0 failures).
+  * Test coverage expanded to 454 Web Audio tests and 60 native C++ tests (514 total tests passing with 0 failures).

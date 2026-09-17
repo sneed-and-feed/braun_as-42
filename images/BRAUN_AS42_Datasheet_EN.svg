@@ -727,7 +727,7 @@
     <g transform="translate(930, 50)">
       <rect x="0" y="0" width="890" height="340" fill="#FFFFFF" stroke="#D5D4CD" stroke-width="1.5" />
       <rect x="0" y="0" width="890" height="28" fill="#18191B" />
-      <text x="15" y="19" font-size="11" font-weight="800" fill="#FFFFFF" letter-spacing="1">AUDIT CERTIFICATION &amp; VERIFICATION LOG (TEST_READY.MD)</text>
+      <text x="15" y="19" font-size="11" font-weight="800" fill="#FFFFFF" letter-spacing="1">AUDIT CERTIFICATION &amp; VERIFICATION LOG</text>
 
       <g font-size="10" font-weight="600" fill="#18191B">
         <rect x="0" y="28" width="890" height="31" fill="#FAF9F5" />
