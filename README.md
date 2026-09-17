@@ -30,7 +30,7 @@
 * **Linux (Ubuntu, Debian, Fedora, Arch):** Builds cleanly from source via standard CMake with WebKitGTK, producing native VST3 (`.vst3`) and standalone binaries for Reaper, Bitwig, Ardour, and ALSA/JACK/PipeWire.
 
 ### 🌌 [🏛️ Sibling Reverb: BRAUN RB-26 Master Studio Reverberator](https://github.com/sneed-and-feed/braun_rb-26)
-*Direct package-deal hardware sibling companion. Available on [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases) (Universal macOS AU/VST3/CLAP, Linux VST3/CLAP, and precompiled [**Windows-x64.zip**](https://github.com/sneed-and-feed/braun_rb-26/releases/download/v1.3.1/BRAUN_RB26-v1.3.1-Windows-x64.zip)).*
+*Direct package-deal hardware sibling companion. Available on [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases) (Universal macOS AU/VST3/CLAP, Linux VST3/CLAP, and precompiled [**Windows-x64.zip**](https://github.com/sneed-and-feed/braun_rb-26/releases/download/v1.3.6/BRAUN_RB26-v1.3.6-Windows-x64.zip)).*
 
 ---
 
