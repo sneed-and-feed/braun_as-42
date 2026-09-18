@@ -2315,7 +2315,7 @@ export class AmbientApp {
         });
       }
 
-      // 4. Connect knob changes to window.__JUCE__.backend.emitEvent("paramChange", { id, value })
+      // 4. Connect knob changes and context menu to window.__JUCE__.backend
       for (const [id, knob] of Object.entries(this.knobs)) {
         if (!knob) continue;
         const originalOnChange = knob.onChange;
@@ -2326,6 +2326,20 @@ export class AmbientApp {
           try {
             if (typeof backend.emitEvent === 'function') {
               backend.emitEvent('paramChange', { id, value: val });
+            }
+          } catch (err) {
+            console.warn('JUCE backend emitEvent error:', err);
+          }
+        };
+
+        knob.onContextMenu = (e) => {
+          try {
+            if (typeof backend.emitEvent === 'function') {
+              backend.emitEvent('showContextMenu', {
+                id,
+                x: Math.round(e.screenX || 0),
+                y: Math.round(e.screenY || 0)
+              });
             }
           } catch (err) {
             console.warn('JUCE backend emitEvent error:', err);

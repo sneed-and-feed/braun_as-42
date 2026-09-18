@@ -28,8 +28,11 @@ export class BraunKnob {
     this.size = options.size || 'medium'; // 'small', 'medium', 'large'
     this.color = options.color || 'var(--color-knob-accent)';
     this.onChange = options.onChange || null;
+    this.onDragEnd = options.onDragEnd || null;
+    this.paramId = options.paramId || this.id;
+    this.onContextMenu = options.onContextMenu || null;
 
-    this.startAngle = -140; // degrees
+    this.lastUserInteractionTime = 0;
     this.endAngle = 140;   // degrees
     this.angleRange = this.endAngle - this.startAngle; // 280 deg
 
@@ -387,13 +390,28 @@ export class BraunKnob {
       });
     }
 
-    // Right-click: clean reset to default value with host DAW / Web Audio notification
+    // Right-click: host context menu in JUCE, clean reset in Web Audio
     this.element.addEventListener('contextmenu', (e) => {
       if (e.target === this.directInput) return;
       if (this.directInput && this.directInput.style.display !== 'none') return;
       if (e && typeof e.preventDefault === 'function') e.preventDefault();
       if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
-      this.setValue(this.defaultValue, true);
+      this.lastUserInteractionTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if (typeof this.onContextMenu === 'function') {
+        this.onContextMenu(e);
+      } else if (typeof window !== 'undefined' && window.__JUCE__ && window.__JUCE__.backend) {
+        window.__JUCE__.backend.emitEvent('showContextMenu', {
+          id: this.paramId || this.id,
+          x: Math.round(e.screenX || 0),
+          y: Math.round(e.screenY || 0)
+        });
+      }
+      if (typeof window === 'undefined' || !window.__JUCE__ || !window.__JUCE__.backend) {
+        this.setValue(this.defaultValue, true);
+        if (typeof this.onDragEnd === 'function') {
+          this.onDragEnd(this.value);
+        }
+      }
     });
   }
 
