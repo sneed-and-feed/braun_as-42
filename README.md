@@ -1,8 +1,8 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
-[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.5/BRAUN_AS42-v1.3.5-macOS-Universal.zip)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.5-Windows-x64.zip)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.6/BRAUN_AS42-v1.3.6-macOS-Universal.zip)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.6-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#build-linux)
 [![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(523%2F523)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -22,8 +22,8 @@
 
 | Platform | Distribution | Supported Formats | Quick Action / Build One-Liner |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.5-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.5/BRAUN_AS42-v1.3.5-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
-| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.5-Windows-x64.zip` (6.81 MB)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.5-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.5-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
+| **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.6-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.6/BRAUN_AS42-v1.3.6-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
+| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.6-Windows-x64.zip`](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.6-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.6-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
 | **Linux** | **Build from Source** (GCC/Clang) | VST3 · Standalone | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
 
 * **macOS (Apple Silicon ARM64 & Intel x86_64):** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton Live, Reaper, Bitwig), `BRAUN_AS42.component` (for Logic Pro & GarageBand), and `BRAUN_AS42.app` standalone desktop app (or build cleanly from source via standard CMake).
@@ -31,7 +31,7 @@
 * **Linux (Ubuntu, Debian, Fedora, Arch):** Builds cleanly from source via standard CMake with WebKitGTK, producing native VST3 (`.vst3`) and standalone binaries for Reaper, Bitwig, Ardour, and ALSA/JACK/PipeWire.
 
 ### 🌌 [🏛️ Sibling Reverb: BRAUN RB-26 Master Studio Reverberator](https://github.com/sneed-and-feed/braun_rb-26)
-*Direct package-deal hardware sibling companion. Available on [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases) (Universal macOS AU/VST3/CLAP, Linux VST3/CLAP, and precompiled [**Windows-x64.zip**](https://github.com/sneed-and-feed/braun_rb-26/releases/download/v1.4.0/BRAUN_RB26-v1.4.0-Windows-x64.zip)).*
+*Direct package-deal hardware sibling companion. Available on [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases) (Universal macOS AU/VST3/CLAP, Linux VST3/CLAP, and precompiled [**Windows-x64.zip**](https://github.com/sneed-and-feed/braun_rb-26/releases/download/v1.4.1/BRAUN_RB26-v1.4.1-Windows-x64.zip)).*
 
 ---
 
@@ -393,7 +393,22 @@ npm test
 
 ---
 
-## 6. What's New in v1.3.5
+## 6. What's New in v1.3.6
+
+* **Runtime Native UI Occlusion Fix (Zero Black Screen):**
+  * Fixed WebView2 HWND occlusion bug where switching from Web UI to Native JUCE mode left the child Win32 `Chrome_WidgetWin_0` window occluding the peer window.
+  * Corrected detachment ordering in `setNativeMode(true)`: bounds are zeroed and visibility set to false before detaching from peer, child windows are explicitly hidden (`SW_HIDE`), and `WS_CLIPCHILDREN` is safely removed from the parent peer HWND so JUCE's native Dieter Rams vector rendering is never clipped.
+  * When switching back to Web UI (`setNativeMode(false)`), child windows and `WS_CLIPCHILDREN` styles are cleanly restored.
+* **DAW Host Context Menu Parity (`showNativeMenu`):**
+  * Parameter right-clicks now query the DAW host context (`getHostContext()->getContextMenuForParameter(param)->showNativeMenu(localPos)`), presenting native automation lanes, MIDI learn, and modulation assign menus in Reaper, Ableton Live, FL Studio, and Cubase.
+  * Standalone execution and unsupported hosts cleanly fall back to Dieter Rams popup menus with Default/Min/Max reset and direct exact numeric entry.
+  * Added `showContextMenu` IPC event bridge between Web UI and C++ editor, extending host DAW context menu access to Web UI controls.
+* **Release Artifact & Build Infrastructure:**
+  * Synchronized version bump to v1.3.6 across CMake, Node.js packages, HTML scripts, and verification suites.
+
+---
+
+## 7. What's New in v1.3.5
 
 * **Native UI WebView2 Occlusion Elimination:**
   * Removed legacy Win32 child window visibility toggle (`setChildHwndsVisible` / `EnumChildWindows(..., SW_HIDE)`), resolving the persistent black-screen bug when switching between Web UI and Native UI modes.
@@ -408,7 +423,7 @@ npm test
 
 ---
 
-## 7. What's New in v1.3.4
+## 8. What's New in v1.3.4
 
 * **Cross-Platform Compiler Optimization Parity:**
   * Strict parity across toolchains with aggressive real-time performance flags: `/O2 /fp:precise /arch:AVX2` on MSVC, and `-O3 -Wall -Wextra` on Clang/GCC with IEEE-754 NaN/Inf safety and deterministic floating-point precision.
@@ -423,7 +438,7 @@ npm test
 
 ---
 
-## 8. What's New in v1.3.3
+## 9. What's New in v1.3.3
 
 * **Full Uncompressed Default Viewport (1240x780):**
   * Default window opens in full uncompressed side-by-side view (1240x780, matching `.braun-chassis` max-width) with resizable bounds (`960x600` to `2560x1440`).
@@ -439,7 +454,7 @@ npm test
 
 ---
 
-## 9. What's New in v1.3.2
+## 10. What's New in v1.3.2
 
 * **Elimination of Web Audio Transient Click Discontinuity:**
   * Resolved 1-sample rectangular impulse spike caused by idle `AudioParam.value` persistence in WebKit/Chromium re-triggering stale gain values.
@@ -452,7 +467,7 @@ npm test
 
 ---
 
-## 10. What's New in v1.3.1
+## 11. What's New in v1.3.1
 
 * **Acoustic Hammer Transient Decoupling & Tactile Punch:**
   * Rerouted hammer impact burst around the string attack amplitude envelope directly into the piano soundboard peaking formant filter, eliminating severe envelope attenuation and increasing transient punch ~4x (+11.3 dB).
@@ -468,7 +483,7 @@ npm test
 
 ---
 
-## 11. What's New in v1.3.0
+## 12. What's New in v1.3.0
 
 * **DSP Numerical Stabilization & Thread Safety:**
   * Implemented `ScopedNoDenormals` RAII hardware guards enabling Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) on x86/x64 and ARM64.

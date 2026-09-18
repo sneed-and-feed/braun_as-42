@@ -142,6 +142,18 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
         })
         .withEventListener("stopRecording", [&editor](const juce::var& /*data*/) {
             editor.handleStopRecordingFromWeb();
+        })
+        .withEventListener("showContextMenu", [&editor](const juce::var& data) {
+            if (data.isObject())
+            {
+                const juce::String id = data.getProperty("id", "").toString();
+                const int x = static_cast<int>(data.getProperty("x", 0));
+                const int y = static_cast<int>(data.getProperty("y", 0));
+                if (auto* slot = editor.findKnob(id))
+                {
+                    editor.showKnobContextMenu(*slot, { x, y });
+                }
+            }
         });
 
     return options;
@@ -189,6 +201,7 @@ BRAUN_AS42AudioProcessorEditor::~BRAUN_AS42AudioProcessorEditor()
 {
     setLookAndFeel(nullptr);
     stopTimer();
+    removeMouseListener(this);
     unregisterParameterListeners();
     for (auto& slot : knobSlots)
     {
@@ -235,11 +248,47 @@ void BRAUN_AS42AudioProcessorEditor::parentHierarchyChanged()
     {
         ensureHwndStyles();
     }
+    else
+    {
+#if JUCE_WINDOWS
+        if (auto* peer = getPeer())
+        {
+            if (HWND hwnd = static_cast<HWND>(peer->getNativeHandle()))
+            {
+                if (::IsWindow(hwnd))
+                {
+                    ::EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
+                        if (child != nullptr && ::IsWindow(child))
+                        {
+                            wchar_t className[256];
+                            if (::GetClassNameW(child, className, 256) > 0)
+                            {
+                                juce::String cls(className);
+                                if (cls.containsIgnoreCase("Chrome") || cls.containsIgnoreCase("Intermediate") || child != reinterpret_cast<HWND>(lParam))
+                                {
+                                    ::ShowWindow(child, SW_HIDE);
+                                    ::SetWindowPos(child, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+                                }
+                            }
+                        }
+                        return TRUE;
+                    }, reinterpret_cast<LPARAM>(hwnd));
+
+                    LONG_PTR style = ::GetWindowLongPtr(hwnd, GWL_STYLE);
+                    ::SetWindowLongPtr(hwnd, GWL_STYLE, style & ~WS_CLIPCHILDREN);
+                }
+            }
+        }
+#endif
+    }
 }
 
 void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
 {
 #if JUCE_WINDOWS
+    if (useNativeUI)
+        return;
+
     if (auto* peer = getPeer())
     {
         HWND hwnd = static_cast<HWND>(peer->getNativeHandle());
@@ -847,17 +896,76 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
 
     if (useNativeUI)
     {
-        removeChildComponent(&webComponent);
-        webComponent.setVisible(false);
+        // 1. FIRST update bounds and visibility while still attached to peer
         webComponent.setBounds(0, 0, 0, 0);
+        webComponent.setVisible(false);
+
+#if JUCE_WINDOWS
+        // 2. Hide and minimize all WebView2 child windows
+        if (auto* peer = getPeer())
+        {
+            if (HWND hwnd = static_cast<HWND>(peer->getNativeHandle()))
+            {
+                if (::IsWindow(hwnd))
+                {
+                    ::EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
+                        if (child != nullptr && ::IsWindow(child))
+                        {
+                            wchar_t className[256];
+                            if (::GetClassNameW(child, className, 256) > 0)
+                            {
+                                juce::String cls(className);
+                                if (cls.containsIgnoreCase("Chrome") || cls.containsIgnoreCase("Intermediate") || child != reinterpret_cast<HWND>(lParam))
+                                {
+                                    ::ShowWindow(child, SW_HIDE);
+                                    ::SetWindowPos(child, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+                                }
+                            }
+                        }
+                        return TRUE;
+                    }, reinterpret_cast<LPARAM>(hwnd));
+
+                    // 3. Remove WS_CLIPCHILDREN from peer HWND so parent JUCE drawing is not clipped
+                    LONG_PTR style = ::GetWindowLongPtr(hwnd, GWL_STYLE);
+                    ::SetWindowLongPtr(hwnd, GWL_STYLE, style & ~WS_CLIPCHILDREN);
+                }
+            }
+        }
+#endif
+
+        // 4. Detach from parent
+        removeChildComponent(&webComponent);
     }
     else
     {
-        addAndMakeVisible(webComponent);
-        webComponent.setVisible(true);
-        webComponent.setBounds(getLocalBounds());
-        webComponent.toFront(false);
+        // 1. Restore WS_CLIPCHILDREN and HWND styles
         ensureHwndStyles();
+
+#if JUCE_WINDOWS
+        // 2. Unhide child windows
+        if (auto* peer = getPeer())
+        {
+            if (HWND hwnd = static_cast<HWND>(peer->getNativeHandle()))
+            {
+                if (::IsWindow(hwnd))
+                {
+                    ::EnumChildWindows(hwnd, [](HWND child, LPARAM /*lParam*/) -> BOOL {
+                        if (child != nullptr && ::IsWindow(child))
+                        {
+                            ::ShowWindow(child, SW_SHOW);
+                        }
+                        return TRUE;
+                    }, 0);
+                }
+            }
+        }
+#endif
+
+        // 3. Re-attach and make visible
+        addAndMakeVisible(webComponent);
+        webComponent.setBounds(getLocalBounds());
+        webComponent.setVisible(true);
+        webComponent.toFront(false);
     }
 
     viewModeButton.setVisible(useNativeUI);
@@ -928,6 +1036,8 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
 
 void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
 {
+    addMouseListener(this, true);
+
     // Power button
     powerButton.setButtonText(processorRef.getPoweredOn() ? "POWER ON" : "STANDBY");
     powerButton.setClickingTogglesState(false);
@@ -1079,8 +1189,8 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
         slot->attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             processorRef.getAPVTS(), paramId, slot->slider);
 
-        slot->slider.addMouseListener(this, true);
-        slot->nameLabel.addMouseListener(this, true);
+        slot->slider.addMouseListener(this, false);
+        slot->nameLabel.addMouseListener(this, false);
 
         addChildComponent(slot->slider);
         addChildComponent(slot->nameLabel);
@@ -1517,13 +1627,48 @@ void BRAUN_AS42AudioProcessorEditor::drawCrtDisplay(juce::Graphics& g, juce::Rec
     drawBar("MIDI", processorRef.getDroneTrackMidi() ? 0.8f : 0.2f, juce::Colour(0xff24B8FF), 78);
 }
 
-BRAUN_AS42AudioProcessorEditor::KnobSlot* BRAUN_AS42AudioProcessorEditor::findKnob(const juce::String& id)
+BRAUN_AS42AudioProcessorEditor::KnobSlot* BRAUN_AS42AudioProcessorEditor::findKnob(const juce::String& paramId)
 {
     for (auto& slot : knobSlots)
     {
-        if (slot->paramId == id)
+        if (slot->paramId.equalsIgnoreCase(paramId))
             return slot.get();
     }
+
+    for (const auto& item : kParamMap)
+    {
+        if (paramId.equalsIgnoreCase(item.apvtsId) || paramId.equalsIgnoreCase(item.webId))
+        {
+            for (auto& slot : knobSlots)
+            {
+                if (slot->paramId.equalsIgnoreCase(item.apvtsId))
+                    return slot.get();
+            }
+        }
+    }
+
+    juce::String cleanId = paramId;
+    if (cleanId.startsWithIgnoreCase("knob-") || cleanId.startsWithIgnoreCase("knob_"))
+        cleanId = cleanId.substring(5);
+    cleanId = cleanId.replaceCharacter('-', '_');
+
+    for (auto& slot : knobSlots)
+    {
+        if (slot->paramId.equalsIgnoreCase(cleanId))
+            return slot.get();
+    }
+    for (const auto& item : kParamMap)
+    {
+        if (cleanId.equalsIgnoreCase(item.apvtsId) || cleanId.equalsIgnoreCase(item.webId))
+        {
+            for (auto& slot : knobSlots)
+            {
+                if (slot->paramId.equalsIgnoreCase(item.apvtsId))
+                    return slot.get();
+            }
+        }
+    }
+
     return nullptr;
 }
 
@@ -1586,16 +1731,12 @@ void BRAUN_AS42AudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
 void BRAUN_AS42AudioProcessorEditor::showKnobContextMenu(KnobSlot& slot, juce::Point<int> screenPos)
 {
     auto* param = processorRef.getAPVTS().getParameter(slot.paramId);
-    if (auto* hostCtx = getHostContext())
+    if (auto* hContext = getHostContext())
     {
-        if (auto hostMenu = hostCtx->getContextMenuForParameter(param))
+        if (auto hostMenu = hContext->getContextMenuForParameter(param))
         {
-            auto menu = hostMenu->getEquivalentPopupMenu();
-            menu.showMenuAsync(
-                juce::PopupMenu::Options()
-                    .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1))
-                    .withTargetComponent(&slot.slider)
-                    .withParentComponent(this));
+            auto localPos = getLocalPoint(nullptr, screenPos);
+            hostMenu->showNativeMenu(localPos);
             return;
         }
     }
@@ -1604,7 +1745,9 @@ void BRAUN_AS42AudioProcessorEditor::showKnobContextMenu(KnobSlot& slot, juce::P
 
     juce::PopupMenu menu;
     const juce::String currentValueStr = slot.slider.getTextFromValue(slot.slider.getValue());
-    const juce::String title = slot.nameLabel.getText().toUpperCase() + "  (" + currentValueStr + ")";
+    const juce::String title = slot.nameLabel.getText().isNotEmpty()
+        ? (slot.nameLabel.getText().toUpperCase() + "  (" + currentValueStr + ")")
+        : (slot.paramId.toUpperCase() + "  (" + currentValueStr + ")");
     menu.addSectionHeader(title);
     menu.addSeparator();
 
@@ -1660,7 +1803,10 @@ void BRAUN_AS42AudioProcessorEditor::showKnobContextMenu(KnobSlot& slot, juce::P
             }
             else if (result == 4) // Exact Value
             {
-                currentSlot->slider.showTextBox();
+                if (safeThis->isNativeModeActive())
+                {
+                    currentSlot->slider.showTextBox();
+                }
             }
         });
 }
