@@ -536,5 +536,6 @@ export class ShimmerReverb {
       this.freezeWetGain.gain.setTargetAtTime(0.0, now, 0.25);
       this.freezeInputGain.gain.setTargetAtTime(1.0, now, 0.1);
     }
+    return this.isFrozen;
   }
 }

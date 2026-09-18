@@ -598,8 +598,10 @@ export class AmbientApp {
     const freezeBtn = document.getElementById('toggle-freeze');
     if (freezeBtn) {
       freezeBtn.addEventListener('click', () => {
-        const isFrozen = this.engine.toggleReverbFreeze();
+        const isFrozen = Boolean(this.engine.toggleReverbFreeze());
         freezeBtn.classList.toggle('is-active', isFrozen);
+        const led = freezeBtn.querySelector('.braun-led');
+        if (led) led.classList.toggle('is-active', isFrozen);
         const textEl = freezeBtn.querySelector('.braun-status-text');
         if (textEl) textEl.textContent = isFrozen ? 'FREEZE ON' : 'FREEZE OFF';
         this._emitJuceParamChange('shimmer_freeze', isFrozen ? 1.0 : 0.0);
