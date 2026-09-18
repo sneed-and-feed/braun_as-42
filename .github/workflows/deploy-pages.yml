@@ -1,0 +1,66 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'index.html'
+      - '.nojekyll'
+      - 'manifest.json'
+      - 'css/**'
+      - 'js/**'
+      - 'images/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Prepare Web Site Artifacts
+        run: |
+          mkdir -p _site
+          cp -r index.html manifest.json css js images _site/
+          touch _site/.nojekyll
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Sync to sneed-and-feed.github.io (Optional)
+        if: env.DEPLOY_TOKEN != ''
+        env:
+          DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git clone "https://x-access-token:${DEPLOY_TOKEN}@github.com/sneed-and-feed/sneed-and-feed.github.io.git" sneed-io
+          cp -r index.html manifest.json css js images sneed-io/
+          touch sneed-io/.nojekyll
+          cd sneed-io
+          git add -A
+          git diff --quiet && git diff --staged --quiet || (git commit -m "deploy: sync from braun_as-42 main" && git push origin main)

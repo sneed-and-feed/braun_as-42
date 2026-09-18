@@ -400,6 +400,45 @@ main {
   transform: rotate(-360deg);
 }
 
+/* --- Generic Dieter Rams Button --- */
+.braun-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background-color: var(--bg-panel-inset);
+  border: 1px solid var(--border-line);
+  border-radius: 3px;
+  height: 30px;
+  line-height: 1;
+  padding: 0 12px;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.braun-btn:hover {
+  border-color: var(--text-muted);
+  background-color: var(--knob-track);
+}
+
+.braun-btn:active,
+.braun-btn.is-active {
+  background-color: var(--braun-orange);
+  color: #FFF;
+  border-color: var(--braun-orange);
+  box-shadow: 0 0 10px var(--braun-orange-glow);
+}
+
+[data-theme="dark"] .braun-btn,
+[data-theme="matte-black"] .braun-btn,
 [data-theme="dark"] .braun-reset-btn,
 [data-theme="matte-black"] .braun-reset-btn,
 [data-theme="dark"] .braun-patch-btn,
@@ -413,6 +452,8 @@ main {
   color: #F0F0F0;
 }
 
+[data-theme="dark"] .braun-btn:hover,
+[data-theme="matte-black"] .braun-btn:hover,
 [data-theme="dark"] .braun-reset-btn:hover,
 [data-theme="matte-black"] .braun-reset-btn:hover,
 [data-theme="dark"] .braun-patch-btn:hover,

@@ -4,6 +4,11 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PluginProcessor.h"
 #include "web/WebResourceManager.h"
+#include "LookAndFeel/BraunLookAndFeel.h"
+#include "Parameters.h"
+#include <atomic>
+#include <vector>
+#include <memory>
 
 class BRAUN_AS42AudioProcessorEditor : public juce::AudioProcessorEditor,
                                        public juce::AudioProcessorValueTreeState::Listener,
@@ -19,6 +24,10 @@ public:
 
     // juce::AudioProcessorValueTreeState::Listener callback
     void parameterChanged(const juce::String& parameterID, float newValue) override;
+
+    // Native vs WebView GUI switching
+    bool isNativeModeActive() const noexcept { return useNativeUI; }
+    void setNativeMode(bool native);
 
     // Web integration helpers
     void handleParamChangeFromWeb(const juce::var& data);
@@ -47,6 +56,8 @@ private:
     BRAUN_AS42AudioProcessor& processorRef;
     braun::WebResourceManager resourceManager;
     juce::WebBrowserComponent webComponent;
+    braun::BraunLookAndFeel braunLookAndFeel;
+    bool useNativeUI { false };
     bool initialSyncDone { false };
 
     // Lock-free parameter change coalescing to avoid flooding Win32 message loop
@@ -62,6 +73,62 @@ private:
 
     void registerParameterListeners();
     void unregisterParameterListeners();
+
+    // Native JUCE UI Presentation Layer: Dieter Rams Vector Graphics
+    void drawBraunChassis(juce::Graphics& g, juce::Rectangle<int> bounds);
+    void drawCrtDisplay(juce::Graphics& g, juce::Rectangle<int> bounds);
+
+    // Native Header & Utility Controls
+    juce::TextButton viewModeButton;
+    juce::TextButton powerButton;
+    juce::TextButton themeButton;
+    juce::TextButton recordButton;
+
+    // Presets
+    juce::Label presetLabel;
+    juce::ComboBox presetComboBox;
+    juce::TextButton prevPresetBtn;
+    juce::TextButton nextPresetBtn;
+
+    // Performance Strip Controls
+    juce::TextButton chordTriggerBtn;
+    juce::TextButton impulseTriggerBtn;
+    juce::TextButton drone1ActiveBtn;
+    juce::TextButton drone2ActiveBtn;
+    juce::TextButton droneTrackMidiBtn;
+
+    // Parameter Attachment Slots
+    struct KnobSlot {
+        juce::String paramId;
+        juce::Slider slider;
+        juce::Label nameLabel;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+    };
+    std::vector<std::unique_ptr<KnobSlot>> knobSlots;
+
+    struct ButtonSlot {
+        juce::String paramId;
+        juce::ToggleButton button;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> attachment;
+    };
+    std::vector<std::unique_ptr<ButtonSlot>> buttonSlots;
+
+    struct ComboSlot {
+        juce::String paramId;
+        juce::Label label;
+        juce::ComboBox comboBox;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> attachment;
+    };
+    std::vector<std::unique_ptr<ComboSlot>> comboSlots;
+
+    void setupNativeControls();
+    void updateNativeControlLayout();
+
+    KnobSlot* findKnob(const juce::String& id);
+    ButtonSlot* findButton(const juce::String& id);
+    ComboSlot* findCombo(const juce::String& id);
+
+    static juce::File getSettingsFile();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BRAUN_AS42AudioProcessorEditor)
 };

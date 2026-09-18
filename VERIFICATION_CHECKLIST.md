@@ -6,7 +6,7 @@
 [![Latency](https://img.shields.io/badge/Algorithmic%20Latency-0%20Samples-orange?style=for-the-badge)](#latency-profile)
 [![License](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
 
-> **Document Version:** 1.3.2  
+> **Document Version:** 1.3.3  
 > **Status:** Verified & Certified  
 > **Engine:** Dual Web Audio API & Native C++20 DSP (AUv2 / VST3 / Standalone)  
 > **Aesthetic & Engineering Standard:** Dieter Rams Functionalist Audio Architecture (*"Weniger, aber besser"*)
@@ -194,5 +194,5 @@ The AS-42 employs a three-tier anti-clipping architecture to ensure clean, warm 
 ## 8. Verification Sign-Off
 
 * **Lead Verification Engineer:** Antigravity Audio Engineering Team
-* **Target Release:** BRAUN AS-42 v1.3.2 / sneed-and-feed.github.io
+* **Target Release:** BRAUN AS-42 v1.3.3 / sneed-and-feed.github.io
 * **Verification Outcome:** **100% PASS** — All criteria met with zero defects.

@@ -472,6 +472,15 @@ export class AmbientApp {
       });
     }
 
+    // Native DAW UI Switch Button
+    const uiModeBtn = document.getElementById('btn-ui-mode');
+    if (uiModeBtn) {
+      uiModeBtn.addEventListener('click', () => {
+        this._emitJuceParamChange('toggleNativeUI', 1);
+        if (typeof uiModeBtn.blur === 'function') uiModeBtn.blur();
+      });
+    }
+
     // Harold Budd Playable Timbre Waveform Toggles (Saw / Square / Sine / Felt)
     const pianoWaveBtns = document.querySelectorAll('.piano-wave-btn');
     pianoWaveBtns.forEach(btn => {

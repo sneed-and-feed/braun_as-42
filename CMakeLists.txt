@@ -8,7 +8,7 @@ if(APPLE)
     endif()
 endif()
 
-project(BRAUN_AS42_PROJECT VERSION 1.3.2 LANGUAGES C CXX)
+project(BRAUN_AS42_PROJECT VERSION 1.3.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -98,7 +98,7 @@ endif()
 
 juce_add_plugin(BRAUN_AS42
     COMPANY_NAME "Braun"
-    VERSION 1.3.2
+    VERSION 1.3.3
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
@@ -130,6 +130,7 @@ target_sources(BRAUN_AS42
         plugin/source/dsp/Wavetables.h
         plugin/source/web/WebResourceManager.cpp
         plugin/source/web/WebResourceManager.h
+        plugin/source/LookAndFeel/BraunLookAndFeel.h
 )
 
 target_include_directories(BRAUN_AS42
