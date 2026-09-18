@@ -45,7 +45,7 @@ copy /y "run.sh" "%TARGET_DIR%\" >nul
 robocopy "css" "%TARGET_DIR%\css" /E /NFL /NDL /NJH /NJS >nul
 robocopy "js" "%TARGET_DIR%\js" /E /NFL /NDL /NJH /NJS >nul
 robocopy "images" "%TARGET_DIR%\images" /E /NFL /NDL /NJH /NJS >nul
-robocopy "releases" "%TARGET_DIR%\releases" /E /NFL /NDL /NJH /NJS >nul
+robocopy "releases" "%TARGET_DIR%\releases" /MIR /NFL /NDL /NJH /NJS >nul
 
 echo [3/4] Checking git status ...
 cd /d "%TARGET_DIR%"
