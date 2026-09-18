@@ -2847,6 +2847,94 @@ void test_voice_steal_micro_ramp_declick_and_no_double_strike() {
 }
 
 // ============================================================================
+// Test 44: Shimmer Reverb Freeze Sustain and Clean Natural Decay
+// ============================================================================
+void test_shimmer_reverb_freeze_sustain_and_decay() {
+    braun::ShimmerReverbDsp reverb;
+    constexpr double sampleRate = 48000.0;
+    reverb.prepare(sampleRate);
+
+    braun::ShimmerReverbParams params;
+    params.decaySec = 2.5f;
+    params.damping = 0.50f;
+    params.shimmer = 0.30f;
+    params.mix = 0.85f;
+    params.freeze = false;
+
+    // 1. Play a rich chord (C major: C4, E4, G4, C5) into ShimmerReverbDsp for 1 second (48,000 samples)
+    constexpr int kOneSecSamples = 48000;
+    float outL = 0.0f, outR = 0.0f;
+    for (int i = 0; i < kOneSecSamples; ++i) {
+        const float t = static_cast<float>(i) / 48000.0f;
+        const float s1 = std::sin(braun::kTwoPi * 261.63f * t); // C4
+        const float s2 = std::sin(braun::kTwoPi * 329.63f * t); // E4
+        const float s3 = std::sin(braun::kTwoPi * 392.00f * t); // G4
+        const float s4 = std::sin(braun::kTwoPi * 523.25f * t); // C5
+        const float chordSample = (s1 + s2 + s3 + s4) * 0.22f;
+
+        outL = 0.0f;
+        outR = 0.0f;
+        reverb.processSample(chordSample, chordSample, params, outL, outR);
+    }
+
+    // 2. Set params.freeze = true and cut input audio to 0.0
+    params.freeze = true;
+
+    // 3. Verify that for the next 4 seconds (192,000 samples), outL and outR have continuous, strong audio signal (> 0.05 RMS)
+    constexpr int kFourSecSamples = 48000 * 4;
+    constexpr int kBlockSize = 2400; // 50 ms analysis windows
+    double blockSumSquaresL = 0.0;
+    double blockSumSquaresR = 0.0;
+
+    for (int i = 0; i < kFourSecSamples; ++i) {
+        outL = 0.0f;
+        outR = 0.0f;
+        reverb.processSample(0.0f, 0.0f, params, outL, outR);
+
+        TEST_ASSERT(!std::isnan(outL) && !std::isinf(outL), "Freeze produced NaN/Inf on Left");
+        TEST_ASSERT(!std::isnan(outR) && !std::isinf(outR), "Freeze produced NaN/Inf on Right");
+
+        blockSumSquaresL += outL * outL;
+        blockSumSquaresR += outR * outR;
+
+        if ((i + 1) % kBlockSize == 0) {
+            const float rmsL = static_cast<float>(std::sqrt(blockSumSquaresL / kBlockSize));
+            const float rmsR = static_cast<float>(std::sqrt(blockSumSquaresR / kBlockSize));
+
+            // Allow initial 100ms for freeze smoother ramp-up, then every block must have strong audio signal > 0.05 RMS
+            if (i >= 4800) {
+                TEST_ASSERT(rmsL > 0.05f, "Freeze Left RMS dropped below 0.05 during sustain: " + std::to_string(rmsL));
+                TEST_ASSERT(rmsR > 0.05f, "Freeze Right RMS dropped below 0.05 during sustain: " + std::to_string(rmsR));
+            }
+
+            blockSumSquaresL = 0.0;
+            blockSumSquaresR = 0.0;
+        }
+    }
+
+    // 4. Set params.freeze = false
+    params.freeze = false;
+
+    // 5. Verify that within 200 ms (9600 samples), outL and outR decay to silence (< 0.001)
+    constexpr int kDecaySamples = 9600; // 200 ms at 48 kHz
+    for (int i = 0; i < kDecaySamples; ++i) {
+        outL = 0.0f;
+        outR = 0.0f;
+        reverb.processSample(0.0f, 0.0f, params, outL, outR);
+    }
+
+    // Check that output is silent (< 0.001) after 200 ms
+    for (int i = 0; i < 480; ++i) {
+        outL = 0.0f;
+        outR = 0.0f;
+        reverb.processSample(0.0f, 0.0f, params, outL, outR);
+
+        TEST_ASSERT(std::abs(outL) < 0.001f, "Unfreeze Left did not decay to silence within 200ms: " + std::to_string(std::abs(outL)));
+        TEST_ASSERT(std::abs(outR) < 0.001f, "Unfreeze Right did not decay to silence within 200ms: " + std::to_string(std::abs(outR)));
+    }
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -2897,6 +2985,7 @@ int main() {
     RUN_TEST(test_predictable_voice_stealing_architecture);
     RUN_TEST(test_sustain_pedal_rapid_churn_hardening);
     RUN_TEST(test_voice_steal_micro_ramp_declick_and_no_double_strike);
+    RUN_TEST(test_shimmer_reverb_freeze_sustain_and_decay);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

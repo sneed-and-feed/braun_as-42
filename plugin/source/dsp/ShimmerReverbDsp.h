@@ -261,26 +261,20 @@ public:
         const float curShimmerSend = mShimmerSendSmoother.next();
         const float curShimmerFb = mShimmerFeedbackSmoother.next();
 
-        // 3. Freeze parameters update with contractive bounding (0.982f) & instant unfreeze quench
+        // 3. Freeze parameters update: contractive bounding (0.988f) & smooth clickless transitions
         if (params.freeze) {
             mFreezeFeedbackSmoother.setTimeConstant(0.050f);
-            mFreezeFeedbackSmoother.setTarget(0.982f);
+            mFreezeFeedbackSmoother.setTarget(0.988f);
             mFreezeWetSmoother.setTimeConstant(0.050f);
             mFreezeWetSmoother.setTarget(0.85f);
-            mFreezeInputSmoother.setTimeConstant(0.100f);
-            mFreezeInputSmoother.setTarget(0.12f);
+            mFreezeInputSmoother.setTimeConstant(0.080f);
+            mFreezeInputSmoother.setTarget(0.08f);
         } else {
-            // Immediate & reliable quench on unfreeze
-            if (mWasFrozen) {
-                // Falling edge: instantly cut feedback and duck input
-                mFreezeFeedbackSmoother.snapTo(0.0f);
-                mFreezeInputSmoother.snapTo(0.0f);
-            }
             mFreezeFeedbackSmoother.setTimeConstant(0.025f);
             mFreezeFeedbackSmoother.setTarget(0.0f);
-            mFreezeWetSmoother.setTimeConstant(0.030f);
+            mFreezeWetSmoother.setTimeConstant(0.028f);
             mFreezeWetSmoother.setTarget(0.0f);
-            mFreezeInputSmoother.setTimeConstant(0.060f);
+            mFreezeInputSmoother.setTimeConstant(0.030f);
             mFreezeInputSmoother.setTarget(1.0f);
         }
         mWasFrozen = params.freeze;
@@ -288,16 +282,6 @@ public:
         const float freezeFb = mFreezeFeedbackSmoother.next();
         const float freezeWet = mFreezeWetSmoother.next();
         const float freezeInGain = mFreezeInputSmoother.next();
-
-        if (!params.freeze && freezeWet < 0.0001f && (mFreezeBufferL[0] != 0.0f || mFreezeBufferR[0] != 0.0f)) {
-            // Clean quench: zero recirculating delay line memory once wet gain fades out
-            std::fill(mFreezeBufferL.begin(), mFreezeBufferL.end(), 0.0f);
-            std::fill(mFreezeBufferR.begin(), mFreezeBufferR.end(), 0.0f);
-            mFreezeHpFilterL.reset();
-            mFreezeHpFilterR.reset();
-            mFreezeFilterL.reset();
-            mFreezeFilterR.reset();
-        }
 
         // 4. Input mixing: input audio + shimmer feedback loop with true stereo separation
         constexpr float kPreGain = 0.85f;

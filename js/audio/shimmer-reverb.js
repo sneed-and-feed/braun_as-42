@@ -614,46 +614,27 @@ export class ShimmerReverb {
     };
 
     if (this.isFrozen) {
-      // Contractive feedback bounding: cap freeze feedback target to 0.982 (max 0.985)
+      // Contractive feedback bounding: cap freeze feedback target to 0.988 (sound sustains endlessly)
       cancelParam(this.freezeFeedbackL.gain, now);
       cancelParam(this.freezeFeedbackR.gain, now);
       cancelParam(this.freezeWetGain.gain, now);
       cancelParam(this.freezeInputGain.gain, now);
 
-      this.freezeFeedbackL.gain.setTargetAtTime(0.982, now, 0.05);
-      this.freezeFeedbackR.gain.setTargetAtTime(0.982, now, 0.05);
+      this.freezeFeedbackL.gain.setTargetAtTime(0.988, now, 0.05);
+      this.freezeFeedbackR.gain.setTargetAtTime(0.988, now, 0.05);
       this.freezeWetGain.gain.setTargetAtTime(0.85, now, 0.05);
-      this.freezeInputGain.gain.setTargetAtTime(0.12, now, 0.15);
+      this.freezeInputGain.gain.setTargetAtTime(0.08, now, 0.08);
     } else {
-      // Immediate & reliable quench on unfreeze:
-      // 1. Cancel in-flight scheduled values
+      // Clean, natural clickless release without premature quenching or double-ducking
       cancelParam(this.freezeFeedbackL.gain, now);
       cancelParam(this.freezeFeedbackR.gain, now);
       cancelParam(this.freezeWetGain.gain, now);
       cancelParam(this.freezeInputGain.gain, now);
 
-      // 2. Duck input immediately to prevent pumping audio into delay lines during decay
-      this.freezeInputGain.gain.setValueAtTime(0.0, now);
-
-      // 3. Rapidly ramp feedback and wet gains to 0.0 with tight clickless ramp
       this.freezeFeedbackL.gain.setTargetAtTime(0.0, now, 0.025);
       this.freezeFeedbackR.gain.setTargetAtTime(0.0, now, 0.025);
-      this.freezeWetGain.gain.setTargetAtTime(0.0, now, 0.030);
-
-      // Explicitly zero at now + 0.050s to guarantee complete silence within 50ms
-      if (typeof this.freezeFeedbackL.gain.setValueAtTime === 'function') {
-        this.freezeFeedbackL.gain.setValueAtTime(0.0, now + 0.050);
-        this.freezeFeedbackR.gain.setValueAtTime(0.0, now + 0.050);
-      }
-      if (typeof this.freezeWetGain.gain.setValueAtTime === 'function') {
-        this.freezeWetGain.gain.setValueAtTime(0.0, now + 0.050);
-      }
-
-      // 4. Restore freezeInputGain to 1.0 smoothly after the loop has been quenched
-      if (typeof this.freezeInputGain.gain.setValueAtTime === 'function') {
-        this.freezeInputGain.gain.setValueAtTime(0.0, now + 0.050);
-        this.freezeInputGain.gain.setTargetAtTime(1.0, now + 0.055, 0.060);
-      }
+      this.freezeWetGain.gain.setTargetAtTime(0.0, now, 0.028);
+      this.freezeInputGain.gain.setTargetAtTime(1.0, now, 0.030);
     }
     return this.isFrozen;
   }

@@ -6,7 +6,7 @@
 [![Latency](https://img.shields.io/badge/Algorithmic%20Latency-0%20Samples-orange?style=for-the-badge)](#latency-profile)
 [![License](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
 
-> **Document Version:** 1.3.8  
+> **Document Version:** 1.3.9  
 > **Status:** Verified & Certified  
 > **Engine:** Dual Web Audio API & Native C++20 DSP (AUv2 / VST3 / Standalone)  
 > **Aesthetic & Engineering Standard:** Dieter Rams Functionalist Audio Architecture (*"Weniger, aber besser"*)
@@ -18,7 +18,7 @@
 | Metric | Certified Result | Target Threshold | Status |
 | :--- | :--- | :--- | :--- |
 | **Node.js Automated Test Harness** | **465 / 465 Passed** (103 suites) | 100% Pass, 0 Failures | **PASS** |
-| **Native C++ DSP & Real-Time Suites** | **64 / 64 Passed** (3 suites) | 100% Pass, 0 Failures | **PASS** |
+| **Native C++ DSP & Real-Time Suites** | **65 / 65 Passed** (3 suites) | 100% Pass, 0 Failures | **PASS** |
 | **Fast Verification Checklist Suite** | **100% Passed** (`verify:checklist`) | 0 Errors | **PASS** |
 | **Real-Time Memory Safety** | **0 leaks, 0 heap allocations in `processBlock()`** | 0 bytes allocated | **PASS** |
 | **Numerical Integrity** | **0 NaNs, 0 Infinities, 0 Denormals** | Strict FP bounded | **PASS** |

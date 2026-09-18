@@ -2,7 +2,7 @@
 
 [![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
 [![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.6/BRAUN_AS42-v1.3.6-macOS-Universal.zip)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.8-Windows-x64.zip)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.9-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#build-linux)
 [![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(529%2F529)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -23,7 +23,7 @@
 | Platform | Distribution | Supported Formats | Quick Action / Build One-Liner |
 | :--- | :--- | :--- | :--- |
 | **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.6-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.6/BRAUN_AS42-v1.3.6-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
-| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.8-Windows-x64.zip`](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.8-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.8-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
+| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.9-Windows-x64.zip`](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.9-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.9-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
 | **Linux** | **Build from Source** (GCC/Clang) | VST3 · Standalone | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
 
 * **macOS (Apple Silicon ARM64 & Intel x86_64):** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton Live, Reaper, Bitwig), `BRAUN_AS42.component` (for Logic Pro & GarageBand), and `BRAUN_AS42.app` standalone desktop app (or build cleanly from source via standard CMake).
@@ -393,7 +393,18 @@ npm test
 
 ---
 
-## 6. What's New in v1.3.8
+## 6. What's New in v1.3.9
+
+* **Freeze Recirculation Engine Restoration & Standalone Audio Fix:**
+  * Diagnosed and eliminated fatal delay buffer zeroing bug (`std::fill` in `ShimmerReverbDsp.h` audio processing loop) that repeatedly wiped the circular freeze memory every ~0.387s / 0.491s when writing to index 0, causing silent or broken freeze behavior in the standalone application and VST3 plugin.
+  * **Continuous Audio Recording:** Ensured freeze delay buffers continuously record rolling incoming audio (`inL`, `inR`) with `freezeInGain = 1.0f`, `freezeFb = 0.0f`, and `freezeWet = 0.0f` while freeze is disengaged.
+  * **Lush Infinite Sustained Ambient Pad:** Configured `freezeFb` target to 0.988 (strictly bounded < 1.0, soft-limited at 0.88 with 75 Hz HPF sub-bass cutoff and 3200 Hz LPF damping) with `freezeWet = 0.85` and ducked `freezeInGain = 0.08`, delivering an endlessly sustaining ambient texture.
+  * **Natural Click-Free Release:** Removed premature quench and double-ducking artifacts; unfreezing now smoothly slews `freezeFb -> 0.0f` (~0.05s), `freezeWet -> 0.0f` (~0.08s), and `freezeInGain -> 1.0f` (~0.08s) for a natural, clickless decay to silence within 200 ms.
+  * **C++ & Web Audio Parity:** Synchronized exact freeze behavior across C++ DSP (`ShimmerReverbDsp.h`) and Web Audio (`shimmer-reverb.js`), verified with standalone C++ unit tests in `dsp_tests.cpp` (Test 44).
+
+---
+
+## 7. What's New in v1.3.8
 
 * **Sub-Bass Freeze Trapped Feedback Loop Elimination:**
   * Resolved critical DSP feedback bug where freezing in sub-bass drone mode (Voice 1 C1 ~32.7 Hz with 1.70x volume boost) accumulated resonant standing waves in the recirculating freeze delay lines (`freezeDelayL` 0.387s / `freezeDelayR` 0.491s), trapping the user in an endless sub-bass roar.

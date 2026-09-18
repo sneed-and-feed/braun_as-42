@@ -275,7 +275,7 @@ describe('AS-42 Sub-Bass Freeze Trapped Feedback Loop Safeguards', () => {
       assert.ok(maxCurveL >= 0.87, `Limiter curve maximum must reach ~0.88 (got ${maxCurveL})`);
     });
 
-    it('verifies feedback target is bounded to 0.982 (<= 0.985) when freeze is engaged', () => {
+    it('verifies feedback target is bounded to 0.988 (<= 0.990) when freeze is engaged', () => {
       const ctx = new MockContext();
       const rev = new ShimmerReverb(ctx);
 
@@ -285,8 +285,8 @@ describe('AS-42 Sub-Bass Freeze Trapped Feedback Loop Safeguards', () => {
       const eventsL = rev.freezeFeedbackL.gain.events.filter(e => e.type === 'setTargetAtTime');
       assert.ok(eventsL.length > 0, 'Must schedule setTargetAtTime on freeze feedback');
       const lastEvent = eventsL[eventsL.length - 1];
-      assert.ok(lastEvent.target <= 0.985, `Feedback target must be <= 0.985 to be contractive (got ${lastEvent.target})`);
-      assert.strictEqual(lastEvent.target, 0.982, 'Feedback target must be 0.982');
+      assert.ok(lastEvent.target <= 0.990, `Feedback target must be <= 0.990 to be contractive (got ${lastEvent.target})`);
+      assert.strictEqual(lastEvent.target, 0.988, 'Feedback target must be 0.988');
     });
   });
 
@@ -306,8 +306,8 @@ describe('AS-42 Sub-Bass Freeze Trapped Feedback Loop Safeguards', () => {
       const dcBlockL = makeBiquadHighpass(25, 0.707, sampleRate);
       const dcBlockR = makeBiquadHighpass(25, 0.707, sampleRate);
 
-      const feedbackGain = 0.982;
-      const freezeInGain = 0.12;
+      const feedbackGain = 0.988;
+      const freezeInGain = 0.08;
 
       // Soft limiter function matching makeFreezeLimiterCurve(2048, 0.88)
       const softLimiter = (x) => {
@@ -361,8 +361,8 @@ describe('AS-42 Sub-Bass Freeze Trapped Feedback Loop Safeguards', () => {
     });
   });
 
-  describe('3. Immediate & Reliable Quench on Unfreeze within 50 ms', () => {
-    it('cancels scheduled values and strictly zeroes feedback & wet gain at now + 50ms', () => {
+  describe('3. Clean Natural Click-Free Decay on Unfreeze within 200 ms', () => {
+    it('cancels scheduled values and smoothly slews feedback & wet gain to 0.0', () => {
       const ctx = new MockContext();
       const rev = new ShimmerReverb(ctx);
 
@@ -385,20 +385,30 @@ describe('AS-42 Sub-Bass Freeze Trapped Feedback Loop Safeguards', () => {
       const cancelEventsWet = rev.freezeWetGain.gain.events.filter(e => e.type === 'cancelAndHoldAtTime' || e.type === 'cancelScheduledValues');
       assert.ok(cancelEventsWet.length > 0, 'freezeWetGain must cancel pending values on unfreeze');
 
-      // Verify freezeInputGain is immediately ducked to 0.0 at unfreeze time (5.0s)
-      const inputGainAtUnfreeze = rev.freezeInputGain.gain.getValueAtTime(5.0);
-      assert.strictEqual(inputGainAtUnfreeze, 0.0, 'freezeInputGain must be zeroed immediately at unfreeze time');
+      // Verify feedback and wet gain target 0.0
+      const eventsFb = rev.freezeFeedbackL.gain.events.filter(e => e.type === 'setTargetAtTime');
+      const lastFbEvent = eventsFb[eventsFb.length - 1];
+      assert.strictEqual(lastFbEvent.target, 0.0);
 
-      // Verify that at t = 5.050s (50 ms after unfreeze), feedback gain and wet gain are strictly 0.0
-      const fbValAt50ms = rev.freezeFeedbackL.gain.getValueAtTime(5.050);
-      const wetValAt50ms = rev.freezeWetGain.gain.getValueAtTime(5.050);
+      const eventsWet = rev.freezeWetGain.gain.events.filter(e => e.type === 'setTargetAtTime');
+      const lastWetEvent = eventsWet[eventsWet.length - 1];
+      assert.strictEqual(lastWetEvent.target, 0.0);
 
-      assert.strictEqual(fbValAt50ms, 0.0, `freezeFeedbackL gain must be strictly 0.0 at now + 50ms (got ${fbValAt50ms})`);
-      assert.strictEqual(wetValAt50ms, 0.0, `freezeWetGain gain must be strictly 0.0 at now + 50ms (got ${wetValAt50ms})`);
+      // Verify input gain targets 1.0
+      const eventsIn = rev.freezeInputGain.gain.events.filter(e => e.type === 'setTargetAtTime');
+      const lastInEvent = eventsIn[eventsIn.length - 1];
+      assert.strictEqual(lastInEvent.target, 1.0);
 
-      // Verify that input gain is restored to 1.0 later (e.g. at 5.20s)
-      const inputGainRestored = rev.freezeInputGain.gain.getValueAtTime(5.20);
-      assert.ok(inputGainRestored > 0.85, `freezeInputGain must be restored smoothly after quench (got ${inputGainRestored})`);
+      // Verify that at t = 5.200s (200 ms after unfreeze), feedback and wet gain have decayed to < 0.001
+      const fbValAt200ms = rev.freezeFeedbackL.gain.getValueAtTime(5.200);
+      const wetValAt200ms = rev.freezeWetGain.gain.getValueAtTime(5.200);
+
+      assert.ok(fbValAt200ms < 0.001, `freezeFeedbackL gain must be < 0.001 at 200ms (got ${fbValAt200ms})`);
+      assert.ok(wetValAt200ms < 0.001, `freezeWetGain gain must be < 0.001 at 200ms (got ${wetValAt200ms})`);
+
+      // Verify that input gain is restored to 1.0 (e.g. at 5.20s > 0.90)
+      const inputGainRestored = rev.freezeInputGain.gain.getValueAtTime(5.200);
+      assert.ok(inputGainRestored > 0.90, `freezeInputGain must be restored smoothly (got ${inputGainRestored})`);
     });
   });
 

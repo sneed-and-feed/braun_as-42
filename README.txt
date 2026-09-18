@@ -1,4 +1,4 @@
-BRAUN AS 42 · Ambient Generative Synthesizer (v1.3.8)
+BRAUN AS 42 · Ambient Generative Synthesizer (v1.3.9)
 =====================================================
 
 Included in this release:
@@ -11,12 +11,13 @@ Included in this release:
    - Standalone desktop version with direct ASIO/WASAPI and hardware MIDI support.
    - Run directly, no DAW required.
 
-What's New in v1.3.8:
-- Sub-Bass Freeze Trapped Feedback Loop Fix: Resolved bug where freezing in sub-bass drone mode (C1, ~32.7 Hz with 1.70x volume boost) accumulated resonant standing waves and caused trapped feedback runaway.
-- Dedicated Freeze Sub-Bass Roll-off: Added 75 Hz 2-pole Butterworth highpass filtering on the freeze input and recirculating delay lines, isolating subsonic drone rumble (<65-80 Hz) from the freeze matrix.
-- Freeze Loop Soft-Limiter & Contractive Feedback: Inserted smooth C1 soft-limiter bounding loop peaks to <= 0.88 (below 0 dBFS) and capped feedback gain to 0.982.
-- Rapid & Clean Quench on Unfreeze / Panic: Cancelled in-flight AudioParam scheduling, immediately ducked freeze input gain, and rapidly silenced feedback and wet gains within 50 ms. Hooked freeze quench directly into releaseAllNotes() and panic().
-- Master Verification Suite: Extended tests certifying all 529 tests across the entire suite with 100% pass rate.
+What's New in v1.3.9:
+- Freeze Recirculation Engine Restoration: Fixed critical bug where std::fill in the ShimmerReverbDsp audio loop repeatedly zeroed circular delay memory every ~0.387s / 0.491s when writing to index 0, restoring full freeze functionality in the standalone app and VST3.
+- Continuous Audio Recording: Delay lines continuously record rolling incoming audio (inL, inR) with freezeInGain = 1.0f while freeze is off.
+- Endless Sustained Ambient Pad: freezeFb targets 0.988 with freezeWet = 0.85 and ducked input = 0.08, bounded < 1.0 and soft-limited at 0.88 with 75 Hz HPF and 3200 Hz LPF damping.
+- Clean Natural Release: Eliminated premature quench and double-ducking artifacts; unfreezing cleanly decays to silence within 200 ms without clicks or buffer wiping.
+- Full C++ and Web Audio Parity: Synchronized DSP engines and certified by comprehensive automated test suites.
 
 Project & Source: https://github.com/sneed-and-feed/braun_as-42
 Web Demo: https://sneed-and-feed.github.io/
+
