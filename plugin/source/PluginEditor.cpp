@@ -190,6 +190,14 @@ BRAUN_AS42AudioProcessorEditor::~BRAUN_AS42AudioProcessorEditor()
     setLookAndFeel(nullptr);
     stopTimer();
     unregisterParameterListeners();
+    for (auto& slot : knobSlots)
+    {
+        if (slot != nullptr)
+        {
+            slot->slider.removeMouseListener(this);
+            slot->nameLabel.removeMouseListener(this);
+        }
+    }
     knobSlots.clear();
     buttonSlots.clear();
     comboSlots.clear();
@@ -223,7 +231,10 @@ void BRAUN_AS42AudioProcessorEditor::parentHierarchyChanged()
 {
     AudioProcessorEditor::parentHierarchyChanged();
     hwndStylesConfigured = false;
-    ensureHwndStyles();
+    if (!useNativeUI)
+    {
+        ensureHwndStyles();
+    }
 }
 
 void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
@@ -232,7 +243,7 @@ void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
     if (auto* peer = getPeer())
     {
         HWND hwnd = static_cast<HWND>(peer->getNativeHandle());
-        if (hwnd == nullptr)
+        if (hwnd == nullptr || !::IsWindow(hwnd))
             return;
 
         // Apply WS_CLIPCHILDREN | WS_CLIPSIBLINGS to our own plugin HWND only.
@@ -246,6 +257,8 @@ void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
         // Also ensure child windows (WebView2 host HWNDs and render widget) enforce clipping
         int childCount = 0;
         ::EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
+            if (child == nullptr || !::IsWindow(child))
+                return TRUE;
             auto* count = reinterpret_cast<int*>(lParam);
             (*count)++;
             LONG_PTR childStyle = ::GetWindowLongPtr(child, GWL_STYLE);
@@ -832,9 +845,25 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
     props.setValue("useNativeUI", useNativeUI);
     props.saveIfNeeded();
 
-    webComponent.setVisible(!useNativeUI);
+    if (useNativeUI)
+    {
+        removeChildComponent(&webComponent);
+        webComponent.setVisible(false);
+        webComponent.setBounds(0, 0, 0, 0);
+    }
+    else
+    {
+        addAndMakeVisible(webComponent);
+        webComponent.setVisible(true);
+        webComponent.setBounds(getLocalBounds());
+        webComponent.toFront(false);
+        ensureHwndStyles();
+    }
+
     viewModeButton.setVisible(useNativeUI);
     viewModeButton.setButtonText("SWITCH TO WEB UI");
+    if (useNativeUI)
+        viewModeButton.toFront(true);
 
     const bool nativeVisible = useNativeUI;
     powerButton.setVisible(nativeVisible);
@@ -854,19 +883,44 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
     {
         slot->slider.setVisible(nativeVisible);
         slot->nameLabel.setVisible(nativeVisible);
+        if (nativeVisible)
+        {
+            slot->slider.toFront(false);
+            slot->nameLabel.toFront(false);
+        }
     }
     for (auto& slot : buttonSlots)
     {
         slot->button.setVisible(nativeVisible);
+        if (nativeVisible)
+            slot->button.toFront(false);
     }
     for (auto& slot : comboSlots)
     {
         slot->comboBox.setVisible(nativeVisible);
         slot->label.setVisible(nativeVisible);
+        if (nativeVisible)
+        {
+            slot->comboBox.toFront(false);
+            slot->label.toFront(false);
+        }
     }
 
     if (useNativeUI)
     {
+        powerButton.toFront(false);
+        themeButton.toFront(false);
+        recordButton.toFront(false);
+        presetLabel.toFront(false);
+        presetComboBox.toFront(false);
+        prevPresetBtn.toFront(false);
+        nextPresetBtn.toFront(false);
+        drone1ActiveBtn.toFront(false);
+        drone2ActiveBtn.toFront(false);
+        droneTrackMidiBtn.toFront(false);
+        chordTriggerBtn.toFront(false);
+        impulseTriggerBtn.toFront(false);
+
         updateNativeControlLayout();
     }
     repaint();
@@ -1024,6 +1078,9 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
 
         slot->attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             processorRef.getAPVTS(), paramId, slot->slider);
+
+        slot->slider.addMouseListener(this, true);
+        slot->nameLabel.addMouseListener(this, true);
 
         addChildComponent(slot->slider);
         addChildComponent(slot->nameLabel);
@@ -1489,4 +1546,123 @@ BRAUN_AS42AudioProcessorEditor::ComboSlot* BRAUN_AS42AudioProcessorEditor::findC
     }
     return nullptr;
 }
+
+void BRAUN_AS42AudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
+{
+    if (!useNativeUI)
+        return;
+
+    if (e.mods.isPopupMenu())
+    {
+        if (dynamic_cast<juce::TextEditor*>(e.eventComponent) != nullptr
+            || (e.eventComponent != nullptr && e.eventComponent->findParentComponentOfClass<juce::TextEditor>() != nullptr))
+            return;
+
+        for (auto& slot : knobSlots)
+        {
+            if (e.eventComponent == &slot->slider || slot->slider.isParentOf(e.eventComponent)
+                || e.eventComponent == &slot->nameLabel || slot->nameLabel.isParentOf(e.eventComponent))
+            {
+                // If a slider currently has an active text box open for exact entry, allow text editor to handle mouse events
+                for (int i = 0; i < slot->slider.getNumChildComponents(); ++i)
+                {
+                    auto* child = slot->slider.getChildComponent(i);
+                    if (dynamic_cast<juce::TextEditor*>(child) != nullptr)
+                        return;
+                    if (auto* lbl = dynamic_cast<juce::Label*>(child))
+                    {
+                        if (lbl->isBeingEdited())
+                            return;
+                    }
+                }
+
+                showKnobContextMenu(*slot, e.getScreenPosition());
+                return;
+            }
+        }
+    }
+}
+
+void BRAUN_AS42AudioProcessorEditor::showKnobContextMenu(KnobSlot& slot, juce::Point<int> screenPos)
+{
+    auto* param = processorRef.getAPVTS().getParameter(slot.paramId);
+    if (auto* hostCtx = getHostContext())
+    {
+        if (auto hostMenu = hostCtx->getContextMenuForParameter(param))
+        {
+            auto menu = hostMenu->getEquivalentPopupMenu();
+            menu.showMenuAsync(
+                juce::PopupMenu::Options()
+                    .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1))
+                    .withTargetComponent(&slot.slider)
+                    .withParentComponent(this));
+            return;
+        }
+    }
+
+    auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(param);
+
+    juce::PopupMenu menu;
+    const juce::String currentValueStr = slot.slider.getTextFromValue(slot.slider.getValue());
+    const juce::String title = slot.nameLabel.getText().toUpperCase() + "  (" + currentValueStr + ")";
+    menu.addSectionHeader(title);
+    menu.addSeparator();
+
+    juce::String defaultText;
+    float defaultDenormVal = 0.0f;
+    if (rangedParam != nullptr)
+    {
+        defaultDenormVal = rangedParam->getNormalisableRange().convertFrom0to1(rangedParam->getDefaultValue());
+        defaultText = rangedParam->getText(rangedParam->getDefaultValue(), 1024);
+        if (defaultText.isEmpty())
+            defaultText = slot.slider.getTextFromValue(defaultDenormVal);
+    }
+    else
+    {
+        defaultDenormVal = static_cast<float>(slot.slider.getMinimum());
+        defaultText = slot.slider.getTextFromValue(defaultDenormVal);
+    }
+
+    menu.addItem(1, "Reset to Default (" + defaultText + ")");
+    menu.addItem(2, "Set to Minimum (" + slot.slider.getTextFromValue(slot.slider.getMinimum()) + ")");
+    menu.addItem(3, "Set to Maximum (" + slot.slider.getTextFromValue(slot.slider.getMaximum()) + ")");
+    menu.addSeparator();
+    menu.addItem(4, "Set to Exact Value...");
+
+    juce::Component::SafePointer<BRAUN_AS42AudioProcessorEditor> safeThis(this);
+    const juce::String paramId = slot.paramId;
+
+    menu.showMenuAsync(
+        juce::PopupMenu::Options()
+            .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1))
+            .withTargetComponent(&slot.slider)
+            .withParentComponent(this),
+        [safeThis, paramId, defaultDenormVal](int result)
+        {
+            if (safeThis == nullptr || result <= 0)
+                return;
+
+            auto* currentSlot = safeThis->findKnob(paramId);
+            if (currentSlot == nullptr)
+                return;
+
+            if (result == 1) // Reset to Default
+            {
+                currentSlot->slider.setValue(defaultDenormVal, juce::sendNotificationSync);
+            }
+            else if (result == 2) // Minimum
+            {
+                currentSlot->slider.setValue(currentSlot->slider.getMinimum(), juce::sendNotificationSync);
+            }
+            else if (result == 3) // Maximum
+            {
+                currentSlot->slider.setValue(currentSlot->slider.getMaximum(), juce::sendNotificationSync);
+            }
+            else if (result == 4) // Exact Value
+            {
+                currentSlot->slider.showTextBox();
+            }
+        });
+}
+
 

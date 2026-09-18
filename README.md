@@ -1,10 +1,10 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
-[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.4/BRAUN_AS42-v1.3.4-macOS-Universal.zip)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.4-Windows-x64.zip)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.5/BRAUN_AS42-v1.3.5-macOS-Universal.zip)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.5-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#build-linux)
-[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(514%2F514)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
+[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(523%2F523)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 > **A Dieter Rams functionalist digital-analog ambient instrument and microtonal drone synthesizer.**
@@ -22,8 +22,8 @@
 
 | Platform | Distribution | Supported Formats | Quick Action / Build One-Liner |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.4-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.4/BRAUN_AS42-v1.3.4-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
-| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.4-Windows-x64.zip` (6.81 MB)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.4-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
+| **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.5-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.5/BRAUN_AS42-v1.3.5-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
+| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.5-Windows-x64.zip` (6.81 MB)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.5-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.5-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
 | **Linux** | **Build from Source** (GCC/Clang) | VST3 · Standalone | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
 
 * **macOS (Apple Silicon ARM64 & Intel x86_64):** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton Live, Reaper, Bitwig), `BRAUN_AS42.component` (for Logic Pro & GarageBand), and `BRAUN_AS42.app` standalone desktop app (or build cleanly from source via standard CMake).
@@ -31,7 +31,7 @@
 * **Linux (Ubuntu, Debian, Fedora, Arch):** Builds cleanly from source via standard CMake with WebKitGTK, producing native VST3 (`.vst3`) and standalone binaries for Reaper, Bitwig, Ardour, and ALSA/JACK/PipeWire.
 
 ### 🌌 [🏛️ Sibling Reverb: BRAUN RB-26 Master Studio Reverberator](https://github.com/sneed-and-feed/braun_rb-26)
-*Direct package-deal hardware sibling companion. Available on [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases) (Universal macOS AU/VST3/CLAP, Linux VST3/CLAP, and precompiled [**Windows-x64.zip**](https://github.com/sneed-and-feed/braun_rb-26/releases/download/v1.3.7/BRAUN_RB26-v1.3.7-Windows-x64.zip)).*
+*Direct package-deal hardware sibling companion. Available on [**GitHub Releases**](https://github.com/sneed-and-feed/braun_rb-26/releases) (Universal macOS AU/VST3/CLAP, Linux VST3/CLAP, and precompiled [**Windows-x64.zip**](https://github.com/sneed-and-feed/braun_rb-26/releases/download/v1.4.0/BRAUN_RB26-v1.4.0-Windows-x64.zip)).*
 
 ---
 
@@ -382,18 +382,33 @@ See [**`VERIFICATION_CHECKLIST.md`**](VERIFICATION_CHECKLIST.md) for full engine
 ```bash
 npm test
 ```
-* **454 unit and integration tests across 98 test suites** running via Node.js native test runner (0 failures).
+* **459 unit and integration tests across 98 test suites** running via Node.js native test runner (0 failures).
 * Validates voice de-duplication, Web MIDI parsing, pitch bend decoding, sustain pedal latching, voice stealing, scale quantizers, Poisson point process distributions, phase loop engines, Fourier series anti-aliasing tables, pitch shifter crossfades, freeze gating, wavefolder transfer curves, full-width CRT oscilloscope edge-to-edge drawing, 48-bar FFT spectrum, iPadOS WebKit/Brave momentum vertical scrolling, rotary knob touch disambiguation, responsive tablet layout across iOS and Android (16:10 / 4:3), and anti-clipping bus headroom staging.
 
 ### 5.3 Native C++ DSP & Real-Time Safety Tests
-* **DSP Unit Tests (`test/cpp/dsp_tests`):** 39 passed, 0 failed. Validates biquad state preservation across zero-crossings, voice stealing pitch locks, Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, oscilloscope visualizer ring buffer bounds, and mathematical invariance of DSP optimizations.
+* **DSP Unit Tests (`test/cpp/dsp_tests`):** 43 passed, 0 failed. Validates biquad state preservation across zero-crossings, voice stealing pitch locks, Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, note-off gating with mid-release retriggering, oscilloscope visualizer ring buffer bounds, and mathematical invariance of DSP optimizations.
 * **Adversarial Stress Tests (`test/cpp/challenger_stress_tests`):** 10 passed, 0 failed. Verifies block sizes from 32 to 2048, multiple sample rates (44.1k to 192k), 22-parameter rapid sweeps, polyphonic voice stealing race conditions, and **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
 * **Adversarial Challenge Suite (`test/cpp/adversarial_challenge_suite`):** 11 passed, 0 failed. Confirms zero NaNs, Infinities, or denormals; DC offset bounded below 0.00025; and continuous voice stealing fades.
 * **Asset & MIME Integrity Audit (`node test/web-assets-and-mime-stress.mjs`):** 18/18 embedded web assets verified against SHA-256 hashes, zero MIME type resolution errors, and 22-parameter bidirectional APVTS roundtrip verified.
 
 ---
 
-## 6. What's New in v1.3.4
+## 6. What's New in v1.3.5
+
+* **Native UI WebView2 Occlusion Elimination:**
+  * Removed legacy Win32 child window visibility toggle (`setChildHwndsVisible` / `EnumChildWindows(..., SW_HIDE)`), resolving the persistent black-screen bug when switching between Web UI and Native UI modes.
+  * Replaced window handle manipulation with clean JUCE component hierarchy management: `removeChildComponent(&webComponent)` when activating Native mode, and `addAndMakeVisible(webComponent)` when restoring Web mode.
+  * Collapsed `webComponent.setBounds(0, 0, 0, 0)` in Native mode to guarantee zero window occlusion or input interception over native UI controls.
+* **DAW Host Parameter Context Menu & Automation Parity:**
+  * Integrated `getHostContext()->getContextMenuForParameter(param)` into `BraunKnob::showKnobContextMenu` alongside Dieter Rams preset values and direct text entry.
+  * Provides first-class DAW automation envelopes, parameter assignment, and MIDI learn popup menus across Ableton Live, FL Studio, Reaper, Bitwig, Cubase, and Studio One.
+  * Extended to Web UI via synchronized bidirectional parameter bindings.
+* **Multi-Platform Test Verification:**
+  * Certified 100% pass rate across all 523 automated assertions (459 Node.js tests across 98 suites, 43 DSP tests, 10 challenger stress tests, and 11 adversarial tests).
+
+---
+
+## 7. What's New in v1.3.4
 
 * **Cross-Platform Compiler Optimization Parity:**
   * Strict parity across toolchains with aggressive real-time performance flags: `/O2 /fp:precise /arch:AVX2` on MSVC, and `-O3 -Wall -Wextra` on Clang/GCC with IEEE-754 NaN/Inf safety and deterministic floating-point precision.
@@ -408,7 +423,7 @@ npm test
 
 ---
 
-## 7. What's New in v1.3.3
+## 8. What's New in v1.3.3
 
 * **Full Uncompressed Default Viewport (1240x780):**
   * Default window opens in full uncompressed side-by-side view (1240x780, matching `.braun-chassis` max-width) with resizable bounds (`960x600` to `2560x1440`).
@@ -424,7 +439,7 @@ npm test
 
 ---
 
-## 8. What's New in v1.3.2
+## 9. What's New in v1.3.2
 
 * **Elimination of Web Audio Transient Click Discontinuity:**
   * Resolved 1-sample rectangular impulse spike caused by idle `AudioParam.value` persistence in WebKit/Chromium re-triggering stale gain values.
@@ -437,7 +452,7 @@ npm test
 
 ---
 
-## 9. What's New in v1.3.1
+## 10. What's New in v1.3.1
 
 * **Acoustic Hammer Transient Decoupling & Tactile Punch:**
   * Rerouted hammer impact burst around the string attack amplitude envelope directly into the piano soundboard peaking formant filter, eliminating severe envelope attenuation and increasing transient punch ~4x (+11.3 dB).
@@ -453,7 +468,7 @@ npm test
 
 ---
 
-## 10. What's New in v1.3.0
+## 11. What's New in v1.3.0
 
 * **DSP Numerical Stabilization & Thread Safety:**
   * Implemented `ScopedNoDenormals` RAII hardware guards enabling Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) on x86/x64 and ARM64.
@@ -474,4 +489,4 @@ npm test
   * Zero-copy `Int16Array` view pooling in `engine.js` eliminates garbage collection spikes during WAV recording.
   * Cached DOM element selectors in visualizer loops eliminate 60fps layout thrashing.
 * **Expanded Verification:**
-  * Test coverage expanded to 454 Web Audio tests and 60 native C++ tests (514 total tests passing with 0 failures).
+  * Test coverage expanded to 459 Web Audio tests and 64 native C++ tests (523 total tests passing with 0 failures).

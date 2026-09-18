@@ -407,6 +407,11 @@ public:
         return juce::Font(juce::FontOptions(10.0f, juce::Font::bold));
     }
 
+    juce::Font getPopupMenuFont() override
+    {
+        return juce::Font(juce::FontOptions(11.0f, juce::Font::plain));
+    }
+
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
     {
         g.fillAll(findColour(juce::PopupMenu::backgroundColourId));

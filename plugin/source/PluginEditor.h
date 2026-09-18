@@ -21,6 +21,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void parentHierarchyChanged() override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
     // juce::AudioProcessorValueTreeState::Listener callback
     void parameterChanged(const juce::String& parameterID, float newValue) override;
@@ -123,6 +124,7 @@ private:
 
     void setupNativeControls();
     void updateNativeControlLayout();
+    void showKnobContextMenu(KnobSlot& slot, juce::Point<int> screenPos);
 
     KnobSlot* findKnob(const juce::String& id);
     ButtonSlot* findButton(const juce::String& id);
