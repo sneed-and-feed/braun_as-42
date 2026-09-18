@@ -414,6 +414,10 @@ export class BraunKnob {
     let clamped = Math.max(this.min, Math.min(this.max, val));
     if (this.step && !this.isLog) {
       clamped = Math.round((clamped - this.min) / this.step) * this.step + this.min;
+      const decimals = this.precision !== undefined ? this.precision : (this.step.toString().split('.')[1] || '').length;
+      if (decimals > 0) {
+        clamped = Number(clamped.toFixed(decimals));
+      }
       clamped = Math.max(this.min, Math.min(this.max, clamped));
     }
 

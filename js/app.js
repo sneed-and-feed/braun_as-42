@@ -241,6 +241,7 @@ export class AmbientApp {
     this._initialized = false;
     this._knobsBuilt = false;
     this._isApplyingPreset = false;
+    this.currentPresetKey = 'DEFAULT';
     this._resetTimer = null;
     this._presetTimer = null;
 
@@ -879,7 +880,14 @@ export class AmbientApp {
    * @param {number} [options.duration=300]
    */
   applyPreset(presetKey, { animate = true, duration = 300 } = {}) {
+    if (presetKey === 'CUSTOM') {
+      if (this._loadedPatch) {
+        return this.loadPatch(this._loadedPatch, { animate, duration });
+      }
+      presetKey = 'DEFAULT';
+    }
     const preset = PRESETS[presetKey] || PRESETS.DEFAULT;
+    this.currentPresetKey = preset.id || presetKey;
     this._isApplyingPreset = true;
     if (this._presetTimer) {
       clearTimeout(this._presetTimer);
@@ -887,7 +895,9 @@ export class AmbientApp {
     }
 
     // 1. Update preset selector dropdown if out of sync
-    const presetSelect = document.getElementById('select-preset');
+    const presetSelect = (typeof document !== 'undefined' && typeof document.getElementById === 'function')
+      ? document.getElementById('select-preset')
+      : null;
     if (presetSelect && presetSelect.value !== preset.id) {
       presetSelect.value = preset.id;
     }
@@ -1032,38 +1042,87 @@ export class AmbientApp {
    * @param {number} [options.duration=350]
    */
   resetAllKnobs({ animate = true, duration = 350 } = {}) {
-    const resetBtn = document.getElementById('btn-reset-all');
+    const resetBtn = (typeof document !== 'undefined' && typeof document.getElementById === 'function')
+      ? document.getElementById('btn-reset-all')
+      : null;
     if (resetBtn) {
       if (this._resetTimer) {
         clearTimeout(this._resetTimer);
         this._resetTimer = null;
       }
-      resetBtn.classList.remove('is-active');
+      if (resetBtn.classList && typeof resetBtn.classList.remove === 'function') {
+        resetBtn.classList.remove('is-active');
+      }
       if (typeof resetBtn.offsetWidth === 'number') {
         void resetBtn.offsetWidth; // Force CSS reflow to re-trigger smooth rotation cleanly
       }
-      resetBtn.classList.add('is-active');
+      if (resetBtn.classList && typeof resetBtn.classList.add === 'function') {
+        resetBtn.classList.add('is-active');
+      }
       this._resetTimer = setTimeout(() => {
-        resetBtn.classList.remove('is-active');
+        if (resetBtn.classList && typeof resetBtn.classList.remove === 'function') {
+          resetBtn.classList.remove('is-active');
+        }
         this._resetTimer = null;
       }, duration);
     }
 
-    // Turn off reverb freeze if active
-    if (this.engine.reverbParams.freeze) {
-      const freezeBtn = document.getElementById('toggle-freeze');
-      if (freezeBtn) {
-        freezeBtn.click();
-      } else {
-        this.engine.toggleReverbFreeze();
+    // Turn off reverb freeze cleanly if active
+    const freezeBtn = (typeof document !== 'undefined' && typeof document.getElementById === 'function')
+      ? document.getElementById('toggle-freeze')
+      : null;
+    const isFreezeActive = Boolean(
+      (this.engine && this.engine.reverbParams && this.engine.reverbParams.freeze) ||
+      (freezeBtn && freezeBtn.classList && freezeBtn.classList.contains('is-active'))
+    );
+    if (isFreezeActive) {
+      if (this.engine) {
+        if (typeof this.engine.setReverbFreeze === 'function') {
+          this.engine.setReverbFreeze(false);
+        } else if (this.engine.reverbParams && this.engine.reverbParams.freeze && typeof this.engine.toggleReverbFreeze === 'function') {
+          this.engine.toggleReverbFreeze();
+        } else if (this.engine.reverbParams) {
+          this.engine.reverbParams.freeze = false;
+        }
       }
+      if (freezeBtn) {
+        if (freezeBtn.classList && typeof freezeBtn.classList.remove === 'function') {
+          freezeBtn.classList.remove('is-active');
+        }
+        const textEl = (typeof freezeBtn.querySelector === 'function')
+          ? freezeBtn.querySelector('.braun-status-text')
+          : null;
+        if (textEl) textEl.textContent = 'FREEZE OFF';
+      }
+      this._emitJuceParamChange('shimmer_freeze', 0.0);
     }
 
-    // Apply DEFAULT calibrated preset
-    this.applyPreset('DEFAULT', { animate, duration });
+    // Apply calibrated preset corresponding to the currently selected preset or custom patch
+    const presetSelect = (typeof document !== 'undefined' && typeof document.getElementById === 'function')
+      ? document.getElementById('select-preset')
+      : null;
+    const targetPreset = (presetSelect && presetSelect.value)
+      ? presetSelect.value
+      : (this.currentPresetKey || 'DEFAULT');
 
-    // Center Vector Pad to origin without stomping calibrated preset knobs
-    if (this.vectorPad) {
+    // Handle loaded custom patch if currently active
+    if ((targetPreset === 'CUSTOM' || this.currentPresetKey === 'CUSTOM') && this._loadedPatch) {
+      // Revert base parameters to calibrated defaults first so unmentioned parameters return to standard calibration
+      this.applyPreset('DEFAULT', { animate: false });
+      // Re-apply the loaded patch
+      this.loadPatch(this._loadedPatch, { animate, duration });
+      if (presetSelect) {
+        presetSelect.value = 'CUSTOM';
+      }
+      this.currentPresetKey = 'CUSTOM';
+      return;
+    }
+
+    this.applyPreset(targetPreset, { animate, duration });
+
+    // Center Vector Pad to origin only if the target preset does not specify custom coordinates
+    const targetPresetObj = PRESETS[targetPreset] || PRESETS.DEFAULT;
+    if (this.vectorPad && (targetPresetObj.vectorX === undefined || targetPresetObj.vectorY === undefined)) {
       this.vectorPad.resetToCenter(false, animate, duration);
     }
   }
@@ -1160,10 +1219,48 @@ export class AmbientApp {
   loadPatch(patch, { animate = true, duration = 350 } = {}) {
     if (!patch || typeof patch !== 'object') return false;
 
+    // Cache the loaded patch for deterministic restoration via Reset All or preset switcher
+    this._loadedPatch = JSON.parse(JSON.stringify(patch));
+    this.currentPresetKey = (patch.id && PRESETS[patch.id]) ? patch.id : 'CUSTOM';
+
     this._isApplyingPreset = true;
     if (this._presetTimer) {
       clearTimeout(this._presetTimer);
       this._presetTimer = null;
+    }
+
+    // Update preset selector dropdown if available
+    const presetSelect = (typeof document !== 'undefined' && typeof document.getElementById === 'function')
+      ? document.getElementById('select-preset')
+      : null;
+    if (presetSelect) {
+      if (this.currentPresetKey === 'CUSTOM') {
+        let customOpt = null;
+        if (typeof presetSelect.querySelector === 'function') {
+          customOpt = presetSelect.querySelector('option[value="CUSTOM"]');
+        }
+        if (!customOpt && presetSelect.children && Array.isArray(presetSelect.children)) {
+          customOpt = presetSelect.children.find(c => c && (c.value === 'CUSTOM' || (typeof c.getAttribute === 'function' && c.getAttribute('value') === 'CUSTOM')));
+        }
+        if (!customOpt && typeof document.createElement === 'function' && typeof presetSelect.appendChild === 'function') {
+          customOpt = document.createElement('option');
+          customOpt.value = 'CUSTOM';
+          if (typeof customOpt.setAttribute === 'function') {
+            customOpt.setAttribute('value', 'CUSTOM');
+          }
+          presetSelect.appendChild(customOpt);
+        }
+        if (customOpt) {
+          if (customOpt.style) customOpt.style.display = '';
+          const patchLabel = patch.name
+            ? (patch.name.length > 28 ? patch.name.slice(0, 28) + '…' : patch.name)
+            : 'CUSTOM PATCH';
+          customOpt.textContent = patchLabel;
+        }
+        presetSelect.value = 'CUSTOM';
+      } else {
+        presetSelect.value = this.currentPresetKey;
+      }
     }
 
     // 1. Root, Scale, and Tuning
@@ -1210,9 +1307,10 @@ export class AmbientApp {
 
     // 2. Knobs
     if (this.knobs && patch.knobs && typeof patch.knobs === 'object') {
+      const shouldAnimate = animate && duration > 0 && typeof requestAnimationFrame === 'function';
       Object.entries(patch.knobs).forEach(([key, val]) => {
         if (this.knobs[key]) {
-          if (animate && typeof this.knobs[key].animateTo === 'function') {
+          if (shouldAnimate && typeof this.knobs[key].animateTo === 'function') {
             this.knobs[key].animateTo(val, duration, null, false, false);
           } else if (typeof this.knobs[key].setValue === 'function') {
             this.knobs[key].setValue(val, false);
@@ -1220,7 +1318,7 @@ export class AmbientApp {
         }
       });
       if (patch.knobs.masterVolume !== undefined && this.knobs.masterVol && patch.knobs.masterVol === undefined) {
-        if (animate && typeof this.knobs.masterVol.animateTo === 'function') {
+        if (shouldAnimate && typeof this.knobs.masterVol.animateTo === 'function') {
           this.knobs.masterVol.animateTo(patch.knobs.masterVolume, duration, null, false, false);
         } else if (typeof this.knobs.masterVol.setValue === 'function') {
           this.knobs.masterVol.setValue(patch.knobs.masterVolume, false);
@@ -1930,7 +2028,7 @@ export class AmbientApp {
       label: 'DETUNE',
       min: -35,
       max: 35,
-      step: 0.5,
+      step: 0.1,
       value: id === 1 ? 2.5 : -3.2,
       precision: 1,
       unit: '¢',
@@ -1976,10 +2074,11 @@ export class AmbientApp {
     // LFO Drift
     this.knobs[`${prefix}Lfo`] = new BraunKnob(document.getElementById(`knob-${prefix}-lfo`), {
       label: 'LFO DRIFT',
-      min: 0.02,
+      min: 0.01,
       max: 1.5,
-      step: 0.02,
+      step: 0.01,
       value: 0.12,
+      precision: 2,
       unit: 'Hz',
       size: 'small',
       onChange: (v) => this.engine.setDroneLfo(id, v)
@@ -2036,7 +2135,7 @@ export class AmbientApp {
 
   _emitJuceParamChange(id, value) {
     try {
-      const backend = window.__JUCE__?.backend;
+      const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
       if (backend && typeof backend.emitEvent === 'function') {
         backend.emitEvent('paramChange', { id, value });
       }
@@ -2047,7 +2146,7 @@ export class AmbientApp {
 
   _emitJuceNoteOn(note, velocity = 0.65) {
     try {
-      const backend = window.__JUCE__?.backend;
+      const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
       if (backend && typeof backend.emitEvent === 'function') {
         backend.emitEvent('noteOn', { note: Math.round(note), velocity });
       }
@@ -2058,7 +2157,7 @@ export class AmbientApp {
 
   _emitJuceNoteOff(note, velocity = 0.0) {
     try {
-      const backend = window.__JUCE__?.backend;
+      const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
       if (backend && typeof backend.emitEvent === 'function') {
         backend.emitEvent('noteOff', { note: Math.round(note), velocity });
       }
@@ -2069,7 +2168,7 @@ export class AmbientApp {
 
   _emitJuceAllNotesOff() {
     try {
-      const backend = window.__JUCE__?.backend;
+      const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
       if (backend && typeof backend.emitEvent === 'function') {
         backend.emitEvent('allNotesOff', {});
       }

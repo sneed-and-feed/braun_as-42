@@ -8,15 +8,34 @@ if(APPLE)
     endif()
 endif()
 
-project(BRAUN_AS42_PROJECT VERSION 1.3.3 LANGUAGES C CXX)
+project(BRAUN_AS42_PROJECT VERSION 1.3.4 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Enable MSVC UTF-8 character encoding and warning level 4
+# Ensure position independent code for audio plugin shared objects across Unix/Linux
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# ==============================================================================
+# Real-Time Compiler Optimizations & Cross-Platform Warning Flags
+# ==============================================================================
 if(MSVC)
-    add_compile_options(/utf-8 /W4)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    # /utf-8: Enforce UTF-8 source and execution charset
+    # /W4: High warning level for Braun sources
+    # /O2: Maximum speed optimization
+    # /fp:precise: Strict IEEE-754 adherence (preserves NaN/Inf checks & prevents FMA drift)
+    add_compile_options(/utf-8 /W4 /O2 /fp:precise)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64|x64")
+        add_compile_options(/arch:AVX2)
+    endif()
+else()
+    # -Wall -Wextra: High warning coverage without third-party framework -Wpedantic noise
+    # -O3: Maximum optimization with loop vectorization
+    # Note: -ffast-math is omitted to maintain strict IEEE-754 semantics, prevent
+    # -Wnan-infinity-disabled warnings on Clang, and preserve NaN/Inf safety checks in audio DSP.
+    add_compile_options(-Wall -Wextra -O3)
 endif()
 
 # ==============================================================================
@@ -98,7 +117,7 @@ endif()
 
 juce_add_plugin(BRAUN_AS42
     COMPANY_NAME "Braun"
-    VERSION 1.3.3
+    VERSION 1.3.4
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE

@@ -1136,12 +1136,17 @@ export class AudioEngine {
     if (this.shimmerReverb) this.shimmerReverb.setWet(wet);
   }
 
-  toggleReverbFreeze() {
-    this.reverbParams.freeze = !this.reverbParams.freeze;
-    if (this.shimmerReverb) {
-      return this.shimmerReverb.toggleFreeze();
+  setReverbFreeze(freeze) {
+    const isFrozen = Boolean(freeze);
+    this.reverbParams.freeze = isFrozen;
+    if (this.shimmerReverb && typeof this.shimmerReverb.setFreeze === 'function') {
+      return this.shimmerReverb.setFreeze(isFrozen);
     }
-    return this.reverbParams.freeze;
+    return isFrozen;
+  }
+
+  toggleReverbFreeze() {
+    return this.setReverbFreeze(!this.reverbParams.freeze);
   }
 
   /**

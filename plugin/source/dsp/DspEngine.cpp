@@ -51,6 +51,39 @@ void DspEngine::reset() noexcept {
     mDroneGateGain = 0.0f;
 }
 
+// ============================================================================
+// MIDI Event Dispatcher & Transparent Voice Stealing Architecture
+// ============================================================================
+// The synthesizer implements an explicit, deterministic 4-tier polyphonic
+// voice allocation and stealing architecture across its 24-voice pool:
+//
+// 1. Tier 1 (Inactive Voices - Highest Allocation Priority):
+//    Unassigned voices (!v.isActive()). Allocated cleanly via cyclic round-robin
+//    scanning without interrupting any ongoing sound.
+//
+// 2. Tier 2 (Released Voices - Highest Stealing Priority):
+//    Voices that have received NoteOff and are executing their natural decay/
+//    release envelope (mEnvStage == Release, neither physically held nor pedal-latched).
+//    These are stolen first before interrupting sustained musical material.
+//
+// 3. Tier 3 (Pedal-Latched Voices - Medium Stealing Priority):
+//    Voices whose physical key has been released by the performer, but whose
+//    dampers remain lifted by the sustain pedal (mIsPedalLatched == true).
+//    These are preserved as long as released notes exist, but surrendered before
+//    physically held keys.
+//
+// 4. Tier 4 (Physically Held Voices - Sacred Priority):
+//    Voices whose physical keyboard keys are actively held down by the performer
+//    (mIsPhysicallyHeld == true). These are strictly protected from voice theft
+//    unless all 24 voices are simultaneously held down.
+//
+// Within the selected active tier (Tier 2 -> Tier 3 -> Tier 4), the candidate is
+// chosen according to VoiceStealPolicy:
+// - OldestNoteFirst (Default FIFO): Protects notes triggered within the last 60ms
+//   to avoid cutting off chords, then steals the oldest started voice.
+// - RoundRobin: Cyclic voice rotation starting from mVoiceIndex.
+// - LowestVolume: Steals the voice with minimum envelope gain (legacy heuristic).
+// ============================================================================
 void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
     const uint8_t command = event.status & 0xF0;
 
@@ -65,14 +98,18 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
                     mLastTrackedMidiNote = static_cast<int>(note);
                 }
                 const float velNorm = static_cast<float>(vel) / 127.0f;
-                mFeltPiano.noteOn(note, velNorm, 3.5f, true, false);
+                // Physical key down: initialize as physically held (Tier 4), not pedal-latched
+                mFeltPiano.noteOn(note, velNorm, 3.5f, true, false, false);
             } else {
                 // Note-On with velocity 0 is Note-Off
                 if (note < 128) {
                     mHeldKeys.reset(note);
                     if (mSustainPedalDown) {
+                        // Sustain pedal is active: latch note and transition voice from Tier 4 to Tier 3
                         mLatchedKeys.set(note, true);
+                        mFeltPiano.setNotePedalLatched(note, true);
                     } else {
+                        // Sustain pedal is up: release voice immediately (transitions to Tier 2 release envelope)
                         mFeltPiano.noteOff(note);
                     }
 
@@ -93,8 +130,14 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
             if (note < 128) {
                 mHeldKeys.reset(note);
                 if (mSustainPedalDown) {
+                    // Physical key released while sustain pedal is held:
+                    // Voice remains sounding but transitions from Tier 4 (physically held)
+                    // to Tier 3 (pedal-latched). If voices must be stolen, Tier 3 is stolen
+                    // before physically held keys.
                     mLatchedKeys.set(note, true);
+                    mFeltPiano.setNotePedalLatched(note, true);
                 } else {
+                    // Sustain pedal is up: release note immediately into Tier 2 (Release envelope)
                     mFeltPiano.noteOff(note);
                 }
 
@@ -112,10 +155,13 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
         case 0xB0: { // Control Change
             const uint8_t ccNum = event.data1;
             const uint8_t ccVal = event.data2;
-            if (ccNum == 64) { // Sustain Pedal
+            if (ccNum == 64) { // Sustain Pedal (Damper)
                 const bool pedalDown = (ccVal >= 64);
                 if (mSustainPedalDown && !pedalDown) {
-                    // Pedal released: release all latched voices whose physical keys are not held
+                    // Sustain pedal released:
+                    // For each latched note whose physical key is no longer held down,
+                    // trigger noteOff() to transition it from Tier 3 (pedal-latched)
+                    // into Tier 2 (natural acoustic soundboard/damper release decay).
                     for (size_t n = 0; n < 128; ++n) {
                         if (mLatchedKeys.test(n)) {
                             if (!mHeldKeys.test(n)) {
@@ -124,6 +170,7 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
                         }
                     }
                     mLatchedKeys.reset();
+                    mFeltPiano.releasePedalLatchedVoices();
                 }
                 mSustainPedalDown = pedalDown;
             } else if (ccNum == 1) { // Modulation Wheel (Felt Tone damping)
@@ -136,6 +183,7 @@ void DspEngine::handleMidiEvent(const MidiEvent& event) noexcept {
                         }
                     }
                     mLatchedKeys.reset();
+                    mFeltPiano.releasePedalLatchedVoices();
                     mSustainPedalDown = false;
                 }
                 mCurrentModWheel = 0.0f;

@@ -1084,8 +1084,14 @@ describe('UI Initialization and DOM Wiring Verification', () => {
     assert.strictEqual(app.vectorPad.x, PRESETS.VANGELIS.vectorX, 'Vector X must match Vangelis preset');
     assert.strictEqual(app.vectorPad.y, PRESETS.VANGELIS.vectorY, 'Vector Y must match Vangelis preset');
 
-    // 3. Reset All must center vector pad to 0.50, 0.50
+    // 3. Reset All must restore calibrated preset coordinates for active preset (VANGELIS)
     const resetBtn = elementsById.get('btn-reset-all');
+    resetBtn.click();
+    assert.strictEqual(app.vectorPad.x, PRESETS.VANGELIS.vectorX, 'Vector X must match Vangelis preset coordinates');
+    assert.strictEqual(app.vectorPad.y, PRESETS.VANGELIS.vectorY, 'Vector Y must match Vangelis preset coordinates');
+
+    // 4. Switching to DEFAULT and resetting returns to center 0.50
+    presetSelect.change('DEFAULT');
     resetBtn.click();
     assert.strictEqual(app.vectorPad.x, 0.50, 'Vector X must return to default center 0.50');
     assert.strictEqual(app.vectorPad.y, 0.50, 'Vector Y must return to default center 0.50');
@@ -1516,5 +1522,297 @@ describe('UI Initialization and DOM Wiring Verification', () => {
 
     assert.strictEqual(chordTriggered, true, 'Numpad1 must trigger chord macro');
     app.playSurface.startChord = origStartChord;
+  });
+
+  it('verifies Reset All resets parameters to the calibrated defaults of the currently selected preset and preserves dropdown selection', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetSelect = elementsById.get('select-preset');
+    const resetBtn = elementsById.get('btn-reset-all');
+
+    // 1. Select non-default preset (VANGELIS / CS-80 Brass)
+    presetSelect.change('VANGELIS');
+    assert.strictEqual(presetSelect.value, 'VANGELIS');
+    assert.strictEqual(app.currentPresetKey, 'VANGELIS');
+    assert.strictEqual(app.knobs.feltTone.value, 80);
+    assert.strictEqual(app.knobs.masterDrive.value, 28);
+    assert.strictEqual(app.vectorPad.x, 0.81);
+    assert.strictEqual(app.vectorPad.y, 0.70);
+    assert.strictEqual(app.engine.feltParams.waveform, 'cs80');
+
+    // 2. Tweak knobs and alter vector pad coordinates
+    app.knobs.feltTone.setValue(25);
+    app.knobs.masterDrive.setValue(95);
+    app.vectorPad.setCoordinates(0.12, 0.34, false);
+    assert.strictEqual(app.knobs.feltTone.value, 25);
+    assert.strictEqual(app.knobs.masterDrive.value, 95);
+    assert.strictEqual(app.vectorPad.x, 0.12);
+    assert.strictEqual(app.vectorPad.y, 0.34);
+
+    // 3. Click Reset All
+    resetBtn.click();
+
+    // 4. Verify calibrated values of VANGELIS preset are restored and dropdown selection is preserved
+    assert.strictEqual(presetSelect.value, 'VANGELIS', 'Preset dropdown selection must remain VANGELIS');
+    assert.strictEqual(app.currentPresetKey, 'VANGELIS', 'currentPresetKey must remain VANGELIS');
+    assert.strictEqual(app.knobs.feltTone.value, 80, 'Felt tone must be restored to VANGELIS calibrated default (80)');
+    assert.strictEqual(app.knobs.masterDrive.value, 28, 'Master drive must be restored to VANGELIS calibrated default (28)');
+    assert.strictEqual(app.vectorPad.x, 0.81, 'Vector X must be restored to VANGELIS calibrated position (0.81)');
+    assert.strictEqual(app.vectorPad.y, 0.70, 'Vector Y must be restored to VANGELIS calibrated position (0.70)');
+    assert.strictEqual(app.engine.feltParams.waveform, 'cs80', 'Felt waveform must remain cs80');
+
+    // 5. Test another preset (HAROLD_BUDD) to ensure generality
+    presetSelect.change('HAROLD_BUDD');
+    assert.strictEqual(presetSelect.value, 'HAROLD_BUDD');
+    assert.strictEqual(app.knobs.reverbDecay.value, 12.0);
+    assert.strictEqual(app.vectorPad.x, 0.25);
+    assert.strictEqual(app.vectorPad.y, 0.60);
+
+    // Tweak and reset
+    app.knobs.reverbDecay.setValue(3.0);
+    app.vectorPad.setCoordinates(0.9, 0.9, false);
+    resetBtn.click();
+
+    assert.strictEqual(presetSelect.value, 'HAROLD_BUDD', 'Preset dropdown selection must remain HAROLD_BUDD');
+    assert.strictEqual(app.currentPresetKey, 'HAROLD_BUDD', 'currentPresetKey must remain HAROLD_BUDD');
+    assert.strictEqual(app.knobs.reverbDecay.value, 12.0, 'Reverb decay must be restored to HAROLD_BUDD default (12.0)');
+    assert.strictEqual(app.vectorPad.x, 0.25, 'Vector X must be restored to HAROLD_BUDD coordinates (0.25)');
+    assert.strictEqual(app.vectorPad.y, 0.60, 'Vector Y must be restored to HAROLD_BUDD coordinates (0.60)');
+  });
+
+  it('verifies Reset All under ANY curated preset resets all 32 knobs, vector coordinates, cleans freeze, and preserves preset ID', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp, PRESETS } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetSelect = elementsById.get('select-preset');
+    const resetBtn = elementsById.get('btn-reset-all');
+    const freezeBtn = elementsById.get('toggle-freeze');
+
+    const curatedPresetKeys = ['DEFAULT', 'HAROLD_BUDD', 'VANGELIS', 'ENO_AIRPORTS'];
+
+    for (const presetKey of curatedPresetKeys) {
+      const presetData = PRESETS[presetKey];
+
+      // 1. Select the curated preset
+      presetSelect.change(presetKey);
+      assert.strictEqual(presetSelect.value, presetKey);
+      assert.strictEqual(app.currentPresetKey, presetKey);
+
+      // 2. Discombobulate all 32 knobs and vector pad
+      Object.keys(app.knobs).forEach((k, idx) => {
+        const knob = app.knobs[k];
+        const perturbedVal = knob.min + (knob.max - knob.min) * ((idx % 7 + 1) / 8);
+        knob.setValue(perturbedVal);
+      });
+      app.vectorPad.setCoordinates(0.05, 0.95, false);
+
+      // 3. Engage reverb freeze
+      if (!app.engine.reverbParams.freeze) {
+        app.engine.toggleReverbFreeze();
+      }
+      freezeBtn.classList.add('is-active');
+      const fText = freezeBtn.querySelector('.braun-status-text');
+      if (fText) fText.textContent = 'FREEZE ON';
+      assert.strictEqual(app.engine.reverbParams.freeze, true);
+
+      // 4. Trigger Reset All
+      resetBtn.click();
+
+      // 5. Verify preset dropdown and currentPresetKey strictly maintained
+      assert.strictEqual(presetSelect.value, presetKey, `Preset dropdown must stay on ${presetKey}`);
+      assert.strictEqual(app.currentPresetKey, presetKey, `currentPresetKey must stay on ${presetKey}`);
+
+      // 6. Verify all 32 knobs reset to that specific preset's calibrated values
+      const expectedKnobs = presetData.knobs;
+      assert.strictEqual(Object.keys(expectedKnobs).length, 32, 'Preset must define 32 knobs');
+      Object.entries(expectedKnobs).forEach(([knobKey, expectedVal]) => {
+        const actualVal = app.knobs[knobKey].value;
+        assert.strictEqual(
+          actualVal,
+          expectedVal,
+          `Preset ${presetKey} knob ${knobKey} must reset to calibrated value ${expectedVal}, got ${actualVal}`
+        );
+      });
+
+      // 7. Verify vector pad coordinates reset to that preset's calibrated vectorX / vectorY
+      assert.strictEqual(
+        app.vectorPad.x,
+        presetData.vectorX,
+        `Preset ${presetKey} vectorPad X must reset to ${presetData.vectorX}, got ${app.vectorPad.x}`
+      );
+      assert.strictEqual(
+        app.vectorPad.y,
+        presetData.vectorY,
+        `Preset ${presetKey} vectorPad Y must reset to ${presetData.vectorY}, got ${app.vectorPad.y}`
+      );
+
+      // 8. Verify reverb freeze is turned off cleanly
+      assert.strictEqual(app.engine.reverbParams.freeze, false, 'Reverb freeze must be turned off');
+      assert.strictEqual(freezeBtn.classList.contains('is-active'), false, 'Freeze button must not be active');
+      if (fText) assert.strictEqual(fText.textContent, 'FREEZE OFF');
+    }
+  });
+
+  it('verifies Reset All handles custom loaded patches gracefully, preserves patch parameters, and seamlessly supports preset switching', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp, PRESETS } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const presetSelect = elementsById.get('select-preset');
+    const resetBtn = elementsById.get('btn-reset-all');
+    const freezeBtn = elementsById.get('toggle-freeze');
+
+    // 1. Define custom patch
+    const customPatch = {
+      format: 'BRAUN_AS42_PATCH',
+      version: 1,
+      name: 'Brian Eno · Apollo Dune Ambient',
+      theme: 'dark',
+      rootPitchClass: 7, // G
+      currentScaleKey: 'HIRAJOSHI_TRANSCENDENT',
+      a4: 432,
+      pianoWave: 'cs80',
+      chordSpeed: 'instant',
+      knobs: {
+        masterVol: 72,
+        masterDrive: 35,
+        feltTone: 42,
+        feltHammer: 68,
+        feltSymp: 75,
+        feltDecay: 2.4,
+        feltLevel: 82,
+        drone1Beat: 1.10,
+        drone1Detune: 8.5,
+        drone1Fold: 55,
+        drone1Cutoff: 420,
+        drone1Res: 4.2,
+        drone1Lfo: 0.35,
+        drone1Vol: 65,
+        drone2Beat: 1.45,
+        drone2Detune: -6.5,
+        drone2Fold: 50,
+        drone2Cutoff: 580,
+        drone2Res: 3.8,
+        drone2Lfo: 0.28,
+        drone2Vol: 60,
+        delayTime: 920,
+        delayFeedback: 78,
+        delayWow: 65,
+        delayTone: 2400,
+        delayWet: 62,
+        reverbDecay: 16.5,
+        reverbDamping: 48,
+        reverbShimmer: 72,
+        reverbWet: 68,
+        poissonDensity: 18,
+        poissonHumanize: 85
+      },
+      drone1: { active: true, waveA: 'sine', waveB: 'warm', snap: 'warm-root' },
+      drone2: { active: true, waveA: 'triangle', waveB: 'saw', snap: 'sus-4th' },
+      vectorPad: { x: 0.18, y: 0.82 }
+    };
+
+    // 2. Load custom patch into app
+    const success = app.loadPatch(customPatch, { animate: false });
+    assert.strictEqual(success, true, 'loadPatch must return true');
+
+    // Verify preset selector displays CUSTOM patch
+    assert.strictEqual(presetSelect.value, 'CUSTOM');
+    assert.strictEqual(app.currentPresetKey, 'CUSTOM');
+
+    // Verify custom patch values applied
+    assert.strictEqual(app.knobs.feltTone.value, 42);
+    assert.strictEqual(app.knobs.delayTime.value, 920);
+    assert.strictEqual(app.knobs.reverbDecay.value, 16.5);
+    assert.strictEqual(app.vectorPad.x, 0.18);
+    assert.strictEqual(app.vectorPad.y, 0.82);
+
+    // 3. Perturb knobs, move vector pad, and activate freeze
+    app.knobs.feltTone.setValue(99);
+    app.knobs.delayTime.setValue(200);
+    app.knobs.reverbDecay.setValue(2.0);
+    app.vectorPad.setCoordinates(0.9, 0.1, false);
+
+    app.engine.toggleReverbFreeze();
+    freezeBtn.classList.add('is-active');
+    assert.strictEqual(app.engine.reverbParams.freeze, true);
+
+    // 4. Press Reset All under CUSTOM patch
+    resetBtn.click();
+
+    // Verify custom patch values restored and CUSTOM preset preserved
+    assert.strictEqual(presetSelect.value, 'CUSTOM', 'Preset dropdown must strictly maintain CUSTOM');
+    assert.strictEqual(app.currentPresetKey, 'CUSTOM', 'currentPresetKey must remain CUSTOM');
+    assert.strictEqual(app.knobs.feltTone.value, 42, 'Felt tone must restore to custom patch (42)');
+    assert.strictEqual(app.knobs.delayTime.value, 920, 'Delay time must restore to custom patch (920)');
+    assert.strictEqual(app.knobs.reverbDecay.value, 16.5, 'Reverb decay must restore to custom patch (16.5)');
+    assert.strictEqual(app.vectorPad.x, 0.18, 'Vector X must restore to custom patch coordinates (0.18)');
+    assert.strictEqual(app.vectorPad.y, 0.82, 'Vector Y must restore to custom patch coordinates (0.82)');
+    assert.strictEqual(app.engine.reverbParams.freeze, false, 'Reverb freeze must be cleared');
+
+    // 5. Seamlessly switch to curated preset (VANGELIS)
+    presetSelect.change('VANGELIS');
+    assert.strictEqual(presetSelect.value, 'VANGELIS');
+    assert.strictEqual(app.knobs.feltTone.value, PRESETS.VANGELIS.knobs.feltTone);
+    assert.strictEqual(app.vectorPad.x, PRESETS.VANGELIS.vectorX);
+
+    // 6. Seamlessly switch back to CUSTOM patch
+    presetSelect.change('CUSTOM');
+    assert.strictEqual(presetSelect.value, 'CUSTOM');
+    assert.strictEqual(app.knobs.feltTone.value, 42);
+    assert.strictEqual(app.knobs.delayTime.value, 920);
+    assert.strictEqual(app.vectorPad.x, 0.18);
+    assert.strictEqual(app.vectorPad.y, 0.82);
+
+    // 7. Verify partial patch without vectorPad resets to center (0.5, 0.5)
+    const partialPatch = {
+      format: 'BRAUN_AS42_PATCH',
+      name: 'Minimal Tone',
+      knobs: { feltTone: 88, masterDrive: 44 }
+    };
+    app.loadPatch(partialPatch, { animate: false });
+    assert.strictEqual(app.knobs.feltTone.value, 88);
+    app.knobs.feltTone.setValue(10);
+    app.vectorPad.setCoordinates(0.77, 0.22, false);
+    resetBtn.click();
+    assert.strictEqual(app.knobs.feltTone.value, 88);
+    assert.strictEqual(app.vectorPad.x, 0.50, 'Vector X must reset to center for partial patch without vectorPad');
+    assert.strictEqual(app.vectorPad.y, 0.50, 'Vector Y must reset to center for partial patch without vectorPad');
+  });
+
+  it('verifies sounding voices and drones update smoothly without abrupt discontinuities during Reset All', async () => {
+    const { elementsById } = setupMockBrowser();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const resetBtn = elementsById.get('btn-reset-all');
+
+    // Start audio and sound both drones and piano voices
+    await app.startAudio();
+    app.engine.setDroneActive(1, true);
+    app.engine.setDroneActive(2, true);
+    app.engine.noteOn(60, 0.8, 4.0);
+    app.engine.noteOn(64, 0.8, 4.0);
+
+    // Alter master volume and drone cutoffs
+    app.knobs.masterVol.setValue(40);
+    app.knobs.drone1Cutoff.setValue(200);
+    app.knobs.drone2Cutoff.setValue(300);
+
+    // Trigger Reset All while audio is actively streaming
+    resetBtn.click();
+
+    // Verify parameters transitioned to calibrated values without crashing or producing NaNs
+    assert.ok(Number.isFinite(app.engine.masterVolume));
+    assert.strictEqual(app.knobs.masterVol.value, 80);
+    assert.ok(Number.isFinite(app.engine.droneParams[1].cutoff));
+    assert.ok(Number.isFinite(app.engine.droneParams[2].cutoff));
+    assert.strictEqual(app.knobs.drone1Cutoff.value, 650);
+    assert.strictEqual(app.knobs.drone2Cutoff.value, 850);
+    assert.strictEqual(app.engine.droneParams[1].active, true);
+    assert.strictEqual(app.engine.droneParams[2].active, true);
   });
 });

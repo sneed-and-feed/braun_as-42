@@ -7,6 +7,8 @@
 #include <cmath>
 #include <algorithm>
 #include <random>
+#include <limits>
+#include <cstdint>
 
 namespace braun {
 
@@ -21,10 +23,27 @@ struct FeltPianoParams {
 };
 
 // ============================================================================
+// Voice Stealing Policy
+// ============================================================================
+enum class VoiceStealPolicy {
+    OldestNoteFirst,  // Predictable FIFO stealing (Default)
+    RoundRobin,       // Cyclic voice stealing
+    LowestVolume      // Quietest envelope gain (Legacy heuristic)
+};
+
+// ============================================================================
 // Single Felt Piano Voice
 // ============================================================================
 class FeltPianoVoice {
 public:
+    enum class EnvStage {
+        Idle,
+        Attack,
+        Decay,
+        Sustain,
+        Release
+    };
+
     void prepare(float sampleRate, const WavetableBank* wavetables, const float* hammerBuffer,
                  size_t hammerBufferSize, int voiceIndex) noexcept {
         mSampleRate = sampleRate > 100.0f ? sampleRate : 48000.0f;
@@ -55,6 +74,8 @@ public:
         mIsHold = false;
         mIsChord = false;
         mIsStealing = false;
+        mIsPhysicallyHeld = false;
+        mIsPedalLatched = false;
         mPhase1 = 0.0f;
         mPhase2 = 0.0f;
         mChorusPhase = 0.0f;
@@ -74,6 +95,7 @@ public:
 
         mHammerIndex = 0;
         mHammerPlaying = false;
+        mHammerPending = false;
         mHammerGain = 0.0f;
         mHammerTargetGain = 0.0f;
         mCurrentCutoff = 500.0f;
@@ -84,6 +106,26 @@ public:
     bool isHold() const noexcept { return mIsHold; }
     bool isChord() const noexcept { return mIsChord; }
     bool isStealing() const noexcept { return mIsStealing; }
+    bool isPhysicallyHeld() const noexcept { return mIsPhysicallyHeld; }
+    bool isPedalLatched() const noexcept { return mIsPedalLatched; }
+    bool isReleased() const noexcept { return mEnvStage == EnvStage::Release; }
+    bool isHammerPending() const noexcept { return mHammerPending; }
+    bool isHammerPlaying() const noexcept { return mHammerPlaying; }
+    EnvStage getEnvStage() const noexcept { return mEnvStage; }
+
+    void setPedalLatched(bool latched) noexcept {
+        if (!mIsActive || mEnvStage == EnvStage::Release || mEnvStage == EnvStage::Idle) {
+            mIsPedalLatched = false;
+            mIsHold = mIsPhysicallyHeld;
+            return;
+        }
+        mIsPedalLatched = latched;
+        if (latched) {
+            mIsPhysicallyHeld = false;
+        }
+        mIsHold = mIsPhysicallyHeld || mIsPedalLatched;
+    }
+
     float getStealFreq() const noexcept { return mStealFreq; }
     float getCurrentFreq() const noexcept { return mCurrentFreq; }
     int getCurrentMidi() const noexcept { return mCurrentMidi; }
@@ -98,12 +140,14 @@ public:
     }
 
     void trigger(float freq, float velocity, float durationSec, const FeltPianoParams& params,
-                 bool isHold, bool isChord, uint64_t currentSampleCount) noexcept {
+                 bool isPhysicallyHeld, bool isPedalLatched, bool isChord, uint64_t currentSampleCount) noexcept {
         const float oldFreq = mCurrentFreq;
         mCurrentFreq = freq;
         mCurrentVelocity = std::clamp(velocity, 0.01f, 1.0f);
         mDurationSec = durationSec;
-        mIsHold = isHold;
+        mIsPhysicallyHeld = isPhysicallyHeld;
+        mIsPedalLatched = isPedalLatched;
+        mIsHold = isPhysicallyHeld || isPedalLatched;
         mIsChord = isChord;
         mStartSample = currentSampleCount;
         mCurrentWaveform = params.waveform;
@@ -225,9 +269,8 @@ public:
         // Hammer thump setup: soft felt compression attack, warm wooden body decay
         const float effectiveHammer = (mCurrentWaveform == WaveformType::Sine) ? 0.0f : params.hammer;
         const float chordScale = mIsChord ? 0.40f : 1.0f;
-        if (!isCS80 && effectiveHammer > 0.01f && mHammerBuffer != nullptr && mHammerBufferSize > 0) {
-            mHammerPlaying = true;
-            mHammerIndex = 0;
+        const bool willPlayHammer = (!isCS80 && effectiveHammer > 0.01f && mHammerBuffer != nullptr && mHammerBufferSize > 0);
+        if (willPlayHammer) {
             mHammerTargetGain = mCurrentVelocity * effectiveHammer * hammerThumpGainMult * chordScale;
             mHammerGain = 0.0f;
             const float hammerAttackTime = (mCurrentWaveform == WaveformType::Sine)
@@ -236,8 +279,7 @@ public:
             mHammerAttackSamples = static_cast<uint32_t>(hammerAttackTime * mSampleRate);
             mHammerDecaySamples = static_cast<uint32_t>(thumpDuration * mSampleRate);
             mHammerStep = 0;
-        } else {
-            mHammerPlaying = false;
+            mHammerIndex = 0;
         }
 
         // Stealing micro-ramp (5ms declick ramp down if voice was active)
@@ -247,10 +289,14 @@ public:
             mStealFreq = oldFreq;
             mStealSamplesTotal = static_cast<uint32_t>(0.005f * mSampleRate);
             mStealSamplesLeft = mStealSamplesTotal;
+            mHammerPlaying = false;
+            mHammerPending = willPlayHammer;
         } else {
             mIsStealing = false;
             mStealFreq = freq;
             mEnvGain = 0.0f;
+            mHammerPlaying = willPlayHammer;
+            mHammerPending = false;
         }
 
         mEnvStage = EnvStage::Attack;
@@ -260,14 +306,23 @@ public:
         mFilterSubBlockCounter = 0;
     }
 
+    void trigger(float freq, float velocity, float durationSec, const FeltPianoParams& params,
+                 bool isHold, bool isChord, uint64_t currentSampleCount) noexcept {
+        trigger(freq, velocity, durationSec, params, isHold, false, isChord, currentSampleCount);
+    }
+
     void release() noexcept {
         if (!mIsActive) return;
+        mIsPhysicallyHeld = false;
+        mIsPedalLatched = false;
         mIsHold = false;
         mIsChord = false;
         if (mIsStealing) {
             // Smoothly complete the steal fade-out to 0.0f rather than snapping to zero.
             // Setting mEnvStage to Idle prevents transitioning to Attack when fade-out finishes.
             mEnvStage = EnvStage::Idle;
+            mHammerPlaying = false;
+            mHammerPending = false;
             return;
         }
         mEnvStage = EnvStage::Release;
@@ -326,9 +381,26 @@ public:
                     if (mEnvStage == EnvStage::Attack && mIsActive) {
                         mEnvSampleCount = 0;
                         mNoteSampleCount = 0;
+                        mFilter1.reset();
+                        mFilter2.reset();
+                        mFilterSubBlockCounter = 0;
+                        if (mHammerPending) {
+                            mHammerPlaying = true;
+                            mHammerStep = 0;
+                            mHammerIndex = 0;
+                            mHammerGain = 0.0f;
+                            mHammerPending = false;
+                        }
                     } else {
                         mIsActive = false;
                         mEnvStage = EnvStage::Idle;
+                        mIsPhysicallyHeld = false;
+                        mIsPedalLatched = false;
+                        mIsHold = false;
+                        mIsChord = false;
+                        mIsStealing = false;
+                        mHammerPlaying = false;
+                        mHammerPending = false;
                     }
                 }
             }
@@ -360,6 +432,13 @@ public:
                             mIsActive = false;
                             mEnvStage = EnvStage::Idle;
                             mEnvGain = 0.0f;
+                            mIsPhysicallyHeld = false;
+                            mIsPedalLatched = false;
+                            mIsHold = false;
+                            mIsChord = false;
+                            mIsStealing = false;
+                            mHammerPlaying = false;
+                            mHammerPending = false;
                         }
                     }
                     break;
@@ -376,6 +455,13 @@ public:
                         mIsActive = false;
                         mEnvStage = EnvStage::Idle;
                         mEnvGain = 0.0f;
+                        mIsPhysicallyHeld = false;
+                        mIsPedalLatched = false;
+                        mIsHold = false;
+                        mIsChord = false;
+                        mIsStealing = false;
+                        mHammerPlaying = false;
+                        mHammerPending = false;
                     }
                     break;
                 }
@@ -396,6 +482,8 @@ public:
             const float frac = std::min(1.0f, static_cast<float>(mEnvSampleCount) / static_cast<float>(mReleaseSamples));
             const float releaseTargetCutoff = std::max(160.0f, mCurrentFreq * 1.1f);
             currentCutoff = mReleaseStartCutoff * std::pow(releaseTargetCutoff / std::max(releaseTargetCutoff, mReleaseStartCutoff), frac);
+        } else if (mIsStealing) {
+            currentCutoff = mCurrentCutoff;
         } else {
             ++mNoteSampleCount;
             const float attackSec = mFilterAttackSec;
@@ -533,14 +621,6 @@ public:
     }
 
 private:
-    enum class EnvStage {
-        Idle,
-        Attack,
-        Decay,
-        Sustain,
-        Release
-    };
-
     float mSampleRate { 48000.0f };
     const WavetableBank* mWavetables { nullptr };
     const float* mHammerBuffer { nullptr };
@@ -551,6 +631,8 @@ private:
     bool mIsHold { false };
     bool mIsChord { false };
     bool mIsStealing { false };
+    bool mIsPhysicallyHeld { false };
+    bool mIsPedalLatched { false };
     uint64_t mStartSample { 0 };
 
     float mCurrentFreq { 220.0f };
@@ -605,6 +687,7 @@ private:
     uint32_t mStealSamplesLeft { 0 };
 
     bool mHammerPlaying { false };
+    bool mHammerPending { false };
     size_t mHammerIndex { 0 };
     uint32_t mHammerStep { 0 };
     uint32_t mHammerAttackSamples { 240 };
@@ -682,91 +765,199 @@ public:
         }
     }
 
+    void setVoiceStealPolicy(VoiceStealPolicy policy) noexcept { mStealPolicy = policy; }
+    VoiceStealPolicy getVoiceStealPolicy() const noexcept { return mStealPolicy; }
+
+    void setNotePedalLatched(int midiNote, bool latched) noexcept {
+        const float freq = 440.0f * std::pow(2.0f, static_cast<float>(midiNote - 69) / 12.0f);
+        for (auto& v : mVoices) {
+            if (v.isActive() && (v.getCurrentMidi() == midiNote || std::abs(v.getCurrentFreq() - freq) < 0.5f)) {
+                v.setPedalLatched(latched);
+            }
+        }
+    }
+
+    void releasePedalLatchedVoices() noexcept {
+        for (auto& v : mVoices) {
+            if (v.isActive() && v.isPedalLatched()) {
+                v.release();
+            }
+        }
+    }
+
+    FeltPianoVoice* findVoiceToSteal(VoiceStealPolicy policy) noexcept {
+        // Tier 1: Inactive voices (!v.isActive()) -> allocate via round-robin scan
+        for (size_t i = 0; i < kNumVoices; ++i) {
+            const size_t idx = (mVoiceIndex + i) % kNumVoices;
+            if (!mVoices[idx].isActive()) {
+                mVoiceIndex = (idx + 1) % kNumVoices;
+                return &mVoices[idx];
+            }
+        }
+
+        // Active voices are organized by distinct priority tiers:
+        // Tier 2: Released voices (active, but in Release stage and not physically held or pedal latched)
+        // Tier 3: Pedal-latched voices (mIsPedalLatched == true, physical key released)
+        // Tier 4: Physically held voices (mIsPhysicallyHeld == true)
+        enum class StealTier {
+            None = 0,
+            Tier2_Released,
+            Tier3_PedalLatched,
+            Tier4_PhysicallyHeld
+        };
+
+        auto getVoiceTier = [](const FeltPianoVoice& v) noexcept -> StealTier {
+            if (!v.isActive()) return StealTier::None;
+            if (v.isReleased()) return StealTier::Tier2_Released;
+            if (v.isPhysicallyHeld()) return StealTier::Tier4_PhysicallyHeld;
+            if (v.isPedalLatched()) return StealTier::Tier3_PedalLatched;
+            return StealTier::Tier2_Released;
+        };
+
+        // Prioritize Tier 2, then Tier 3, then Tier 4 in a single O(N) pass
+        StealTier chosenTier = StealTier::Tier4_PhysicallyHeld;
+        for (const auto& v : mVoices) {
+            const StealTier tier = getVoiceTier(v);
+            if (tier == StealTier::Tier2_Released) {
+                chosenTier = StealTier::Tier2_Released;
+                break;
+            }
+            if (tier == StealTier::Tier3_PedalLatched) {
+                chosenTier = StealTier::Tier3_PedalLatched;
+            }
+        }
+
+        FeltPianoVoice* selectedVoice = nullptr;
+
+        switch (policy) {
+            case VoiceStealPolicy::OldestNoteFirst: {
+                // Pick candidate with minimum mStartSample, strictly protecting notes started within the last 60ms
+                const uint64_t recentThreshold = static_cast<uint64_t>(0.060f * mSampleRate);
+                uint64_t minStartSample = std::numeric_limits<uint64_t>::max();
+
+                // Pass 1: candidate in chosen tier started >= 60ms ago
+                for (auto& v : mVoices) {
+                    if (getVoiceTier(v) == chosenTier) {
+                        const bool isRecent = (mCurrentSampleCount >= v.getStartSample()) &&
+                                              ((mCurrentSampleCount - v.getStartSample()) < recentThreshold);
+                        if (!isRecent && v.getStartSample() < minStartSample) {
+                            minStartSample = v.getStartSample();
+                            selectedVoice = &v;
+                        }
+                    }
+                }
+
+                // Pass 2: fallback if all candidates in chosen tier were started within the last 60ms
+                if (selectedVoice == nullptr) {
+                    for (auto& v : mVoices) {
+                        if (getVoiceTier(v) == chosenTier) {
+                            if (v.getStartSample() < minStartSample) {
+                                minStartSample = v.getStartSample();
+                                selectedVoice = &v;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+
+            case VoiceStealPolicy::RoundRobin: {
+                // Pick candidate starting from mVoiceIndex
+                for (size_t i = 0; i < kNumVoices; ++i) {
+                    const size_t idx = (mVoiceIndex + i) % kNumVoices;
+                    if (getVoiceTier(mVoices[idx]) == chosenTier) {
+                        selectedVoice = &mVoices[idx];
+                        break;
+                    }
+                }
+                break;
+            }
+
+            case VoiceStealPolicy::LowestVolume: {
+                // Pick candidate with lowest mEnvGain (tie-breaker: older mStartSample)
+                float minGain = std::numeric_limits<float>::max();
+                uint64_t oldestSample = std::numeric_limits<uint64_t>::max();
+
+                for (auto& v : mVoices) {
+                    if (getVoiceTier(v) == chosenTier) {
+                        const float gain = v.getEnvGain();
+                        if (gain < minGain - 0.001f) {
+                            minGain = gain;
+                            oldestSample = v.getStartSample();
+                            selectedVoice = &v;
+                        } else if (std::abs(gain - minGain) <= 0.001f && v.getStartSample() < oldestSample) {
+                            minGain = gain;
+                            oldestSample = v.getStartSample();
+                            selectedVoice = &v;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        if (selectedVoice != nullptr) {
+            const size_t stolenIdx = static_cast<size_t>(selectedVoice - &mVoices[0]);
+            mVoiceIndex = (stolenIdx + 1) % kNumVoices;
+        } else {
+            selectedVoice = &mVoices[mVoiceIndex];
+            mVoiceIndex = (mVoiceIndex + 1) % kNumVoices;
+        }
+
+        return selectedVoice;
+    }
+
+    FeltPianoVoice* findVoiceToSteal() noexcept {
+        return findVoiceToSteal(mStealPolicy);
+    }
+
+    void noteOn(int midiNote, float velocity, float durationSec, bool isPhysicallyHeld, bool isPedalLatched, bool isChord) noexcept {
+        const float freq = 440.0f * std::pow(2.0f, static_cast<float>(midiNote - 69) / 12.0f);
+        playNote(freq, velocity, durationSec, isPhysicallyHeld, isPedalLatched, isChord);
+    }
+
     void noteOn(int midiNote, float velocity, float durationSec = 3.5f, bool isHold = false, bool isChord = false) noexcept {
         const float freq = 440.0f * std::pow(2.0f, static_cast<float>(midiNote - 69) / 12.0f);
-        playNote(freq, velocity, durationSec, isHold, isChord);
+        playNote(freq, velocity, durationSec, isHold, false, isChord);
     }
 
     void noteOff(int midiNote) noexcept {
         const float freq = 440.0f * std::pow(2.0f, static_cast<float>(midiNote - 69) / 12.0f);
-        release(freq);
+        for (auto& v : mVoices) {
+            if (v.isActive() && (v.getCurrentMidi() == midiNote || std::abs(v.getCurrentFreq() - freq) < 0.5f)) {
+                v.release();
+            }
+        }
     }
 
-    void playNote(float freq, float velocity, float durationSec = 3.5f, bool isHold = false, bool isChord = false) noexcept {
+    void playNote(float freq, float velocity, float durationSec, bool isPhysicallyHeld, bool isPedalLatched, bool isChord) noexcept {
         FeltPianoVoice* voice = nullptr;
+
+        const int targetMidi = static_cast<int>(std::round(69.0f + 12.0f * std::log2(std::max(20.0f, freq) / 440.0f)));
 
         // 1. If an active voice is already playing this exact note, re-trigger it (even if held via sustain pedal)
         for (auto& v : mVoices) {
-            if (v.isActive() && std::abs(v.getCurrentFreq() - freq) < 0.5f) {
+            if (v.isActive() && (v.getCurrentMidi() == targetMidi || std::abs(v.getCurrentFreq() - freq) < 0.5f)) {
                 voice = &v;
                 break;
             }
         }
 
-        // 2. Find free inactive voice using round-robin scan
+        // 2. Dedicated voice-stealing resolver across Tiers 1-4
         if (voice == nullptr) {
-            for (size_t i = 0; i < kNumVoices; ++i) {
-                const size_t idx = (mVoiceIndex + i) % kNumVoices;
-                if (!mVoices[idx].isActive()) {
-                    voice = &mVoices[idx];
-                    mVoiceIndex = (idx + 1) % kNumVoices;
-                    break;
-                }
-            }
+            voice = findVoiceToSteal(mStealPolicy);
         }
 
-        // 3. Priority voice stealing: protect held notes
-        if (voice == nullptr) {
-            voice = &mVoices[0];
-            const uint64_t recentThreshold = static_cast<uint64_t>(0.060f * mSampleRate);
-
-            for (size_t i = 1; i < kNumVoices; ++i) {
-                FeltPianoVoice& cand = mVoices[i];
-                // Priority 1: Never steal held notes if candidate is not held
-                if (cand.isHold() && !voice->isHold()) continue;
-                if (!cand.isHold() && voice->isHold()) {
-                    voice = &cand;
-                    continue;
-                }
-
-                // Priority 2: Never steal chord notes if candidate is non-chord
-                if (cand.isChord() && !voice->isChord()) continue;
-                if (!cand.isChord() && voice->isChord()) {
-                    voice = &cand;
-                    continue;
-                }
-
-                // Priority 3: Protect notes triggered in last 60ms
-                const bool candRecent = (mCurrentSampleCount - cand.getStartSample()) < recentThreshold;
-                const bool voiceRecent = (mCurrentSampleCount - voice->getStartSample()) < recentThreshold;
-                if (candRecent && !voiceRecent) continue;
-                if (!candRecent && voiceRecent) {
-                    voice = &cand;
-                    continue;
-                }
-
-                // Priority 4: Compare current envelope gain (steal quietest)
-                if (cand.getEnvGain() < voice->getEnvGain() - 0.01f) {
-                    voice = &cand;
-                } else if (std::abs(cand.getEnvGain() - voice->getEnvGain()) <= 0.01f &&
-                           cand.getStartSample() < voice->getStartSample()) {
-                    voice = &cand;
-                }
-            }
-
-            // Advance round robin past stolen voice
-            for (size_t i = 0; i < kNumVoices; ++i) {
-                if (&mVoices[i] == voice) {
-                    mVoiceIndex = (i + 1) % kNumVoices;
-                    break;
-                }
-            }
+        if (voice != nullptr) {
+            voice->setPitchBend(mPitchBendCents);
+            voice->trigger(freq, velocity, durationSec, mParams, isPhysicallyHeld, isPedalLatched, isChord, mCurrentSampleCount);
+            addActiveVoice(static_cast<size_t>(voice - &mVoices[0]));
+            updateHeadroomTarget();
         }
+    }
 
-        voice->setPitchBend(mPitchBendCents);
-        voice->trigger(freq, velocity, durationSec, mParams, isHold, isChord, mCurrentSampleCount);
-        addActiveVoice(static_cast<size_t>(voice - &mVoices[0]));
-        updateHeadroomTarget();
+    void playNote(float freq, float velocity, float durationSec = 3.5f, bool isHold = false, bool isChord = false) noexcept {
+        playNote(freq, velocity, durationSec, isHold, false, isChord);
     }
 
     void release(float freq) noexcept {
@@ -872,6 +1063,9 @@ public:
         return static_cast<int>(mNumActiveVoices);
     }
 
+    const FeltPianoVoice& getVoice(size_t index) const noexcept { return mVoices[index]; }
+    FeltPianoVoice& getVoice(size_t index) noexcept { return mVoices[index]; }
+
 private:
     void updateHeadroomTarget() noexcept {
         const float polyHeadroom = 1.0f / std::sqrt(std::max(1.0f, static_cast<float>(mLastActiveCount)));
@@ -972,6 +1166,7 @@ private:
 
     float mPitchBendCents { 0.0f };
     FeltPianoParams mParams;
+    VoiceStealPolicy mStealPolicy { VoiceStealPolicy::OldestNoteFirst };
 };
 
 } // namespace braun

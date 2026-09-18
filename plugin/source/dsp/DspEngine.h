@@ -118,6 +118,8 @@ public:
 
     // Direct synthesizer access for inspection and testing
     FeltPianoSynthesizer& getFeltPiano() noexcept { return mFeltPiano; }
+    void setVoiceStealPolicy(VoiceStealPolicy policy) noexcept { mFeltPiano.setVoiceStealPolicy(policy); }
+    VoiceStealPolicy getVoiceStealPolicy() const noexcept { return mFeltPiano.getVoiceStealPolicy(); }
     SolarDroneVoice& getDrone1() noexcept { return mDrone1; }
     SolarDroneVoice& getDrone2() noexcept { return mDrone2; }
     TapeDelayDsp& getTapeDelay() noexcept { return mTapeDelay; }

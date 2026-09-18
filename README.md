@@ -1,8 +1,8 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
-[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.3/BRAUN_AS42-v1.3.3-macOS-Universal.zip)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.3-Windows-x64.zip)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.4/BRAUN_AS42-v1.3.4-macOS-Universal.zip)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.4-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#build-linux)
 [![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(514%2F514)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -22,8 +22,8 @@
 
 | Platform | Distribution | Supported Formats | Quick Action / Build One-Liner |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.3-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.3/BRAUN_AS42-v1.3.3-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
-| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.3-Windows-x64.zip` (6.81 MB)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
+| **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.4-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.4/BRAUN_AS42-v1.3.4-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
+| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.4-Windows-x64.zip` (6.81 MB)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.4-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
 | **Linux** | **Build from Source** (GCC/Clang) | VST3 · Standalone | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
 
 * **macOS (Apple Silicon ARM64 & Intel x86_64):** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton Live, Reaper, Bitwig), `BRAUN_AS42.component` (for Logic Pro & GarageBand), and `BRAUN_AS42.app` standalone desktop app (or build cleanly from source via standard CMake).
@@ -393,7 +393,22 @@ npm test
 
 ---
 
-## 6. What's New in v1.3.3
+## 6. What's New in v1.3.4
+
+* **Cross-Platform Compiler Optimization Parity:**
+  * Strict parity across toolchains with aggressive real-time performance flags: `/O2 /fp:precise /arch:AVX2` on MSVC, and `-O3 -Wall -Wextra` on Clang/GCC with IEEE-754 NaN/Inf safety and deterministic floating-point precision.
+* **Sub-Bass DSP Stabilization Formalization:**
+  * 6-pillar pipeline featuring phase-locking, DC-blocking (15Hz highpass), stereo monofication (pan = 0), Butterworth damping ($Q = 0.7071$), 140Hz lowpass ceiling, and monotonic soft-knee saturation with +4.6dB gain trim.
+  * Click-free 25ms Hann crossfade dip on mode switching for seamless sonic transitions without transient thump.
+* **Predictable Polyphonic Voice-Stealing Architecture:**
+  * 4-tier hierarchical allocation lifecycle (`Inactive` -> `Released` -> `Pedal-Latched` -> `Physically Held`).
+  * `VoiceStealPolicy` framework (default `OldestNoteFirst`), double-strike elimination (`mHammerPending`), and sustain pedal churn resilience (`releasePedalLatchedVoices`).
+* **"RESET ALL" Preset Preservation:**
+  * Recalibrates all 32 knobs, vector coordinates, and freeze status to the active preset or custom patch instead of forcing default, protecting sound design sessions.
+
+---
+
+## 7. What's New in v1.3.3
 
 * **Full Uncompressed Default Viewport (1240x780):**
   * Default window opens in full uncompressed side-by-side view (1240x780, matching `.braun-chassis` max-width) with resizable bounds (`960x600` to `2560x1440`).
@@ -409,7 +424,7 @@ npm test
 
 ---
 
-## 7. What's New in v1.3.2
+## 8. What's New in v1.3.2
 
 * **Elimination of Web Audio Transient Click Discontinuity:**
   * Resolved 1-sample rectangular impulse spike caused by idle `AudioParam.value` persistence in WebKit/Chromium re-triggering stale gain values.
@@ -422,7 +437,7 @@ npm test
 
 ---
 
-## 8. What's New in v1.3.1
+## 9. What's New in v1.3.1
 
 * **Acoustic Hammer Transient Decoupling & Tactile Punch:**
   * Rerouted hammer impact burst around the string attack amplitude envelope directly into the piano soundboard peaking formant filter, eliminating severe envelope attenuation and increasing transient punch ~4x (+11.3 dB).
@@ -438,7 +453,7 @@ npm test
 
 ---
 
-## 9. What's New in v1.3.0
+## 10. What's New in v1.3.0
 
 * **DSP Numerical Stabilization & Thread Safety:**
   * Implemented `ScopedNoDenormals` RAII hardware guards enabling Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) on x86/x64 and ARM64.
