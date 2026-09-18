@@ -223,8 +223,6 @@ void BRAUN_AS42AudioProcessorEditor::resized()
     }
     else
     {
-        webComponent.setBounds(0, 0, 0, 0);
-        setChildHwndsVisible(false);
         updateNativeControlLayout();
     }
 }
@@ -236,37 +234,7 @@ void BRAUN_AS42AudioProcessorEditor::parentHierarchyChanged()
     if (!useNativeUI)
     {
         ensureHwndStyles();
-        setChildHwndsVisible(true);
     }
-    else
-    {
-        setChildHwndsVisible(false);
-    }
-}
-
-void BRAUN_AS42AudioProcessorEditor::setChildHwndsVisible(bool visible)
-{
-#if JUCE_WINDOWS
-    if (auto* peer = getPeer())
-    {
-        if (HWND hwnd = static_cast<HWND>(peer->getNativeHandle()))
-        {
-            if (::IsWindow(hwnd))
-            {
-                const int cmd = visible ? SW_SHOW : SW_HIDE;
-                ::EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
-                    if (child != nullptr && ::IsWindow(child))
-                    {
-                        ::ShowWindow(child, static_cast<int>(lParam));
-                    }
-                    return TRUE;
-                }, static_cast<LPARAM>(cmd));
-            }
-        }
-    }
-#else
-    juce::ignoreUnused(visible);
-#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
@@ -877,18 +845,18 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
     props.setValue("useNativeUI", useNativeUI);
     props.saveIfNeeded();
 
-    webComponent.setVisible(!useNativeUI);
     if (useNativeUI)
     {
+        removeChildComponent(&webComponent);
+        webComponent.setVisible(false);
         webComponent.setBounds(0, 0, 0, 0);
-        webComponent.toBack();
-        setChildHwndsVisible(false);
     }
     else
     {
+        addAndMakeVisible(webComponent);
+        webComponent.setVisible(true);
         webComponent.setBounds(getLocalBounds());
         webComponent.toFront(false);
-        setChildHwndsVisible(true);
         ensureHwndStyles();
     }
 
@@ -1618,6 +1586,20 @@ void BRAUN_AS42AudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
 void BRAUN_AS42AudioProcessorEditor::showKnobContextMenu(KnobSlot& slot, juce::Point<int> screenPos)
 {
     auto* param = processorRef.getAPVTS().getParameter(slot.paramId);
+    if (auto* hostCtx = getHostContext())
+    {
+        if (auto hostMenu = hostCtx->getContextMenuForParameter(param))
+        {
+            auto menu = hostMenu->getEquivalentPopupMenu();
+            menu.showMenuAsync(
+                juce::PopupMenu::Options()
+                    .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1))
+                    .withTargetComponent(&slot.slider)
+                    .withParentComponent(this));
+            return;
+        }
+    }
+
     auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(param);
 
     juce::PopupMenu menu;

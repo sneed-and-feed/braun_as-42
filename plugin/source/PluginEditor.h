@@ -68,7 +68,6 @@ private:
     bool hwndStylesConfigured { false };
     int hwndCheckCounter { 0 };
     void ensureHwndStyles();
-    void setChildHwndsVisible(bool visible);
 
     int silentFrameCounter { 0 };
     void sendScopeDataToWeb();
