@@ -33,6 +33,7 @@ export class BraunKnob {
     this.onContextMenu = options.onContextMenu || null;
 
     this.lastUserInteractionTime = 0;
+    this.startAngle = -140; // degrees
     this.endAngle = 140;   // degrees
     this.angleRange = this.endAngle - this.startAngle; // 280 deg
 

@@ -231,13 +231,10 @@ void BRAUN_AS42AudioProcessorEditor::paint(juce::Graphics& g)
 void BRAUN_AS42AudioProcessorEditor::resized()
 {
     if (!useNativeUI)
-    {
         webComponent.setBounds(getLocalBounds());
-    }
     else
-    {
-        updateNativeControlLayout();
-    }
+        webComponent.setBounds(0, 0, 0, 0);
+    updateNativeControlLayout();
 }
 
 void BRAUN_AS42AudioProcessorEditor::parentHierarchyChanged()
@@ -247,39 +244,6 @@ void BRAUN_AS42AudioProcessorEditor::parentHierarchyChanged()
     if (!useNativeUI)
     {
         ensureHwndStyles();
-    }
-    else
-    {
-#if JUCE_WINDOWS
-        if (auto* peer = getPeer())
-        {
-            if (HWND hwnd = static_cast<HWND>(peer->getNativeHandle()))
-            {
-                if (::IsWindow(hwnd))
-                {
-                    ::EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
-                        if (child != nullptr && ::IsWindow(child))
-                        {
-                            wchar_t className[256];
-                            if (::GetClassNameW(child, className, 256) > 0)
-                            {
-                                juce::String cls(className);
-                                if (cls.containsIgnoreCase("Chrome") || cls.containsIgnoreCase("Intermediate") || child != reinterpret_cast<HWND>(lParam))
-                                {
-                                    ::ShowWindow(child, SW_HIDE);
-                                    ::SetWindowPos(child, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
-                                }
-                            }
-                        }
-                        return TRUE;
-                    }, reinterpret_cast<LPARAM>(hwnd));
-
-                    LONG_PTR style = ::GetWindowLongPtr(hwnd, GWL_STYLE);
-                    ::SetWindowLongPtr(hwnd, GWL_STYLE, style & ~WS_CLIPCHILDREN);
-                }
-            }
-        }
-#endif
     }
 }
 
@@ -881,93 +845,8 @@ juce::File BRAUN_AS42AudioProcessorEditor::getSettingsFile()
         .getChildFile("AS42_settings.xml");
 }
 
-void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
+void BRAUN_AS42AudioProcessorEditor::updateNativeControlVisibility()
 {
-    useNativeUI = native;
-
-    // Save mode so it persists across DAW sessions
-    auto settingsFile = getSettingsFile();
-    settingsFile.getParentDirectory().createDirectory();
-    juce::PropertiesFile::Options opts;
-    opts.storageFormat = juce::PropertiesFile::storeAsXML;
-    juce::PropertiesFile props(settingsFile, opts);
-    props.setValue("useNativeUI", useNativeUI);
-    props.saveIfNeeded();
-
-    if (useNativeUI)
-    {
-        // 1. FIRST update bounds and visibility while still attached to peer
-        webComponent.setBounds(0, 0, 0, 0);
-        webComponent.setVisible(false);
-
-#if JUCE_WINDOWS
-        // 2. Hide and minimize all WebView2 child windows
-        if (auto* peer = getPeer())
-        {
-            if (HWND hwnd = static_cast<HWND>(peer->getNativeHandle()))
-            {
-                if (::IsWindow(hwnd))
-                {
-                    ::EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
-                        if (child != nullptr && ::IsWindow(child))
-                        {
-                            wchar_t className[256];
-                            if (::GetClassNameW(child, className, 256) > 0)
-                            {
-                                juce::String cls(className);
-                                if (cls.containsIgnoreCase("Chrome") || cls.containsIgnoreCase("Intermediate") || child != reinterpret_cast<HWND>(lParam))
-                                {
-                                    ::ShowWindow(child, SW_HIDE);
-                                    ::SetWindowPos(child, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
-                                }
-                            }
-                        }
-                        return TRUE;
-                    }, reinterpret_cast<LPARAM>(hwnd));
-
-                    // 3. Remove WS_CLIPCHILDREN from peer HWND so parent JUCE drawing is not clipped
-                    LONG_PTR style = ::GetWindowLongPtr(hwnd, GWL_STYLE);
-                    ::SetWindowLongPtr(hwnd, GWL_STYLE, style & ~WS_CLIPCHILDREN);
-                }
-            }
-        }
-#endif
-
-        // 4. Detach from parent
-        removeChildComponent(&webComponent);
-    }
-    else
-    {
-        // 1. Restore WS_CLIPCHILDREN and HWND styles
-        ensureHwndStyles();
-
-#if JUCE_WINDOWS
-        // 2. Unhide child windows
-        if (auto* peer = getPeer())
-        {
-            if (HWND hwnd = static_cast<HWND>(peer->getNativeHandle()))
-            {
-                if (::IsWindow(hwnd))
-                {
-                    ::EnumChildWindows(hwnd, [](HWND child, LPARAM /*lParam*/) -> BOOL {
-                        if (child != nullptr && ::IsWindow(child))
-                        {
-                            ::ShowWindow(child, SW_SHOW);
-                        }
-                        return TRUE;
-                    }, 0);
-                }
-            }
-        }
-#endif
-
-        // 3. Re-attach and make visible
-        addAndMakeVisible(webComponent);
-        webComponent.setBounds(getLocalBounds());
-        webComponent.setVisible(true);
-        webComponent.toFront(false);
-    }
-
     viewModeButton.setVisible(useNativeUI);
     viewModeButton.setButtonText("SWITCH TO WEB UI");
     if (useNativeUI)
@@ -1028,9 +907,37 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
         droneTrackMidiBtn.toFront(false);
         chordTriggerBtn.toFront(false);
         impulseTriggerBtn.toFront(false);
-
-        updateNativeControlLayout();
     }
+}
+
+void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
+{
+    useNativeUI = native;
+
+    // Save mode so it persists across DAW sessions
+    auto settingsFile = getSettingsFile();
+    settingsFile.getParentDirectory().createDirectory();
+    juce::PropertiesFile::Options opts;
+    opts.storageFormat = juce::PropertiesFile::storeAsXML;
+    juce::PropertiesFile props(settingsFile, opts);
+    props.setValue("useNativeUI", useNativeUI);
+    props.saveIfNeeded();
+
+    if (useNativeUI)
+    {
+        webComponent.setVisible(false);
+        webComponent.setBounds(0, 0, 0, 0);
+        webComponent.toBack();
+    }
+    else
+    {
+        webComponent.setVisible(true);
+        webComponent.setBounds(getLocalBounds());
+        webComponent.toFront(false);
+    }
+
+    updateNativeControlVisibility();
+    resized();
     repaint();
 }
 

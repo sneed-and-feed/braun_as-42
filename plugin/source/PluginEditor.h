@@ -124,6 +124,7 @@ private:
 
     void setupNativeControls();
     void updateNativeControlLayout();
+    void updateNativeControlVisibility();
     void showKnobContextMenu(KnobSlot& slot, juce::Point<int> screenPos);
 
     KnobSlot* findKnob(const juce::String& id);

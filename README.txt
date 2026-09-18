@@ -1,4 +1,4 @@
-BRAUN AS 42 · Ambient Generative Synthesizer (v1.3.6)
+BRAUN AS 42 · Ambient Generative Synthesizer (v1.3.7)
 =====================================================
 
 Included in this release:
@@ -11,11 +11,10 @@ Included in this release:
    - Standalone desktop version with direct ASIO/WASAPI and hardware MIDI support.
    - Run directly, no DAW required.
 
-What's New in v1.3.6:
-- Runtime Native UI Occlusion Fix: Fixed WebView2 Win32 window occlusion when switching to Native mode. Corrected detachment order by updating bounds to (0, 0, 0, 0) and hiding WebView2 before detaching from peer, explicitly hiding child windows (SW_HIDE), and removing WS_CLIPCHILDREN from the peer HWND so Windows never clips JUCE's native Dieter Rams vector rendering.
-- DAW Host Context Menu Parity: Parameter right-clicks now directly query getHostContext()->getContextMenuForParameter(param)->showNativeMenu(localPos) for native host DAW automation envelopes, parameter assignment, and MIDI learn menus in Reaper, Ableton Live, FL Studio, and Cubase.
-- Web UI Context Menu Bridge: Added showContextMenu IPC bridge extending host DAW context menu triggers to Web UI controls.
-- Comprehensive Test Certification: 100% pass rate across all automated test suites with 0 real-time heap allocations.
+What's New in v1.3.7:
+- Rotary Knob NaN & Drag Fix: Restored startAngle = -140 in knob.js constructor, restoring full 280° rotation and responsive mouse/touch drag manipulation across all parameters.
+- Robust Native Mode Transition: Removed destructive EnumChildWindows and SetWindowLongPtr manipulations, keeping WebBrowserComponent as a permanent zero-bounded child in native mode to ensure zero host window corruption and unobstructed Dieter Rams JUCE vector rendering.
+- Master Verification Suite: Added unified tests/verify.mjs certifying all 523 tests across the entire suite.
 
 Project & Source: https://github.com/sneed-and-feed/braun_as-42
 Web Demo: https://sneed-and-feed.github.io/

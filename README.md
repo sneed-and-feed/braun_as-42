@@ -2,7 +2,7 @@
 
 [![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
 [![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.6/BRAUN_AS42-v1.3.6-macOS-Universal.zip)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.6-Windows-x64.zip)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.7-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#build-linux)
 [![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(523%2F523)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -23,7 +23,7 @@
 | Platform | Distribution | Supported Formats | Quick Action / Build One-Liner |
 | :--- | :--- | :--- | :--- |
 | **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.6-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.6/BRAUN_AS42-v1.3.6-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
-| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.6-Windows-x64.zip`](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.6-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.6-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
+| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.7-Windows-x64.zip`](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.7-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.7-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
 | **Linux** | **Build from Source** (GCC/Clang) | VST3 · Standalone | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
 
 * **macOS (Apple Silicon ARM64 & Intel x86_64):** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton Live, Reaper, Bitwig), `BRAUN_AS42.component` (for Logic Pro & GarageBand), and `BRAUN_AS42.app` standalone desktop app (or build cleanly from source via standard CMake).
@@ -393,7 +393,21 @@ npm test
 
 ---
 
-## 6. What's New in v1.3.6
+## 6. What's New in v1.3.7
+
+* **Rotary Knob NaN Angle & Drag Remediation:**
+  * Restored `this.startAngle = -140;` in `js/ui/knob.js` constructor, fixing broken `angleRange` evaluation (which had evaluated to NaN).
+  * Rotary dials now render at their exact rotation angles with smooth SVG arc tracks and full mouse/touch drag functionality across all 32 parameters.
+* **Robust Windows Native UI Transition (Zero Window Corruption):**
+  * Eliminated destructive `EnumChildWindows` calls and `SetWindowLongPtr` style manipulations in `PluginEditor.cpp` that previously corrupted the main application and DAW wrapper windows.
+  * Retained `webComponent` as a permanent child component of `PluginEditor` (eliminating `removeChildComponent`), collapsing its bounds to `(0, 0, 0, 0)` and setting `setVisible(false)` and `toBack()` in Native Mode.
+  * When collapsed and hidden, WebView2 automatically minimizes occlusion and `WS_CLIPCHILDREN` clips zero pixels from the parent canvas, ensuring native JUCE vector graphics render completely unobstructed without tampering with host window styles.
+* **Master Verification Suite:**
+  * Added unified `tests/verify.mjs` test runner certifying all 523 tests across the entire test suite with 100% pass rate.
+
+---
+
+## 7. What's New in v1.3.6
 
 * **Runtime Native UI Occlusion Fix (Zero Black Screen):**
   * Fixed WebView2 HWND occlusion bug where switching from Web UI to Native JUCE mode left the child Win32 `Chrome_WidgetWin_0` window occluding the peer window.
@@ -408,7 +422,7 @@ npm test
 
 ---
 
-## 7. What's New in v1.3.5
+## 8. What's New in v1.3.5
 
 * **Native UI WebView2 Occlusion Elimination:**
   * Removed legacy Win32 child window visibility toggle (`setChildHwndsVisible` / `EnumChildWindows(..., SW_HIDE)`), resolving the persistent black-screen bug when switching between Web UI and Native UI modes.
@@ -423,7 +437,7 @@ npm test
 
 ---
 
-## 8. What's New in v1.3.4
+## 9. What's New in v1.3.4
 
 * **Cross-Platform Compiler Optimization Parity:**
   * Strict parity across toolchains with aggressive real-time performance flags: `/O2 /fp:precise /arch:AVX2` on MSVC, and `-O3 -Wall -Wextra` on Clang/GCC with IEEE-754 NaN/Inf safety and deterministic floating-point precision.
@@ -438,7 +452,7 @@ npm test
 
 ---
 
-## 9. What's New in v1.3.3
+## 10. What's New in v1.3.3
 
 * **Full Uncompressed Default Viewport (1240x780):**
   * Default window opens in full uncompressed side-by-side view (1240x780, matching `.braun-chassis` max-width) with resizable bounds (`960x600` to `2560x1440`).
@@ -454,7 +468,7 @@ npm test
 
 ---
 
-## 10. What's New in v1.3.2
+## 11. What's New in v1.3.2
 
 * **Elimination of Web Audio Transient Click Discontinuity:**
   * Resolved 1-sample rectangular impulse spike caused by idle `AudioParam.value` persistence in WebKit/Chromium re-triggering stale gain values.
@@ -467,7 +481,7 @@ npm test
 
 ---
 
-## 11. What's New in v1.3.1
+## 12. What's New in v1.3.1
 
 * **Acoustic Hammer Transient Decoupling & Tactile Punch:**
   * Rerouted hammer impact burst around the string attack amplitude envelope directly into the piano soundboard peaking formant filter, eliminating severe envelope attenuation and increasing transient punch ~4x (+11.3 dB).
@@ -483,7 +497,7 @@ npm test
 
 ---
 
-## 12. What's New in v1.3.0
+## 13. What's New in v1.3.0
 
 * **DSP Numerical Stabilization & Thread Safety:**
   * Implemented `ScopedNoDenormals` RAII hardware guards enabling Flush-To-Zero (FTZ) and Denormals-Are-Zero (DAZ) on x86/x64 and ARM64.
