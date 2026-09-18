@@ -2,9 +2,9 @@
 
 [![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
 [![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.6/BRAUN_AS42-v1.3.6-macOS-Universal.zip)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.7-Windows-x64.zip)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.8-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#build-linux)
-[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(523%2F523)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
+[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(529%2F529)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 > **A Dieter Rams functionalist digital-analog ambient instrument and microtonal drone synthesizer.**
@@ -23,7 +23,7 @@
 | Platform | Distribution | Supported Formats | Quick Action / Build One-Liner |
 | :--- | :--- | :--- | :--- |
 | **macOS** | **Precompiled Binaries** (Universal M-Series & Intel) | AUv2 (`.component`) · VST3 · Standalone (`.app`) | [💾 Download `BRAUN_AS42-v1.3.6-macOS-Universal.zip` (22.7 MB)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.3.6/BRAUN_AS42-v1.3.6-macOS-Universal.zip)<br>*(or [build from source](#build-macos))* |
-| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.7-Windows-x64.zip`](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.7-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.7-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
+| **Windows** | **Precompiled Binaries** | VST3 · Standalone (.exe) | [💾 Download `BRAUN_AS42-v1.3.8-Windows-x64.zip`](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.8-Windows-x64.zip) or [VST3 Only](https://raw.githubusercontent.com/sneed-and-feed/sneed-and-feed.github.io/main/releases/BRAUN_AS42-v1.3.8-VST3-Windows-x64.zip)<br>*(or [build from source](#build-windows))* |
 | **Linux** | **Build from Source** (GCC/Clang) | VST3 · Standalone | `cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release` |
 
 * **macOS (Apple Silicon ARM64 & Intel x86_64):** Precompiled release package ready to go. Download the `.zip` to extract `BRAUN_AS42.vst3` (for Ableton Live, Reaper, Bitwig), `BRAUN_AS42.component` (for Logic Pro & GarageBand), and `BRAUN_AS42.app` standalone desktop app (or build cleanly from source via standard CMake).
@@ -393,7 +393,21 @@ npm test
 
 ---
 
-## 6. What's New in v1.3.7
+## 6. What's New in v1.3.8
+
+* **Sub-Bass Freeze Trapped Feedback Loop Elimination:**
+  * Resolved critical DSP feedback bug where freezing in sub-bass drone mode (Voice 1 C1 ~32.7 Hz with 1.70x volume boost) accumulated resonant standing waves in the recirculating freeze delay lines (`freezeDelayL` 0.387s / `freezeDelayR` 0.491s), trapping the user in an endless sub-bass roar.
+  * **Dedicated 75 Hz Sub-Bass Roll-off:** Inserted 2-pole Butterworth 75 Hz highpass filtering (`freezeInputHpFilter` and `freezeSubCutFilterL/R`) on freeze input and inside the cross-coupled recirculation matrix, completely eliminating subsonic energy accumulation while preserving dual 25 Hz DC blockers.
+  * **Freeze Loop Soft Limiting:** Added smooth C1 soft limiter bounding maximum recirculating energy $\le 0.88$ (strictly below 0 dBFS digital full scale).
+  * **Contractive Feedback Bounding:** Capped freeze feedback target to 0.982 (strictly contractive, down from 0.992).
+  * **Rapid & Reliable Unfreeze Quench:** Replaced sluggish slow release with instant in-flight cancellation (`cancelAndHoldAtTime`), input ducking, and rapid decay strictly silenced ($\le 0.0$) within 50 ms.
+  * **Clean Panic & Reset Integration:** Connected freeze quenching directly into `AudioEngine.releaseAllNotes()` and `AudioEngine.panic()`.
+* **Master Verification Suite:**
+  * Certified all 529 automated tests (100% pass) including new regression suite `test/sub-bass-freeze-safeguard.test.js`.
+
+---
+
+## 7. What's New in v1.3.7
 
 * **Rotary Knob NaN Angle & Drag Remediation:**
   * Restored `this.startAngle = -140;` in `js/ui/knob.js` constructor, fixing broken `angleRange` evaluation (which had evaluated to NaN).

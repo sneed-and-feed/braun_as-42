@@ -148,6 +148,8 @@ public:
 
         mFreezeFilterL.configure(Biquad::Type::Lowpass, mSampleRate, 3200.0f, 0.7071f);
         mFreezeFilterR.configure(Biquad::Type::Lowpass, mSampleRate, 3200.0f, 0.7071f);
+        mFreezeHpFilterL.configure(Biquad::Type::Highpass, mSampleRate, 75.0f, 0.7071f);
+        mFreezeHpFilterR.configure(Biquad::Type::Highpass, mSampleRate, 75.0f, 0.7071f);
 
         mFreezeFeedbackSmoother.setSampleRate(mSampleRate);
         mFreezeFeedbackSmoother.setTimeConstant(0.080f);
@@ -224,6 +226,9 @@ public:
         mFreezeWriteIndexR = 0;
         mFreezeFilterL.reset();
         mFreezeFilterR.reset();
+        mFreezeHpFilterL.reset();
+        mFreezeHpFilterR.reset();
+        mWasFrozen = false;
 
         mShimmerFeedbackSample = 0.0f;
     }
@@ -256,14 +261,43 @@ public:
         const float curShimmerSend = mShimmerSendSmoother.next();
         const float curShimmerFb = mShimmerFeedbackSmoother.next();
 
-        // 3. Freeze parameters update
-        mFreezeFeedbackSmoother.setTarget(params.freeze ? 0.992f : 0.0f);
-        mFreezeWetSmoother.setTarget(params.freeze ? 0.85f : 0.0f);
-        mFreezeInputSmoother.setTarget(params.freeze ? 0.12f : 1.0f);
+        // 3. Freeze parameters update with contractive bounding (0.982f) & instant unfreeze quench
+        if (params.freeze) {
+            mFreezeFeedbackSmoother.setTimeConstant(0.050f);
+            mFreezeFeedbackSmoother.setTarget(0.982f);
+            mFreezeWetSmoother.setTimeConstant(0.050f);
+            mFreezeWetSmoother.setTarget(0.85f);
+            mFreezeInputSmoother.setTimeConstant(0.100f);
+            mFreezeInputSmoother.setTarget(0.12f);
+        } else {
+            // Immediate & reliable quench on unfreeze
+            if (mWasFrozen) {
+                // Falling edge: instantly cut feedback and duck input
+                mFreezeFeedbackSmoother.snapTo(0.0f);
+                mFreezeInputSmoother.snapTo(0.0f);
+            }
+            mFreezeFeedbackSmoother.setTimeConstant(0.025f);
+            mFreezeFeedbackSmoother.setTarget(0.0f);
+            mFreezeWetSmoother.setTimeConstant(0.030f);
+            mFreezeWetSmoother.setTarget(0.0f);
+            mFreezeInputSmoother.setTimeConstant(0.060f);
+            mFreezeInputSmoother.setTarget(1.0f);
+        }
+        mWasFrozen = params.freeze;
 
         const float freezeFb = mFreezeFeedbackSmoother.next();
         const float freezeWet = mFreezeWetSmoother.next();
         const float freezeInGain = mFreezeInputSmoother.next();
+
+        if (!params.freeze && freezeWet < 0.0001f && (mFreezeBufferL[0] != 0.0f || mFreezeBufferR[0] != 0.0f)) {
+            // Clean quench: zero recirculating delay line memory once wet gain fades out
+            std::fill(mFreezeBufferL.begin(), mFreezeBufferL.end(), 0.0f);
+            std::fill(mFreezeBufferR.begin(), mFreezeBufferR.end(), 0.0f);
+            mFreezeHpFilterL.reset();
+            mFreezeHpFilterR.reset();
+            mFreezeFilterL.reset();
+            mFreezeFilterR.reset();
+        }
 
         // 4. Input mixing: input audio + shimmer feedback loop with true stereo separation
         constexpr float kPreGain = 0.85f;
@@ -354,15 +388,24 @@ public:
         const float dampedR = mAirDampingFilterR.process(wetRawR);
 
         // 10. Infinite Freeze Recirculating Delay Loop
-        // Left: 387ms, Right: 491ms, cross-coupled with 3200Hz filter
+        // Left: 387ms, Right: 491ms, cross-coupled with 75Hz HPF, 3200Hz LPF, and 0.88 soft limiter
         const float freezeDelayedL = mFreezeBufferL[mFreezeWriteIndexL];
         const float freezeDelayedR = mFreezeBufferR[mFreezeWriteIndexR];
 
-        const float freezeFiltL = mFreezeFilterL.process(freezeDelayedL);
-        const float freezeFiltR = mFreezeFilterR.process(freezeDelayedR);
+        // Dedicated 75 Hz sub-bass roll-off prevents sub-bass drone energy (<65-80 Hz) accumulation
+        const float freezeHpL = mFreezeHpFilterL.process(freezeDelayedL);
+        const float freezeHpR = mFreezeHpFilterR.process(freezeDelayedR);
 
-        const float freezeInL = inL * freezeInGain + freezeFiltR * freezeFb;
-        const float freezeInR = inR * freezeInGain + freezeFiltL * freezeFb;
+        // 3200 Hz high frequency damping
+        const float freezeFiltL = mFreezeFilterL.process(freezeHpL);
+        const float freezeFiltR = mFreezeFilterR.process(freezeHpR);
+
+        // Soft saturation bounds recirculating energy <= 0.88
+        const float limitedL = freezeSoftLimit(freezeFiltL);
+        const float limitedR = freezeSoftLimit(freezeFiltR);
+
+        const float freezeInL = inL * freezeInGain + limitedR * freezeFb;
+        const float freezeInR = inR * freezeInGain + limitedL * freezeFb;
 
         mFreezeBufferL[mFreezeWriteIndexL] = flushDenormal(freezeInL);
         mFreezeBufferR[mFreezeWriteIndexR] = flushDenormal(freezeInR);
@@ -378,8 +421,8 @@ public:
         mShimmerFeedbackSample = flushDenormal(softLimit(pitchShifted * curShimmerFb, 0.70f));
 
         // 12. Combine Final Wet Output with Freeze and Wet Gain
-        const float finalWetL = (dampedL + freezeFiltL * freezeWet) * curMix;
-        const float finalWetR = (dampedR + freezeFiltR * freezeWet) * curMix;
+        const float finalWetL = (dampedL + limitedL * freezeWet) * curMix;
+        const float finalWetR = (dampedR + limitedR * freezeWet) * curMix;
 
         outL += finalWetL;
         outR += finalWetR;
@@ -493,9 +536,18 @@ private:
     size_t mFreezeWriteIndexR { 0 };
     Biquad mFreezeFilterL;
     Biquad mFreezeFilterR;
+    Biquad mFreezeHpFilterL;
+    Biquad mFreezeHpFilterR;
     OnePoleSmoother mFreezeFeedbackSmoother;
     OnePoleSmoother mFreezeWetSmoother;
     OnePoleSmoother mFreezeInputSmoother;
+    bool mWasFrozen { false };
+
+    static inline float freezeSoftLimit(float x) noexcept {
+        constexpr float kMaxLevel = 0.88f;
+        const float scaled = x / kMaxLevel;
+        return kMaxLevel * applySmoothBoundaryKnee(scaled, 0.70f);
+    }
 
     static constexpr uint32_t kFilterSubBlockSize = 16;
     uint32_t mFilterSubBlockCounter { 0 };

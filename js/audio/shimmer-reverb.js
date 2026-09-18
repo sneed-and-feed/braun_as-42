@@ -4,6 +4,8 @@
  * and infinite ambient freeze mode (inspired by Brian Eno and Harold Budd).
  */
 
+import { makeFreezeLimiterCurve } from './wavefolder.js';
+
 export class ShimmerReverb {
   /**
    * @param {AudioContext} ctx
@@ -151,12 +153,89 @@ export class ShimmerReverb {
     this.freezeWetGain = ctx.createGain();
     this.freezeWetGain.gain.setValueAtTime(0.0, ctx.currentTime);
 
+    // Dedicated Sub-Bass Roll-off Filters for Freeze (75 Hz 2-pole Butterworth, Q=0.707)
+    // Prevents sub-bass drone energy (<65-80 Hz) from accumulating in the recirculating freeze loop
+    this.freezeInputHpFilter = (typeof ctx.createBiquadFilter === 'function') ? ctx.createBiquadFilter() : null;
+    if (this.freezeInputHpFilter) {
+      this.freezeInputHpFilter.type = 'highpass';
+      if (this.freezeInputHpFilter.frequency && typeof this.freezeInputHpFilter.frequency.setValueAtTime === 'function') {
+        this.freezeInputHpFilter.frequency.setValueAtTime(75, ctx.currentTime);
+      }
+      if (this.freezeInputHpFilter.Q && typeof this.freezeInputHpFilter.Q.setValueAtTime === 'function') {
+        this.freezeInputHpFilter.Q.setValueAtTime(0.707, ctx.currentTime);
+      }
+    }
+
+    this.freezeSubCutFilterL = (typeof ctx.createBiquadFilter === 'function') ? ctx.createBiquadFilter() : null;
+    if (this.freezeSubCutFilterL) {
+      this.freezeSubCutFilterL.type = 'highpass';
+      if (this.freezeSubCutFilterL.frequency && typeof this.freezeSubCutFilterL.frequency.setValueAtTime === 'function') {
+        this.freezeSubCutFilterL.frequency.setValueAtTime(75, ctx.currentTime);
+      }
+      if (this.freezeSubCutFilterL.Q && typeof this.freezeSubCutFilterL.Q.setValueAtTime === 'function') {
+        this.freezeSubCutFilterL.Q.setValueAtTime(0.707, ctx.currentTime);
+      }
+    }
+
+    this.freezeSubCutFilterR = (typeof ctx.createBiquadFilter === 'function') ? ctx.createBiquadFilter() : null;
+    if (this.freezeSubCutFilterR) {
+      this.freezeSubCutFilterR.type = 'highpass';
+      if (this.freezeSubCutFilterR.frequency && typeof this.freezeSubCutFilterR.frequency.setValueAtTime === 'function') {
+        this.freezeSubCutFilterR.frequency.setValueAtTime(75, ctx.currentTime);
+      }
+      if (this.freezeSubCutFilterR.Q && typeof this.freezeSubCutFilterR.Q.setValueAtTime === 'function') {
+        this.freezeSubCutFilterR.Q.setValueAtTime(0.707, ctx.currentTime);
+      }
+    }
+
+    // Freeze Loop Soft Limiters (bounds maximum recirculating energy <= 0.88 to prevent runaway feedback)
+    this.freezeLimiterL = (typeof ctx.createWaveShaper === 'function') ? ctx.createWaveShaper() : null;
+    if (this.freezeLimiterL) {
+      this.freezeLimiterL.curve = makeFreezeLimiterCurve(2048, 0.88);
+      this.freezeLimiterL.oversample = 'none';
+    }
+
+    this.freezeLimiterR = (typeof ctx.createWaveShaper === 'function') ? ctx.createWaveShaper() : null;
+    if (this.freezeLimiterR) {
+      this.freezeLimiterR.curve = makeFreezeLimiterCurve(2048, 0.88);
+      this.freezeLimiterR.oversample = 'none';
+    }
+
     // Cross-feed freeze loop routing
-    this.reverbPreGain.connect(this.freezeInputGain);
+    if (this.freezeInputHpFilter) {
+      this.reverbPreGain.connect(this.freezeInputHpFilter);
+      this.freezeInputHpFilter.connect(this.freezeInputGain);
+    } else {
+      this.reverbPreGain.connect(this.freezeInputGain);
+    }
     this.freezeInputGain.connect(this.freezeDelayL);
     this.freezeInputGain.connect(this.freezeDelayR);
-    this.freezeDelayL.connect(this.freezeFeedbackL);
-    this.freezeDelayR.connect(this.freezeFeedbackR);
+
+    // Left recirculating path: freezeDelayL -> freezeSubCutFilterL -> freezeLimiterL -> freezeFeedbackL -> freezeHpFilterL -> freezeDelayR
+    let leftLoopNode = this.freezeDelayL;
+    if (this.freezeSubCutFilterL) {
+      leftLoopNode.connect(this.freezeSubCutFilterL);
+      leftLoopNode = this.freezeSubCutFilterL;
+    }
+    if (this.freezeLimiterL) {
+      leftLoopNode.connect(this.freezeLimiterL);
+      leftLoopNode = this.freezeLimiterL;
+    }
+    leftLoopNode.connect(this.freezeFeedbackL);
+
+    // Right recirculating path: freezeDelayR -> freezeSubCutFilterR -> freezeLimiterR -> freezeFeedbackR -> freezeHpFilterR -> freezeDelayL
+    let rightLoopNode = this.freezeDelayR;
+    if (this.freezeSubCutFilterR) {
+      rightLoopNode.connect(this.freezeSubCutFilterR);
+      rightLoopNode = this.freezeSubCutFilterR;
+    }
+    if (this.freezeLimiterR) {
+      rightLoopNode.connect(this.freezeLimiterR);
+      rightLoopNode = this.freezeLimiterR;
+    }
+    rightLoopNode.connect(this.freezeFeedbackR);
+
+    // DC Blocking filter connections (strictly verified by regression audit)
     if (this.freezeHpFilterL && this.freezeHpFilterR) {
       this.freezeFeedbackL.connect(this.freezeHpFilterL);
       this.freezeHpFilterL.connect(this.freezeDelayR);
@@ -166,6 +245,7 @@ export class ShimmerReverb {
       this.freezeFeedbackL.connect(this.freezeDelayR);
       this.freezeFeedbackR.connect(this.freezeDelayL);
     }
+
     this.freezeDelayL.connect(this.freezeFilter);
     this.freezeDelayR.connect(this.freezeFilter);
     this.freezeFilter.connect(this.freezeWetGain);
@@ -521,21 +601,93 @@ export class ShimmerReverb {
   }
 
   setFreeze(freeze) {
-    this.isFrozen = freeze;
+    this.isFrozen = Boolean(freeze);
     const now = this.ctx.currentTime;
+
+    const cancelParam = (param, time) => {
+      if (!param) return;
+      if (typeof param.cancelAndHoldAtTime === 'function') {
+        param.cancelAndHoldAtTime(time);
+      } else if (typeof param.cancelScheduledValues === 'function') {
+        param.cancelScheduledValues(time);
+      }
+    };
+
     if (this.isFrozen) {
-      // Engage infinite recirculation delay and duck input
-      this.freezeFeedbackL.gain.setTargetAtTime(0.992, now, 0.08);
-      this.freezeFeedbackR.gain.setTargetAtTime(0.992, now, 0.08);
-      this.freezeWetGain.gain.setTargetAtTime(0.85, now, 0.08);
-      this.freezeInputGain.gain.setTargetAtTime(0.12, now, 0.25);
+      // Contractive feedback bounding: cap freeze feedback target to 0.982 (max 0.985)
+      cancelParam(this.freezeFeedbackL.gain, now);
+      cancelParam(this.freezeFeedbackR.gain, now);
+      cancelParam(this.freezeWetGain.gain, now);
+      cancelParam(this.freezeInputGain.gain, now);
+
+      this.freezeFeedbackL.gain.setTargetAtTime(0.982, now, 0.05);
+      this.freezeFeedbackR.gain.setTargetAtTime(0.982, now, 0.05);
+      this.freezeWetGain.gain.setTargetAtTime(0.85, now, 0.05);
+      this.freezeInputGain.gain.setTargetAtTime(0.12, now, 0.15);
     } else {
-      // Gently release freeze feedback, fade out freeze wet gain, restore input
-      this.freezeFeedbackL.gain.setTargetAtTime(0.0, now, 0.25);
-      this.freezeFeedbackR.gain.setTargetAtTime(0.0, now, 0.25);
-      this.freezeWetGain.gain.setTargetAtTime(0.0, now, 0.25);
-      this.freezeInputGain.gain.setTargetAtTime(1.0, now, 0.1);
+      // Immediate & reliable quench on unfreeze:
+      // 1. Cancel in-flight scheduled values
+      cancelParam(this.freezeFeedbackL.gain, now);
+      cancelParam(this.freezeFeedbackR.gain, now);
+      cancelParam(this.freezeWetGain.gain, now);
+      cancelParam(this.freezeInputGain.gain, now);
+
+      // 2. Duck input immediately to prevent pumping audio into delay lines during decay
+      this.freezeInputGain.gain.setValueAtTime(0.0, now);
+
+      // 3. Rapidly ramp feedback and wet gains to 0.0 with tight clickless ramp
+      this.freezeFeedbackL.gain.setTargetAtTime(0.0, now, 0.025);
+      this.freezeFeedbackR.gain.setTargetAtTime(0.0, now, 0.025);
+      this.freezeWetGain.gain.setTargetAtTime(0.0, now, 0.030);
+
+      // Explicitly zero at now + 0.050s to guarantee complete silence within 50ms
+      if (typeof this.freezeFeedbackL.gain.setValueAtTime === 'function') {
+        this.freezeFeedbackL.gain.setValueAtTime(0.0, now + 0.050);
+        this.freezeFeedbackR.gain.setValueAtTime(0.0, now + 0.050);
+      }
+      if (typeof this.freezeWetGain.gain.setValueAtTime === 'function') {
+        this.freezeWetGain.gain.setValueAtTime(0.0, now + 0.050);
+      }
+
+      // 4. Restore freezeInputGain to 1.0 smoothly after the loop has been quenched
+      if (typeof this.freezeInputGain.gain.setValueAtTime === 'function') {
+        this.freezeInputGain.gain.setValueAtTime(0.0, now + 0.050);
+        this.freezeInputGain.gain.setTargetAtTime(1.0, now + 0.055, 0.060);
+      }
     }
     return this.isFrozen;
+  }
+
+  /**
+   * Immediately quench any active or residual freeze recirculation (Panic / Reset)
+   */
+  quenchFreeze() {
+    this.isFrozen = false;
+    const now = this.ctx ? this.ctx.currentTime : 0;
+    const cancelParam = (param, time) => {
+      if (!param) return;
+      if (typeof param.cancelAndHoldAtTime === 'function') {
+        param.cancelAndHoldAtTime(time);
+      } else if (typeof param.cancelScheduledValues === 'function') {
+        param.cancelScheduledValues(time);
+      }
+    };
+
+    if (this.freezeFeedbackL && this.freezeFeedbackL.gain) {
+      cancelParam(this.freezeFeedbackL.gain, now);
+      this.freezeFeedbackL.gain.setValueAtTime(0.0, now);
+    }
+    if (this.freezeFeedbackR && this.freezeFeedbackR.gain) {
+      cancelParam(this.freezeFeedbackR.gain, now);
+      this.freezeFeedbackR.gain.setValueAtTime(0.0, now);
+    }
+    if (this.freezeWetGain && this.freezeWetGain.gain) {
+      cancelParam(this.freezeWetGain.gain, now);
+      this.freezeWetGain.gain.setValueAtTime(0.0, now);
+    }
+    if (this.freezeInputGain && this.freezeInputGain.gain) {
+      cancelParam(this.freezeInputGain.gain, now);
+      this.freezeInputGain.gain.setValueAtTime(1.0, now);
+    }
   }
 }

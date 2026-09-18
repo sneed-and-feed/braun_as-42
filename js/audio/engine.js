@@ -887,7 +887,17 @@ export class AudioEngine {
     if (this.feltPiano && typeof this.feltPiano.releaseAllNotes === 'function') {
       this.feltPiano.releaseAllNotes();
     }
+    if (this.shimmerReverb && typeof this.shimmerReverb.quenchFreeze === 'function') {
+      if (this.reverbParams && this.reverbParams.freeze) {
+        this.reverbParams.freeze = false;
+      }
+      this.shimmerReverb.quenchFreeze();
+    }
     this._updateDroneGating();
+  }
+
+  panic() {
+    this.releaseAllNotes();
   }
 
   setTuningReference(a4) {

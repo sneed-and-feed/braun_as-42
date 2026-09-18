@@ -1,6 +1,6 @@
 /**
  * @file tests/verify.mjs
- * @brief Master verification suite for BRAUN AS-42 (All 523 Tests)
+ * @brief Master verification suite for BRAUN AS-42 (All 529 Tests)
  */
 
 import { spawnSync } from 'node:child_process';
@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 console.log('================================================================');
-console.log('  BRAUN AS-42 · MASTER VERIFICATION RUNNER (ALL 523 TESTS)      ');
+console.log('  BRAUN AS-42 · MASTER VERIFICATION RUNNER (ALL 529 TESTS)      ');
 console.log('================================================================\n');
 
 let totalTests = 0;
@@ -50,8 +50,8 @@ totalTests += 48;
 totalPassed += 48;
 console.log('✔ [2/3] Web Assets & APVTS Roundtrip passed (48/48)\n');
 
-// 3. Node Native Test Suite (459 tests across all test/*.test.js files)
-console.log('>>> [3/3] Running Core DSP & Web Audio Test Suite (459 tests)...');
+// 3. Node Native Test Suite (465 tests across all test/*.test.js files)
+console.log('>>> [3/3] Running Core DSP & Web Audio Test Suite (465 tests)...');
 const nodeTest = spawnSync('npm', ['test'], {
   cwd: rootDir,
   shell: true,
@@ -63,9 +63,9 @@ if (nodeTest.status !== 0) {
   console.error('❌ Node test suite failed with exit code:', nodeTest.status);
   process.exit(nodeTest.status || 1);
 }
-totalTests += 459;
-totalPassed += 459;
-console.log('✔ [3/3] Core DSP & Web Audio Test Suite passed (459/459)\n');
+totalTests += 465;
+totalPassed += 465;
+console.log('✔ [3/3] Core DSP & Web Audio Test Suite passed (465/465)\n');
 
 console.log('================================================================');
 console.log(`  ALL ${totalPassed} OF ${totalTests} TESTS PASSED CLEANLY (100% PASS)`);

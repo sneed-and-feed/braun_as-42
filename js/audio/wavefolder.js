@@ -12,7 +12,7 @@
  * @param {number} [knee=0.70] - Threshold where soft knee engages
  * @returns {number}
  */
-function applySmoothBoundaryKnee(y, knee = 0.70) {
+export function applySmoothBoundaryKnee(y, knee = 0.70) {
   if (y > knee) {
     const u = (y - knee) / (1 - knee);
     return knee + (1 - knee) * (u + u * u - u * u * u);
@@ -22,6 +22,30 @@ function applySmoothBoundaryKnee(y, knee = 0.70) {
     return -(knee + (1 - knee) * (u + u * u - u * u * u));
   }
   return y;
+}
+
+/**
+ * Generate a transparent soft limiter transfer curve for the reverb freeze recirculating loop.
+ * Strictly bounds peak energy to maxLevel (default 0.88 <= 0.90) to prevent feedback runaway,
+ * with exact unity small-signal gain below knee * maxLevel.
+ * @param {number} [samples=2048]
+ * @param {number} [maxLevel=0.88]
+ * @param {number} [knee=0.70]
+ * @returns {Float32Array}
+ */
+export function makeFreezeLimiterCurve(samples = 2048, maxLevel = 0.88, knee = 0.70) {
+  const curve = new Float32Array(samples);
+  const half = (samples - 1) / 2;
+  const k = Math.max(0.20, Math.min(0.95, knee));
+  const bound = Math.max(0.50, Math.min(0.95, maxLevel));
+
+  for (let i = 0; i < samples; i++) {
+    const x = (i - half) / half; // -1 to +1
+    const scaled = x / bound;
+    curve[i] = bound * applySmoothBoundaryKnee(scaled, k);
+  }
+
+  return curve;
 }
 
 /**
