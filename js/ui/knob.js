@@ -99,6 +99,7 @@ export class BraunKnob {
     const onPointerDown = (e) => {
       if (e.target === this.directInput) return;
       if (isDragging) return;
+      if (e.button !== undefined && e.button !== 0) return;
 
       // Disambiguate touch targets: labels, numeric displays, and inputs must not block page scrolling
       const isLabelOrValue = Boolean(
@@ -385,6 +386,15 @@ export class BraunKnob {
         this.directInput.style.display = 'none';
       });
     }
+
+    // Right-click: clean reset to default value with host DAW / Web Audio notification
+    this.element.addEventListener('contextmenu', (e) => {
+      if (e.target === this.directInput) return;
+      if (this.directInput && this.directInput.style.display !== 'none') return;
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+      this.setValue(this.defaultValue, true);
+    });
   }
 
   toNormalized(val) {

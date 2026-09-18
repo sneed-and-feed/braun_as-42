@@ -805,6 +805,69 @@ describe('iPadOS / Mobile Safari Compatibility Suite', () => {
         globalThis.document = origDoc;
       }
     });
+
+    it('ignores right-click pointerdown and resets to default on contextmenu', () => {
+      const windowListeners = new Map();
+      const mockWin = {
+        addEventListener(type, cb) {
+          if (!windowListeners.has(type)) windowListeners.set(type, []);
+          windowListeners.get(type).push(cb);
+        }
+      };
+
+      const origWin = globalThis.window;
+      const origDoc = globalThis.document;
+      globalThis.window = mockWin;
+      globalThis.document = {
+        createElement: (tag) => new MockElement(tag)
+      };
+
+      try {
+        const container = new MockElement('div');
+        const knob = new BraunKnob(container, { min: 0, max: 100, default: 50, value: 50 });
+        const el = knob.element;
+
+        // Change value to 80
+        knob.setValue(80, false);
+        assert.strictEqual(knob.value, 80);
+
+        // Right-click pointerdown (button 2) must NOT initiate drag
+        el.dispatchEvent({
+          type: 'pointerdown',
+          button: 2,
+          pointerId: 1,
+          preventDefault: () => {}
+        });
+        assert.strictEqual(el.classList.contains('is-active'), false, 'Right-click must not activate knob dragging');
+
+        // Right-click contextmenu event resets knob to defaultValue (50)
+        let prevented = false;
+        let stopped = false;
+        el.dispatchEvent({
+          type: 'contextmenu',
+          preventDefault: () => { prevented = true; },
+          stopPropagation: () => { stopped = true; }
+        });
+        assert.strictEqual(prevented, true, 'contextmenu must call preventDefault');
+        assert.strictEqual(stopped, true, 'contextmenu must call stopPropagation');
+        assert.strictEqual(knob.value, 50, 'contextmenu must reset knob to defaultValue');
+
+        // While directInput is active (display !== 'none'), contextmenu must NOT reset value
+        knob.setValue(75, false);
+        if (knob.directInput) {
+          knob.directInput.style.display = 'block';
+          knob.element.dispatchEvent({
+            type: 'contextmenu',
+            preventDefault: () => {},
+            stopPropagation: () => {}
+          });
+          assert.strictEqual(knob.value, 75, 'contextmenu must not clobber value when text input is active');
+        }
+      } finally {
+        globalThis.window = origWin;
+        globalThis.document = origDoc;
+      }
+    });
   });
 
   describe('5. Play Surface Multi-Touch Polyphony and Glissando Tracking', () => {
