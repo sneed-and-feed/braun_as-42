@@ -24,6 +24,11 @@ jobs:
       - name: Run Web Audio & MIDI Tests
         run: npm test
 
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype-dev libfontconfig1-dev libgl-dev libcurl4-openssl-dev libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev
+
       - name: Configure CMake for C++ Tests
         run: |
           cmake -B build \
