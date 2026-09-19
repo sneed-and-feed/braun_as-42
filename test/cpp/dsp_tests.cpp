@@ -14,6 +14,7 @@
 #include <numeric>
 #include <string>
 #include <chrono>
+#include <atomic>
 
 // Test framework macros
 static int gTestsPassed = 0;
