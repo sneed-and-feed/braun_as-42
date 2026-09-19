@@ -147,6 +147,45 @@ inline float softLimit(float x, float knee = 0.80f) noexcept {
 }
 
 // ============================================================================
+// 4-Point, 3rd-Order Catmull-Rom Hermite Cubic Spline Interpolation (Horner Form)
+// Continuous first derivative (C1), minimal ripple up to 0.45 fs
+// ============================================================================
+[[nodiscard]] inline float interpolateHermite4P3O(float ym1, float y0, float y1, float y2, float mu) noexcept {
+    const float c0 = y0;
+    const float c1 = 0.5f * (y1 - ym1);
+    const float c2 = ym1 - 2.5f * y0 + 2.0f * y1 - 0.5f * y2;
+    const float c3 = 0.5f * (y2 - ym1) + 1.5f * (y0 - y1);
+    return flushDenormal(((c3 * mu + c2) * mu + c1) * mu + c0);
+}
+
+// ============================================================================
+// Zero-Latency 1st-Order DC Blocker
+// Prevents common-mode DC offset accumulation in recursive feedback loops
+// ============================================================================
+struct DcBlocker {
+    float x1 { 0.0f };
+    float y1 { 0.0f };
+    float R { 0.99935f }; // Default ~5 Hz at 48 kHz
+
+    void setCutoff(float fcHz, double sampleRate) noexcept {
+        const float fs = static_cast<float>(sampleRate > 100.0 ? sampleRate : 48000.0);
+        R = std::clamp(1.0f - (kTwoPi * fcHz / fs), 0.99f, 0.99995f);
+    }
+
+    void reset() noexcept {
+        x1 = 0.0f;
+        y1 = 0.0f;
+    }
+
+    [[nodiscard]] inline float process(float x) noexcept {
+        const float y = x - x1 + R * y1;
+        x1 = flushDenormal(x);
+        y1 = flushDenormal(y);
+        return y1;
+    }
+};
+
+// ============================================================================
 // One-Pole Parameter Smoother (Exponential Slewer)
 // ============================================================================
 class OnePoleSmoother {

@@ -8,7 +8,7 @@ if(APPLE)
     endif()
 endif()
 
-project(BRAUN_AS42_PROJECT VERSION 1.3.9 LANGUAGES C CXX)
+project(BRAUN_AS42_PROJECT VERSION 1.4.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,9 +39,18 @@ else()
 endif()
 
 # ==============================================================================
+# GUI Options
+# ==============================================================================
+if(UNIX AND NOT APPLE)
+    option(AS42_USE_WEBVIEW "Enable WebBrowserComponent GUI" OFF)
+else()
+    option(AS42_USE_WEBVIEW "Enable WebBrowserComponent GUI" ON)
+endif()
+
+# ==============================================================================
 # 1. Provision Microsoft.Web.WebView2 NuGet Package for Windows
 # ==============================================================================
-if(WIN32)
+if(WIN32 AND AS42_USE_WEBVIEW)
     set(WEBVIEW2_VERSION "1.0.2849.39")
     set(WEBVIEW2_DIR "${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2.${WEBVIEW2_VERSION}")
     if(NOT EXISTS "${WEBVIEW2_DIR}/build/native/include/WebView2.h")
@@ -108,16 +117,19 @@ if(APPLE)
 endif()
 
 set(AS42_EXTRA_PLUGIN_ARGS "")
-if(WIN32)
-    list(APPEND AS42_EXTRA_PLUGIN_ARGS NEEDS_WEBVIEW2 TRUE)
-endif()
-if(UNIX AND NOT APPLE)
-    list(APPEND AS42_EXTRA_PLUGIN_ARGS NEEDS_WEB_BROWSER TRUE)
+if(AS42_USE_WEBVIEW)
+    if(WIN32)
+        list(APPEND AS42_EXTRA_PLUGIN_ARGS NEEDS_WEBVIEW2 TRUE)
+    endif()
+    if(UNIX AND NOT APPLE)
+        list(APPEND AS42_EXTRA_PLUGIN_ARGS NEEDS_WEB_BROWSER TRUE)
+    endif()
 endif()
 
 juce_add_plugin(BRAUN_AS42
-    COMPANY_NAME "Braun"
-    VERSION 1.3.9
+    COMPANY_NAME "Sneed's Feed & Seed Ltd."
+    BUNDLE_ID "com.sneedandfeed.braun_as42"
+    VERSION "1.4.1"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
@@ -145,6 +157,7 @@ target_sources(BRAUN_AS42
         plugin/source/dsp/DroneVoiceDsp.h
         plugin/source/dsp/TapeDelayDsp.h
         plugin/source/dsp/ShimmerReverbDsp.h
+        plugin/source/dsp/TailModulator.h
         plugin/source/dsp/MasterLimiterDsp.h
         plugin/source/dsp/Wavetables.h
         plugin/source/web/WebResourceManager.cpp
@@ -158,16 +171,24 @@ target_include_directories(BRAUN_AS42
         plugin/source/dsp
 )
 
-target_compile_definitions(BRAUN_AS42
-    PUBLIC
-        JUCE_WEB_BROWSER=1
-        JUCE_VST3_CAN_REPLACE_VST2=0
-)
-if(WIN32)
+if(AS42_USE_WEBVIEW)
     target_compile_definitions(BRAUN_AS42
         PUBLIC
-            JUCE_USE_WIN_WEBVIEW2=1
-            JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
+            JUCE_WEB_BROWSER=1
+            JUCE_VST3_CAN_REPLACE_VST2=0
+    )
+    if(WIN32)
+        target_compile_definitions(BRAUN_AS42
+            PUBLIC
+                JUCE_USE_WIN_WEBVIEW2=1
+                JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
+        )
+    endif()
+else()
+    target_compile_definitions(BRAUN_AS42
+        PUBLIC
+            JUCE_WEB_BROWSER=0
+            JUCE_VST3_CAN_REPLACE_VST2=0
     )
 endif()
 
@@ -187,7 +208,7 @@ target_link_libraries(BRAUN_AS42
         juce::juce_recommended_warning_flags
 )
 
-if(UNIX AND NOT APPLE)
+if(AS42_USE_WEBVIEW AND UNIX AND NOT APPLE)
     find_package(CURL REQUIRED)
     target_link_libraries(BRAUN_AS42 PRIVATE CURL::libcurl)
 endif()

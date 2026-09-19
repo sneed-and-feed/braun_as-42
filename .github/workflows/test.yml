@@ -21,5 +21,22 @@ jobs:
         with:
           node-version: 22
 
-      - name: Run Test Suite
+      - name: Run Web Audio & MIDI Tests
         run: npm test
+
+      - name: Configure CMake for C++ Tests
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAS42_BUILD_TESTS=ON \
+            -DAS42_USE_WEBVIEW=OFF
+
+      - name: Build C++ Test Executables
+        run: |
+          cmake --build build --target dsp_tests challenger_stress_tests adversarial_challenge_suite --config Release -j$(nproc)
+
+      - name: Execute C++ Test Suites
+        run: |
+          ./build/dsp_tests
+          ./build/challenger_stress_tests
+          ./build/adversarial_challenge_suite

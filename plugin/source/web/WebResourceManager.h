@@ -1,6 +1,8 @@
 #pragma once
 
 #include <juce_gui_extra/juce_gui_extra.h>
+
+#if JUCE_WEB_BROWSER
 #include <optional>
 
 namespace braun {
@@ -18,3 +20,4 @@ private:
 };
 
 } // namespace braun
+#endif

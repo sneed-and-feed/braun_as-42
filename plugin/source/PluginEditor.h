@@ -3,7 +3,9 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PluginProcessor.h"
+#if JUCE_WEB_BROWSER
 #include "web/WebResourceManager.h"
+#endif
 #include "LookAndFeel/BraunLookAndFeel.h"
 #include "Parameters.h"
 #include <atomic>
@@ -45,18 +47,24 @@ public:
     void sendDroneTrackUpdateToWeb(bool track);
     void sendRecordingStateUpdateToWeb(bool isRecording);
     void syncAllParametersToWeb();
+#if JUCE_WEB_BROWSER
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
+#endif
 
     static constexpr size_t kNumTrackedParams = 38;
 
 private:
     void timerCallback() override;
 
+#if JUCE_WEB_BROWSER
     static juce::WebBrowserComponent::Options createWebOptions(BRAUN_AS42AudioProcessorEditor& editor);
+#endif
 
     BRAUN_AS42AudioProcessor& processorRef;
+#if JUCE_WEB_BROWSER
     braun::WebResourceManager resourceManager;
     juce::WebBrowserComponent webComponent;
+#endif
     braun::BraunLookAndFeel braunLookAndFeel;
     bool useNativeUI { false };
     bool initialSyncDone { false };

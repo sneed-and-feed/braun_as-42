@@ -33,8 +33,21 @@ jobs:
         run: |
           cmake --build build --config Release -j$(sysctl -n hw.ncpu)
 
-      - name: Package Distribution Zip
+      - name: Determine Version
+        id: version
         run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            PKG_VER=$(node -p "require('./package.json').version")
+            TAG="v${PKG_VER}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Detected version tag: ${TAG}"
+
+      - name: Package Distribution Zip & Compute Checksum
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
           mkdir -p package/VST3 package/AU package/Standalone
           echo "Listing generated build artefacts:"
           find build -name "*.vst3" -o -name "*.component" -o -name "*.app" || true
@@ -59,23 +72,31 @@ jobs:
 
           [ -f LICENSE ] && cp LICENSE package/ || true
           [ -f README.md ] && cp README.md package/ || true
+          ZIP_NAME="BRAUN_AS42-${TAG}-macOS-Universal.zip"
           cd package
-          zip -r ../BRAUN_AS42-v1.3.5-macOS-Universal.zip *
+          zip -r "../${ZIP_NAME}" *
           cd ..
+          shasum -a 256 "${ZIP_NAME}" > "${ZIP_NAME}.sha256"
+          cat "${ZIP_NAME}.sha256"
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BRAUN_AS42-v1.3.5-macOS-Universal
-          path: BRAUN_AS42-v1.3.5-macOS-Universal.zip
+          name: BRAUN_AS42-${{ steps.version.outputs.tag }}-macOS-Universal
+          path: |
+            BRAUN_AS42-${{ steps.version.outputs.tag }}-macOS-Universal.zip
+            BRAUN_AS42-${{ steps.version.outputs.tag }}-macOS-Universal.zip.sha256
 
       - name: Attach to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          ZIP_NAME="BRAUN_AS42-${TAG}-macOS-Universal.zip"
+          SHA_NAME="${ZIP_NAME}.sha256"
           for attempt in 1 2 3; do
-            echo "Attempt $attempt: uploading release asset to v1.3.5..."
-            if gh release upload v1.3.5 BRAUN_AS42-v1.3.5-macOS-Universal.zip --repo ${{ github.repository }} --clobber; then
+            echo "Attempt $attempt: uploading release asset to ${TAG}..."
+            if gh release upload "${TAG}" "${ZIP_NAME}" "${SHA_NAME}" --repo ${{ github.repository }} --clobber; then
               echo "Upload succeeded!"
               exit 0
             fi

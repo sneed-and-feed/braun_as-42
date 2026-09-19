@@ -49,6 +49,41 @@ export function makeFreezeLimiterCurve(samples = 2048, maxLevel = 0.88, knee = 0
 }
 
 /**
+ * Generate a transparent soft limiter transfer curve with C1-smooth boundary knee
+ * for the shimmer reverb pitch-shift feedback loop.
+ * Exhibits exact unity small-signal gain below knee * maxLevel, and smoothly compresses
+ * toward maxLevel with zero derivative at +/-maxLevel, preventing runaway high-octave
+ * feedback whistle, decimation ringing, and clipping crackle.
+ * @param {number} [samples=2048]
+ * @param {number} [maxLevel=0.85]
+ * @param {number} [knee=0.70]
+ * @returns {Float32Array}
+ */
+export function makeShimmerLimiterCurve(samples = 2048, maxLevel = 0.85, knee = 0.70) {
+  const curve = new Float32Array(samples);
+  const half = (samples - 1) / 2;
+  const bound = Math.max(0.50, Math.min(1.0, maxLevel));
+  const k = Math.max(0.20, Math.min(0.95, knee));
+  const threshold = k * bound;
+
+  for (let i = 0; i < samples; i++) {
+    const x = (i - half) / half; // -1 to +1
+    const absX = Math.abs(x);
+    if (absX <= threshold) {
+      curve[i] = x;
+    } else if (absX < bound) {
+      const u = (absX - threshold) / (bound - threshold);
+      const shaped = threshold + (bound - threshold) * (u + u * u - u * u * u);
+      curve[i] = (x < 0 ? -1 : 1) * shaped;
+    } else {
+      curve[i] = (x < 0 ? -1 : 1) * bound;
+    }
+  }
+
+  return curve;
+}
+
+/**
  * Generate a soft-clipping tanh transfer curve with C1-smooth boundary knee
  * @param {number} [samples=2048] - Curve sample resolution
  * @param {number} [drive=1.5] - Input overdrive factor

@@ -1,12 +1,12 @@
 # BRAUN AS 42 · Reproducible Verification Checklist & DSP Benchmark Report
 
-[![Verification Status](https://img.shields.io/badge/Verification-100%25%20PASS%20(529%2F529)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#verification-summary)
-[![Tests Passing](https://img.shields.io/badge/Tests-465%2F465%20PASS-success?style=for-the-badge&logo=node.js&logoColor=white)](#1-test-suite-coverage--verification-matrix)
+[![Verification Status](https://img.shields.io/badge/Verification-100%25%20PASS%20(540%2F540)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#verification-summary)
+[![Tests Passing](https://img.shields.io/badge/Tests-473%2F473%20PASS-success?style=for-the-badge&logo=node.js&logoColor=white)](#1-test-suite-coverage--verification-matrix)
 [![Sample Rates](https://img.shields.io/badge/Sample%20Rates-44.1k%20--%20192k%20Hz-blue?style=for-the-badge)](#2-audio-engineering--dsp-specifications)
 [![Latency](https://img.shields.io/badge/Algorithmic%20Latency-0%20Samples-orange?style=for-the-badge)](#latency-profile)
 [![License](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
 
-> **Document Version:** 1.3.9  
+> **Document Version:** 1.4.1  
 > **Status:** Verified & Certified  
 > **Engine:** Dual Web Audio API & Native C++20 DSP (AUv2 / VST3 / Standalone)  
 > **Aesthetic & Engineering Standard:** Dieter Rams Functionalist Audio Architecture (*"Weniger, aber besser"*)
@@ -17,8 +17,8 @@
 
 | Metric | Certified Result | Target Threshold | Status |
 | :--- | :--- | :--- | :--- |
-| **Node.js Automated Test Harness** | **465 / 465 Passed** (103 suites) | 100% Pass, 0 Failures | **PASS** |
-| **Native C++ DSP & Real-Time Suites** | **65 / 65 Passed** (3 suites) | 100% Pass, 0 Failures | **PASS** |
+| **Node.js Automated Test Harness** | **473 / 473 Passed** (108 suites) | 100% Pass, 0 Failures | **PASS** |
+| **Native C++ DSP & Real-Time Suites** | **67 / 67 Passed** (3 suites) | 100% Pass, 0 Failures | **PASS** |
 | **Fast Verification Checklist Suite** | **100% Passed** (`verify:checklist`) | 0 Errors | **PASS** |
 | **Real-Time Memory Safety** | **0 leaks, 0 heap allocations in `processBlock()`** | 0 bytes allocated | **PASS** |
 | **Numerical Integrity** | **0 NaNs, 0 Infinities, 0 Denormals** | Strict FP bounded | **PASS** |
@@ -36,7 +36,7 @@ To reproduce all verification tests and DSP benchmarks on any local installation
 # 1. Run the standalone verification checklist harness (< 250ms execution time)
 npm run verify:checklist
 
-# 2. Run the complete Node.js Web Audio & MIDI automated test suite (459 tests)
+# 2. Run the complete Node.js Web Audio & MIDI automated test suite (473 tests)
 npm test
 
 # 3. Run combined checklist and audio math regression tests
@@ -47,10 +47,10 @@ npm run verify:all
 
 ## 1. Test Suite Coverage & Verification Matrix
 
-The AS-42 verification framework spans 523 automated assertions across Web Audio API, Web MIDI, and native C++20 DSP pipelines:
+The AS-42 verification framework spans 540 automated assertions across Web Audio API, Web MIDI, and native C++20 DSP pipelines:
 
 ### 1.1 Node.js Automated Test Suite (`npm test`)
-* **Total Tests:** 459 passed, 0 failed, 0 skipped, 0 canceled across 98 test suites.
+* **Total Tests:** 473 passed, 0 failed, 0 skipped, 0 canceled across 108 test suites.
 * **Coverage Scope:**
   * Voice de-duplication, lifecycle management, and note-off tracking (`web-audio-audit-regressions.test.js`, `audio-enhancements.test.js`).
   * Web MIDI API parsing, running status decoding, 14-bit pitch bend linearity, and chaotic sustain pedal (CC 64) latching (`web-midi.test.js`, `web-midi-stress.test.js`).
@@ -63,7 +63,7 @@ The AS-42 verification framework spans 523 automated assertions across Web Audio
   * Responsive tablet and iPadOS touch disambiguation (`ipad-viewport-and-touch-scrolling.test.js`, `ipad-touch-and-audio-unlock.test.js`).
 
 ### 1.2 Native C++ DSP Suites (`test/cpp/`)
-* **DSP Unit Tests (`test/cpp/dsp_tests`):** 43 passed, 0 failed. Verifies biquad state preservation across zero-crossings, voice stealing pitch locks, Hermite limiter bounds, tape saturation feedback stability, voice allocation, and pitch tracking.
+* **DSP Unit Tests (`test/cpp/dsp_tests`):** 46 passed, 0 failed. Verifies biquad state preservation across zero-crossings, voice stealing pitch locks, Hermite limiter bounds, tape saturation feedback stability, voice allocation, pitch tracking, and soft compressor knee ratio/timing.
 * **Adversarial Stress Tests (`test/cpp/challenger_stress_tests`):** 10 passed, 0 failed. Verifies block sizes from 32 to 2048, multiple sample rates (44.1 kHz to 192 kHz), 22-parameter rapid sweeps, and strictly **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
 * **Adversarial Challenge Suite (`test/cpp/adversarial_challenge_suite`):** 11 passed, 0 failed. Confirms zero NaNs, Infinities, or denormals; DC offset bounded below 0.00025; and continuous voice stealing fades.
 * **Embedded Asset & MIME Audit (`node test/web-assets-and-mime-stress.mjs`):** 18/18 embedded web assets verified against SHA-256 hashes, zero MIME type resolution errors, and 22-parameter bidirectional APVTS roundtrip verified.
@@ -194,5 +194,5 @@ The AS-42 employs a three-tier anti-clipping architecture to ensure clean, warm 
 ## 8. Verification Sign-Off
 
 * **Lead Verification Engineer:** Antigravity Audio Engineering Team
-* **Target Release:** BRAUN AS-42 v1.3.5 / sneed-and-feed.github.io
+* **Target Release:** BRAUN AS-42 v1.4.1 / sneed-and-feed.github.io
 * **Verification Outcome:** **100% PASS** — All criteria met with zero defects.

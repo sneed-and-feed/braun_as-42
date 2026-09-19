@@ -2935,6 +2935,191 @@ void test_shimmer_reverb_freeze_sustain_and_decay() {
 }
 
 // ============================================================================
+// Test 45: Felt Piano Reverb Pitch Stability, Zero Metallic Ringing & Bloom Hold
+// ============================================================================
+void test_felt_piano_reverb_pitch_stability_and_tail_bloom() {
+    braun::ShimmerReverbDsp reverb;
+    constexpr double sampleRate = 48000.0;
+    reverb.prepare(sampleRate);
+
+    braun::ShimmerReverbParams params;
+    params.decaySec = 7.5f;
+    params.damping = 0.50f;
+    params.shimmer = 0.0f; // Isolate late diffuse tank & tail modulator
+    params.mix = 0.50f;
+    params.freeze = false;
+
+    // 1. Play sustained Middle C (C4 = 261.625565 Hz) for 2 seconds (96,000 samples)
+    constexpr int kSamples = 96000;
+    constexpr float freq = 261.625565f;
+    std::vector<float> outputL(kSamples, 0.0f);
+    std::vector<float> outputR(kSamples, 0.0f);
+
+    for (int i = 0; i < kSamples; ++i) {
+        const float t = static_cast<float>(i) / 48000.0f;
+        // Piano note envelope: rapid 5ms attack, gradual natural decay
+        const float env = (i < 240) ? (static_cast<float>(i) / 240.0f) : std::exp(-t * 0.4f);
+        const float in = std::sin(braun::kTwoPi * freq * t) * env;
+        float outL = 0.0f, outR = 0.0f;
+        reverb.processSample(in, in, params, outL, outR);
+        outputL[i] = in + outL;
+        outputR[i] = in + outR;
+    }
+
+    // 2. Measure instantaneous frequency via sliding correlation over 50ms windows
+    constexpr int windowSize = 2400; // 50ms at 48kHz
+    constexpr int stepSize = 480;    // 10ms steps
+    float maxCentDeviationAttack = 0.0f;
+    float maxCentDeviationSustain = 0.0f;
+
+    for (int start = 0; start + windowSize <= kSamples; start += stepSize) {
+        double sumCos = 0.0;
+        double sumSin = 0.0;
+        for (int i = 0; i < windowSize; ++i) {
+            const int idx = start + i;
+            const float t = static_cast<float>(idx) / 48000.0f;
+            const float refCos = std::cos(braun::kTwoPi * freq * t);
+            const float refSin = std::sin(braun::kTwoPi * freq * t);
+            sumCos += outputL[idx] * refCos;
+            sumSin += outputL[idx] * refSin;
+        }
+        const double phase = std::atan2(sumSin, sumCos);
+
+        if (start + stepSize + windowSize <= kSamples) {
+            double nextCos = 0.0;
+            double nextSin = 0.0;
+            for (int i = 0; i < windowSize; ++i) {
+                const int idx = start + stepSize + i;
+                const float t = static_cast<float>(idx) / 48000.0f;
+                const float refCos = std::cos(braun::kTwoPi * freq * t);
+                const float refSin = std::sin(braun::kTwoPi * freq * t);
+                nextCos += outputL[idx] * refCos;
+                nextSin += outputL[idx] * refSin;
+            }
+            const double nextPhase = std::atan2(nextSin, nextCos);
+            double deltaPhase = nextPhase - phase;
+            while (deltaPhase > braun::kPi) deltaPhase -= braun::kTwoPi;
+            while (deltaPhase < -braun::kPi) deltaPhase += braun::kTwoPi;
+
+            const double dt = static_cast<double>(stepSize) / 48000.0;
+            const double deltaFreq = deltaPhase / (braun::kTwoPi * dt);
+            const float cents = static_cast<float>(std::abs(1200.0 * std::log2((freq + deltaFreq) / freq)));
+
+            const float timeSec = static_cast<float>(start) / 48000.0f;
+            if (timeSec < 0.150f) {
+                maxCentDeviationAttack = std::max(maxCentDeviationAttack, cents);
+            } else {
+                maxCentDeviationSustain = std::max(maxCentDeviationSustain, cents);
+            }
+        }
+    }
+
+    std::cout << "  [METRICS] Felt Piano Reverb Attack Pitch Drift: " << maxCentDeviationAttack
+              << " cents (limit: < 4.0 cents, JND is 5-6 cents)\n";
+    std::cout << "  [METRICS] Felt Piano Reverb Sustain Tail Drift: " << maxCentDeviationSustain
+              << " cents (limit: < 5.0 cents, JND is 5-6 cents)\n";
+
+    TEST_ASSERT(maxCentDeviationAttack < 4.0f,
+                "Felt piano attack pitch drift exceeded 4.0 cents: " + std::to_string(maxCentDeviationAttack));
+    TEST_ASSERT(maxCentDeviationSustain < 5.0f,
+                "Felt piano sustain tail pitch drift exceeded JND threshold (5 cents): " + std::to_string(maxCentDeviationSustain));
+}
+
+// ============================================================================
+// Test 46: SoftCompressor Knee Threshold, Ratio Slope, and Attack/Release Timing
+// ============================================================================
+void test_soft_compressor_knee_ratio_and_timing() {
+    braun::SoftCompressor comp;
+    constexpr float kSampleRate = 48000.0f;
+    constexpr float kThresholdDb = -6.0f;
+    constexpr float kKneeDb = 6.0f;
+    constexpr float kRatio = 4.0f;
+    constexpr float kAttackSec = 0.005f;   // 5 ms
+    constexpr float kReleaseSec = 0.050f;  // 50 ms
+
+    comp.prepare(kSampleRate, kThresholdDb, kKneeDb, kRatio, kAttackSec, kReleaseSec);
+
+    // 1. Below Knee: Signals strictly below (threshold - knee/2 = -9.0 dBFS) must have 0 dB reduction (unity gain)
+    const float inBelow = std::pow(10.0f, -12.0f / 20.0f);
+    comp.reset();
+    float outBelow = 0.0f;
+    for (int i = 0; i < 4800; ++i) { // 100 ms steady state
+        outBelow = comp.process(inBelow);
+    }
+    const float diffBelow = std::abs(outBelow - inBelow);
+    TEST_ASSERT(diffBelow < 1.0e-4f,
+                "SoftCompressor below knee failed unity gain: diff = " + std::to_string(diffBelow));
+
+    // 2. Soft-Knee Region: At threshold exactly (-6.0 dBFS), quadratic knee predicts:
+    // kneeGain = (1/ratio - 1) * (diff^2) / (2 * kneeDb), where diff = halfKnee = 3.0 dB
+    // kneeGain = (0.25 - 1.0) * 9.0 / 12.0 = -0.5625 dB
+    const float inThresh = std::pow(10.0f, kThresholdDb / 20.0f);
+    comp.reset();
+    float outThresh = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        outThresh = comp.process(inThresh);
+    }
+    const float actualThreshGainDb = 20.0f * std::log10(outThresh / inThresh);
+    constexpr float expectedKneeGainDb = -0.5625f;
+    const float kneeDev = std::abs(actualThreshGainDb - expectedKneeGainDb);
+    TEST_ASSERT(kneeDev < 0.05f,
+                "SoftCompressor soft-knee gain deviation at threshold: " + std::to_string(kneeDev) + " dB");
+
+    // 3. Ratio Slope: Well above knee (> -3.0 dBFS, e.g., 0.0 dBFS vs +6.0 dBFS)
+    // A 6.0 dB delta in input must result in (6.0 / ratio) = 1.5 dB delta in output (ratio slope = 0.25)
+    comp.reset();
+    const float inHigh1 = 1.0f; // 0 dBFS
+    float outHigh1 = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        outHigh1 = comp.process(inHigh1);
+    }
+    const float outDb1 = 20.0f * std::log10(outHigh1);
+
+    comp.reset();
+    const float inHigh2 = std::pow(10.0f, 6.0f / 20.0f); // +6.0 dBFS (~1.995)
+    float outHigh2 = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        outHigh2 = comp.process(inHigh2);
+    }
+    const float outDb2 = 20.0f * std::log10(outHigh2);
+
+    const float deltaInDb = 6.0f;
+    const float deltaOutDb = outDb2 - outDb1;
+    const float measuredRatioSlope = deltaOutDb / deltaInDb;
+    constexpr float expectedRatioSlope = 1.0f / kRatio; // 0.25
+    TEST_ASSERT(std::abs(measuredRatioSlope - expectedRatioSlope) < 0.02f,
+                "SoftCompressor ratio slope deviation: measured " + std::to_string(measuredRatioSlope) +
+                ", expected " + std::to_string(expectedRatioSlope));
+
+    // 4. Attack & Release Timing:
+    comp.reset();
+    const int attackSamples = static_cast<int>(kSampleRate * kAttackSec); // 240
+    float midAttackOut = 0.0f;
+    for (int i = 0; i < attackSamples; ++i) {
+        midAttackOut = comp.process(1.0f);
+    }
+    const float finalSteadyOut = outHigh1;
+    TEST_ASSERT(midAttackOut < 1.0f && midAttackOut > finalSteadyOut,
+                "SoftCompressor attack dynamic envelope failed progression: midAttackOut = " + std::to_string(midAttackOut));
+
+    // Release: Step from 1.0f to 0.0f
+    const int releaseSamples = static_cast<int>(kSampleRate * kReleaseSec); // 2400
+    for (int i = 0; i < releaseSamples; ++i) {
+        comp.process(0.0f);
+    }
+    const float probeGain = comp.process(inBelow) / inBelow;
+    TEST_ASSERT(probeGain > 0.95f,
+                "SoftCompressor failed release gain recovery: probeGain = " + std::to_string(probeGain));
+
+    for (int i = 0; i < releaseSamples * 4; ++i) {
+        comp.process(0.0f);
+    }
+    const float fullyReleasedGain = comp.process(inBelow) / inBelow;
+    TEST_ASSERT(std::abs(fullyReleasedGain - 1.0f) < 1.0e-4f,
+                "SoftCompressor failed full release to unity gain: " + std::to_string(fullyReleasedGain));
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -2986,6 +3171,8 @@ int main() {
     RUN_TEST(test_sustain_pedal_rapid_churn_hardening);
     RUN_TEST(test_voice_steal_micro_ramp_declick_and_no_double_strike);
     RUN_TEST(test_shimmer_reverb_freeze_sustain_and_decay);
+    RUN_TEST(test_felt_piano_reverb_pitch_stability_and_tail_bloom);
+    RUN_TEST(test_soft_compressor_knee_ratio_and_timing);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

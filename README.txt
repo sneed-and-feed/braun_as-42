@@ -1,4 +1,4 @@
-BRAUN AS 42 · Ambient Generative Synthesizer (v1.3.9)
+BRAUN AS 42 · Ambient Generative Synthesizer (v1.4.1)
 =====================================================
 
 Included in this release:
@@ -11,12 +11,19 @@ Included in this release:
    - Standalone desktop version with direct ASIO/WASAPI and hardware MIDI support.
    - Run directly, no DAW required.
 
-What's New in v1.3.9:
-- Freeze Recirculation Engine Restoration: Fixed critical bug where std::fill in the ShimmerReverbDsp audio loop repeatedly zeroed circular delay memory every ~0.387s / 0.491s when writing to index 0, restoring full freeze functionality in the standalone app and VST3.
-- Continuous Audio Recording: Delay lines continuously record rolling incoming audio (inL, inR) with freezeInGain = 1.0f while freeze is off.
-- Endless Sustained Ambient Pad: freezeFb targets 0.988 with freezeWet = 0.85 and ducked input = 0.08, bounded < 1.0 and soft-limited at 0.88 with 75 Hz HPF and 3200 Hz LPF damping.
-- Clean Natural Release: Eliminated premature quench and double-ducking artifacts; unfreezing cleanly decays to silence within 200 ms without clicks or buffer wiping.
-- Full C++ and Web Audio Parity: Synchronized DSP engines and certified by comprehensive automated test suites.
+What's New in v1.4.1:
+- Documentation Re-Architecture & Tri-Split:
+  * Cleanly decoupled technical specifications into a streamlined 1-page README.md, comprehensive ARCHITECTURE.md datasheet, and detailed CHANGELOG.md.
+- Legal Homage & Sneed's Feed & Seed Ltd. Metadata:
+  * Standardized Dieter Rams homage disclaimer ("Not affiliated with Braun GmbH. Dieter Rams inspired design homage. Published by Sneed's Feed & Seed Ltd.") and unified manufacturer attributes (Brun / As42).
+- SoftCompressor Dynamic Response Test Suite:
+  * Extended C++ DSP test suite with dedicated SoftCompressor verification testing hyperbolic knee response, ratio curves, and attack/release envelope smoothing.
+- Deterministic 0-Sample Dry Latency:
+  * Formally certified 0-sample algorithmic dry latency across all buffer sizes (32-2048) alongside natural acoustic pre-delays on wet FDN shimmer and tape delay lines.
+- Linux WebView Default to OFF:
+  * Defaulted Linux builds to -DAS42_USE_WEBVIEW=OFF in CMake for clean out-of-the-box native compilation without WebKitGTK/Edge dependencies.
+- Master Verification:
+  * 100% test pass rate across 540 tests (473 Web Audio & MIDI tests + 67 Native C++ DSP tests) with 0 memory leaks, 0 denormals, and 0 NaNs.
 
 Project & Source: https://github.com/sneed-and-feed/braun_as-42
 Web Demo: https://sneed-and-feed.github.io/

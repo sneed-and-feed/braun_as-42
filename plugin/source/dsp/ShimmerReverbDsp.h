@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DspMath.h"
+#include "TailModulator.h"
 #include <vector>
 #include <array>
 #include <cmath>
@@ -18,7 +19,8 @@ struct ShimmerReverbParams {
 
 // ============================================================================
 // Dual-Delay Real-Time +12 Semitones (+1 Octave) Pitch Shifter
-// Window = 45 ms, downward ramp period T = 45 ms, constant-power sine windows
+// Window = 45 ms, downward ramp period T = 45 ms, Hann raised-cosine windows,
+// 4-point 3rd-order Catmull-Rom Hermite interpolation with C1 continuity
 // ============================================================================
 class DualDelayPitchShifter {
 public:
@@ -42,24 +44,28 @@ public:
 
     inline float processSample(float input) noexcept {
         const size_t bufSize = mDelayBuffer.size();
-        mDelayBuffer[mWriteIndex] = input;
+        mDelayBuffer[mWriteIndex] = flushDenormal(input);
 
         const float phase1 = mPhase;
         const float phase2 = (phase1 >= 0.5f) ? (phase1 - 0.5f) : (phase1 + 0.5f);
 
-        // Downward delay ramps (45 ms down to 0) for +1 octave shift
-        const float delaySamples1 = mWindowSec * (1.0f - phase1) * mSampleRate;
-        const float delaySamples2 = mWindowSec * (1.0f - phase2) * mSampleRate;
+        // Downward delay ramps with 2-sample safety margin for 4-point Hermite cubic stencil
+        constexpr float kMinDelayMargin = 2.0f;
+        const float delaySamples1 = kMinDelayMargin + mWindowSec * (1.0f - phase1) * mSampleRate;
+        const float delaySamples2 = kMinDelayMargin + mWindowSec * (1.0f - phase2) * mSampleRate;
 
-        // Constant-power sine crossfade windows: sin^2(theta) + cos^2(theta) = 1.0
-        const float gain1 = std::sin(kPi * phase1);
-        const float gain2 = std::sin(kPi * phase2);
+        // Constant-amplitude Hann raised-cosine crossfade windows:
+        // sin^2(theta) + cos^2(theta) = 1.0 (zero amplitude dip, C1 smooth derivative)
+        const float s1 = std::sin(kPi * phase1);
+        const float s2 = std::sin(kPi * phase2);
+        const float gain1 = s1 * s1;
+        const float gain2 = s2 * s2;
 
         const float readIdx1 = static_cast<float>(mWriteIndex) - delaySamples1;
         const float readIdx2 = static_cast<float>(mWriteIndex) - delaySamples2;
 
-        const float out1 = readLinear(readIdx1, bufSize);
-        const float out2 = readLinear(readIdx2, bufSize);
+        const float out1 = readHermite(readIdx1, bufSize);
+        const float out2 = readHermite(readIdx2, bufSize);
 
         // Advance phase
         mPhase += mPhaseInc;
@@ -67,20 +73,29 @@ public:
 
         mWriteIndex = (mWriteIndex + 1) % bufSize;
 
-        return gain1 * out1 + gain2 * out2;
+        return flushDenormal(gain1 * out1 + gain2 * out2);
     }
 
 private:
-    inline float readLinear(float idx, size_t size) const noexcept {
+    inline float readHermite(float idx, size_t size) const noexcept {
         const float sz = static_cast<float>(size);
         while (idx < 0.0f) idx += sz;
         while (idx >= sz) idx -= sz;
 
-        const size_t i0 = static_cast<size_t>(idx);
-        const size_t i1 = (i0 + 1) % size;
+        const int i0 = static_cast<int>(std::floor(idx));
         const float frac = idx - static_cast<float>(i0);
 
-        return mDelayBuffer[i0] + frac * (mDelayBuffer[i1] - mDelayBuffer[i0]);
+        const size_t im1 = (i0 > 0) ? static_cast<size_t>(i0 - 1) : (size - 1);
+        const size_t i0_m = static_cast<size_t>(i0);
+        const size_t i1  = (i0_m + 1 < size) ? (i0_m + 1) : 0;
+        const size_t i2  = (i1 + 1 < size) ? (i1 + 1) : 0;
+
+        const float ym1 = mDelayBuffer[im1];
+        const float y0  = mDelayBuffer[i0_m];
+        const float y1  = mDelayBuffer[i1];
+        const float y2  = mDelayBuffer[i2];
+
+        return interpolateHermite4P3O(ym1, y0, y1, y2, frac);
     }
 
     float mSampleRate { 48000.0f };
@@ -100,15 +115,19 @@ class ShimmerReverbDsp {
 public:
     static constexpr size_t kNumFdnLines = 8;
     static constexpr size_t kNumAllpass = 4;
+    static constexpr size_t kFdnCapacity = 32768;
+    static constexpr size_t kFdnMask = kFdnCapacity - 1;
 
     void prepare(double sampleRate) {
         mSampleRate = static_cast<float>(sampleRate > 100.0 ? sampleRate : 48000.0);
 
-        // 1. Prepare Pitch Shifter
-        mPitchShifter.prepare(mSampleRate);
+        // 1. Prepare Dual Pitch Shifters (True Stereo)
+        mPitchShifterL.prepare(mSampleRate);
+        mPitchShifterR.prepare(mSampleRate);
 
-        // 2. Prepare Shimmer Bandpass Filter (1600 Hz, Q = 0.85)
-        mShimmerBandpass.configure(Biquad::Type::Bandpass, mSampleRate, 1600.0f, 0.85f);
+        // 2. Prepare Shimmer Bandpass Filters (1600 Hz, Q = 0.85)
+        mShimmerBandpassL.configure(Biquad::Type::Bandpass, mSampleRate, 1600.0f, 0.85f);
+        mShimmerBandpassR.configure(Biquad::Type::Bandpass, mSampleRate, 1600.0f, 0.85f);
 
         // 3. Prepare Real-Time Air Damping Filter (Butterworth 0.7071)
         const float initDampingHz = calculateDampingCutoff(0.60f);
@@ -121,14 +140,18 @@ public:
         mEarlyBufferR.assign(mEarlyDelaySamples, 0.0f);
         mEarlyWriteIndex = 0;
 
-        // 5. Prepare High-Diffusion FDN Delay Lines (8 prime-spaced delay lines)
+        // 5. Prepare High-Diffusion FDN Delay Lines with Tail Modulator
+        mTailModulator.prepare(mSampleRate);
+        mTailModulator.setParameters(0.45f, 0.35f, 120.0f);
+
         // Scaled to match 48 kHz base delays
         const float scale = mSampleRate / 48000.0f;
         for (size_t i = 0; i < kNumFdnLines; ++i) {
             mFdnLengths[i] = static_cast<size_t>(std::round(kBaseFdnLengths[i] * scale));
-            mFdnBuffers[i].assign(mFdnLengths[i] + 32, 0.0f);
+            mFdnBuffers[i].assign(kFdnCapacity, 0.0f);
             mFdnWriteIndices[i] = 0;
             mFdnFilterStates[i] = 0.0f;
+            mFdnDcBlockers[i].setCutoff(5.0f, mSampleRate);
         }
 
         // 6. Prepare Allpass Diffusers
@@ -198,10 +221,18 @@ public:
         updateDecayMultipliers(decaySec);
     }
 
+    TailModulator& getTailModulator() noexcept { return mTailModulator; }
+    const TailModulator& getTailModulator() const noexcept { return mTailModulator; }
+    void setTailModulation(float rateHz, float depthMs, float bloomMs = 85.0f) noexcept {
+        mTailModulator.setParameters(rateHz, depthMs, bloomMs);
+    }
+
     void reset() noexcept {
         mFilterSubBlockCounter = 0;
-        mPitchShifter.reset();
-        mShimmerBandpass.reset();
+        mPitchShifterL.reset();
+        mPitchShifterR.reset();
+        mShimmerBandpassL.reset();
+        mShimmerBandpassR.reset();
         mAirDampingFilterL.reset();
         mAirDampingFilterR.reset();
 
@@ -209,10 +240,13 @@ public:
         std::fill(mEarlyBufferR.begin(), mEarlyBufferR.end(), 0.0f);
         mEarlyWriteIndex = 0;
 
+        mTailModulator.reset();
+
         for (size_t i = 0; i < kNumFdnLines; ++i) {
             std::fill(mFdnBuffers[i].begin(), mFdnBuffers[i].end(), 0.0f);
             mFdnWriteIndices[i] = 0;
             mFdnFilterStates[i] = 0.0f;
+            mFdnDcBlockers[i].reset();
         }
 
         for (size_t i = 0; i < kNumAllpass; ++i) {
@@ -230,7 +264,8 @@ public:
         mFreezeHpFilterR.reset();
         mWasFrozen = false;
 
-        mShimmerFeedbackSample = 0.0f;
+        mShimmerFeedbackL = 0.0f;
+        mShimmerFeedbackR = 0.0f;
     }
 
     inline void processSample(float inL, float inR, const ShimmerReverbParams& params,
@@ -283,10 +318,10 @@ public:
         const float freezeWet = mFreezeWetSmoother.next();
         const float freezeInGain = mFreezeInputSmoother.next();
 
-        // 4. Input mixing: input audio + shimmer feedback loop with true stereo separation
+        // 4. Input mixing: input audio + true stereo shimmer feedback loop
         constexpr float kPreGain = 0.85f;
-        const float reverbInputL = (inL * kPreGain + mShimmerFeedbackSample) * freezeInGain;
-        const float reverbInputR = (inR * kPreGain + mShimmerFeedbackSample) * freezeInGain;
+        const float reverbInputL = (inL * kPreGain + mShimmerFeedbackL) * freezeInGain;
+        const float reverbInputR = (inR * kPreGain + mShimmerFeedbackR) * freezeInGain;
 
         // 5. Early Reflection Network (10 prime taps with true stereo input)
         mEarlyBufferL[mEarlyWriteIndex] = reverbInputL;
@@ -313,19 +348,27 @@ public:
         float diffusedR = processAllpass(1, reverbInputR);
         diffusedR = processAllpass(3, diffusedR);
 
-        // 7. Late Diffuse Tail FDN (8 Feedback Delay Lines with Fast Walsh-Hadamard Transform)
+        // 7. Late Diffuse Tail FDN (8 Feedback Delay Lines with Golden-Ratio Modulation & Fast Walsh-Hadamard Transform)
         if (params.decaySec != mCachedDecaySec) {
             updateDecayMultipliers(params.decaySec);
         }
 
-        // Read delay lines and apply one-pole high-frequency shelf damping with acoustic absorption floor.
-        // Floor of 0.14f ensures high-frequency comb modes and standing waves are absorbed
-        // even when damping knob is set to minimum (0.0).
+        // 7a. Calculate multi-phase golden-ratio modulation excursions
+        const float transientIn = 0.5f * (std::abs(inL) + std::abs(inR));
+        std::array<float, kNumFdnLines> excursions {};
+        mTailModulator.processSample(transientIn, excursions);
+
+        // 7b. Read delay lines with 4-point Hermite cubic interpolation and apply one-pole high-frequency shelf damping
         std::array<float, kNumFdnLines> fdnOutputs;
         const float damp = std::clamp(0.14f + params.damping * 0.38f, 0.14f, 0.58f);
 
         for (size_t i = 0; i < kNumFdnLines; ++i) {
-            const float delayed = mFdnBuffers[i][mFdnWriteIndices[i]];
+            const float delaySamples = static_cast<float>(mFdnLengths[i]) + excursions[i];
+            const float delayed = TailModulator::readHermite(mFdnBuffers[i].data(),
+                                                             kFdnCapacity,
+                                                             kFdnMask,
+                                                             mFdnWriteIndices[i],
+                                                             delaySamples);
             // Gentle high-frequency one-pole shelf: y[n] = (1-d)*x[n] + d*y[n-1]
             mFdnFilterStates[i] = (1.0f - damp) * delayed + damp * mFdnFilterStates[i];
             const float filtered = flushDenormal(mFdnFilterStates[i]);
@@ -346,10 +389,11 @@ public:
 
         for (size_t i = 0; i < kNumFdnLines; ++i) {
             const float nextIn = inVector[i] + fdnOutputs[i];
-            // Soft saturation in feedback loop prevents transient modal build-ups
-            const float saturatedIn = softLimit(nextIn, 0.85f);
-            mFdnBuffers[i][mFdnWriteIndices[i]] = flushDenormal(saturatedIn);
-            mFdnWriteIndices[i] = (mFdnWriteIndices[i] + 1) % mFdnLengths[i];
+            // Smooth C1 Hermite knee saturation in feedback loop prevents transient modal build-ups
+            const float saturatedIn = applySmoothBoundaryKnee(nextIn, 0.72f);
+            const float dcBlocked = mFdnDcBlockers[i].process(saturatedIn);
+            mFdnBuffers[i][mFdnWriteIndices[i]] = flushDenormal(dcBlocked);
+            mFdnWriteIndices[i] = (mFdnWriteIndices[i] + 1) & kFdnMask;
         }
 
         // Sum FDN into stereo channels (reformed Hadamard downmix with modal notch < 4.8 dB)
@@ -397,12 +441,21 @@ public:
         mFreezeWriteIndexL = (mFreezeWriteIndexL + 1) % mFreezeDelaySamplesL;
         mFreezeWriteIndexR = (mFreezeWriteIndexR + 1) % mFreezeDelaySamplesR;
 
-        // 11. Shimmer Feedback Path: Damped Output -> Shimmer Send -> Bandpass (1600 Hz) -> Pitch Shifter (+12st) -> Feedback Gain
-        const float shimmerIn = ((dampedL + dampedR) * 0.5f) * curShimmerSend;
-        const float shimmerBandpassed = mShimmerBandpass.process(shimmerIn);
-        const float pitchShifted = mPitchShifter.processSample(shimmerBandpassed);
-        // Strictly bounded soft limiter prevents runaway pitch-shift feedback whistle
-        mShimmerFeedbackSample = flushDenormal(softLimit(pitchShifted * curShimmerFb, 0.70f));
+        // 11. Shimmer Feedback Path (True Stereo): Left & Right channels processed independently
+        if (curShimmerSend > 0.001f || std::abs(mShimmerFeedbackL) > 1.0e-5f || std::abs(mShimmerFeedbackR) > 1.0e-5f) {
+            const float shimmerInL = dampedL * curShimmerSend;
+            const float shimmerBandpassedL = mShimmerBandpassL.process(shimmerInL);
+            const float pitchShiftedL = mPitchShifterL.processSample(shimmerBandpassedL);
+            mShimmerFeedbackL = flushDenormal(applySmoothBoundaryKnee(pitchShiftedL * curShimmerFb, 0.70f));
+
+            const float shimmerInR = dampedR * curShimmerSend;
+            const float shimmerBandpassedR = mShimmerBandpassR.process(shimmerInR);
+            const float pitchShiftedR = mPitchShifterR.processSample(shimmerBandpassedR);
+            mShimmerFeedbackR = flushDenormal(applySmoothBoundaryKnee(pitchShiftedR * curShimmerFb, 0.70f));
+        } else {
+            mShimmerFeedbackL = 0.0f;
+            mShimmerFeedbackR = 0.0f;
+        }
 
         // 12. Combine Final Wet Output with Freeze and Wet Gain
         const float finalWetL = (dampedL + limitedL * freezeWet) * curMix;
@@ -470,8 +523,10 @@ private:
 
     float mSampleRate { 48000.0f };
 
-    DualDelayPitchShifter mPitchShifter;
-    Biquad mShimmerBandpass;
+    DualDelayPitchShifter mPitchShifterL;
+    DualDelayPitchShifter mPitchShifterR;
+    Biquad mShimmerBandpassL;
+    Biquad mShimmerBandpassR;
     Biquad mAirDampingFilterL;
     Biquad mAirDampingFilterR;
 
@@ -479,7 +534,10 @@ private:
     OnePoleSmoother mShimmerSendSmoother;
     OnePoleSmoother mShimmerFeedbackSmoother;
     OnePoleSmoother mMixSmoother;
-    float mShimmerFeedbackSample { 0.0f };
+    float mShimmerFeedbackL { 0.0f };
+    float mShimmerFeedbackR { 0.0f };
+
+    TailModulator mTailModulator;
 
     // Early reflection taps (10 prime taps)
     static constexpr size_t kNumEarlyTaps = 10;
@@ -502,6 +560,7 @@ private:
     std::array<std::vector<float>, kNumFdnLines> mFdnBuffers;
     std::array<size_t, kNumFdnLines> mFdnWriteIndices;
     std::array<float, kNumFdnLines> mFdnFilterStates;
+    std::array<DcBlocker, kNumFdnLines> mFdnDcBlockers;
 
     // Allpass Diffusers (4 stages)
     static constexpr std::array<size_t, kNumAllpass> kBaseAllpassLengths = {

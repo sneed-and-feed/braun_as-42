@@ -1,7 +1,8 @@
 {
   "name": "BRAUN AS 42 Ambient Generative Synthesizer",
   "short_name": "BRAUN AS 42",
-  "description": "Dieter Rams / Braun inspired microtonal ambient generative synthesizer with Web MIDI support",
+  "version": "1.4.1",
+  "description": "Dieter Rams inspired design homage microtonal ambient generative synthesizer with Web MIDI support. Not affiliated with Braun GmbH.",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "any",

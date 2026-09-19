@@ -1,4 +1,6 @@
 #include "WebResourceManager.h"
+
+#if JUCE_WEB_BROWSER
 #include <BinaryData.h>
 #include <juce_core/juce_core.h>
 
@@ -154,3 +156,4 @@ std::optional<juce::WebBrowserComponent::Resource> WebResourceManager::getResour
 }
 
 } // namespace braun
+#endif

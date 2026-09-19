@@ -383,6 +383,16 @@ export class SolarDroneVoice {
     this.subBassGainTrim = sub ? 1.70 : 1.0;
     this._shaperNeedsUpdate = true;
     this.setWavefold(this.drive, this.fold);
+    // Center stereo panner in sub-bass mode to keep sub-bass tight, focused, and centered
+    this.pan = sub ? 0.0 : (this.voiceId === 1 ? -0.45 : 0.45);
+    if (this.panner && this.panner.pan) {
+      const now = this.ctx ? this.ctx.currentTime : 0;
+      if (typeof this.panner.pan.setTargetAtTime === 'function') {
+        this.panner.pan.setTargetAtTime(this.pan, now, 0.025);
+      } else {
+        this.panner.pan.value = this.pan;
+      }
+    }
     if (this.isActive && this.voiceGain && this.voiceGain.gain) {
       const now = this.ctx.currentTime;
       const targetGain = this.volume * this.subBassGainTrim;

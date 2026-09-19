@@ -88,6 +88,7 @@ static int waveformFromString(const juce::var& v)
 
 } // namespace
 
+#if JUCE_WEB_BROWSER
 juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOptions(BRAUN_AS42AudioProcessorEditor& editor)
 {
 #if JUCE_WINDOWS
@@ -158,17 +159,23 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
 
     return options;
 }
+#endif
 
 BRAUN_AS42AudioProcessorEditor::BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioProcessor& p)
     : AudioProcessorEditor(&p),
-      processorRef(p),
-      webComponent(createWebOptions(*this))
+      processorRef(p)
+#if JUCE_WEB_BROWSER
+      , webComponent(createWebOptions(*this))
+#endif
 {
     setLookAndFeel(&braunLookAndFeel);
     setOpaque(true);
+#if JUCE_WEB_BROWSER
     webComponent.setOpaque(true);
+#endif
 
     setupNativeControls();
+#if JUCE_WEB_BROWSER
     addAndMakeVisible(webComponent);
 
     // Restore persistent UI mode (Web UI vs Native JUCE UI)
@@ -185,6 +192,10 @@ BRAUN_AS42AudioProcessorEditor::BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioPr
     }
     useNativeUI = loadedMode;
     setNativeMode(useNativeUI);
+#else
+    useNativeUI = true;
+    setNativeMode(true);
+#endif
 
     registerParameterListeners();
 
@@ -194,7 +205,9 @@ BRAUN_AS42AudioProcessorEditor::BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioPr
 
     startTimerHz(30);
 
+#if JUCE_WEB_BROWSER
     webComponent.goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
+#endif
 }
 
 BRAUN_AS42AudioProcessorEditor::~BRAUN_AS42AudioProcessorEditor()
@@ -218,6 +231,7 @@ BRAUN_AS42AudioProcessorEditor::~BRAUN_AS42AudioProcessorEditor()
 
 void BRAUN_AS42AudioProcessorEditor::paint(juce::Graphics& g)
 {
+#if JUCE_WEB_BROWSER
     if (useNativeUI)
     {
         drawBraunChassis(g, getLocalBounds());
@@ -226,14 +240,19 @@ void BRAUN_AS42AudioProcessorEditor::paint(juce::Graphics& g)
     {
         g.fillAll(juce::Colour(0xff121414));
     }
+#else
+    drawBraunChassis(g, getLocalBounds());
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::resized()
 {
+#if JUCE_WEB_BROWSER
     if (!useNativeUI)
         webComponent.setBounds(getLocalBounds());
     else
         webComponent.setBounds(0, 0, 0, 0);
+#endif
     updateNativeControlLayout();
 }
 
@@ -241,15 +260,17 @@ void BRAUN_AS42AudioProcessorEditor::parentHierarchyChanged()
 {
     AudioProcessorEditor::parentHierarchyChanged();
     hwndStylesConfigured = false;
+#if JUCE_WEB_BROWSER
     if (!useNativeUI)
     {
         ensureHwndStyles();
     }
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
 {
-#if JUCE_WINDOWS
+#if JUCE_WINDOWS && JUCE_WEB_BROWSER
     if (useNativeUI)
         return;
 
@@ -305,6 +326,7 @@ void BRAUN_AS42AudioProcessorEditor::parameterChanged(const juce::String& parame
 
 void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String& paramID, float newValue)
 {
+#if JUCE_WEB_BROWSER
     for (const auto& item : kParamMap)
     {
         if (paramID == item.apvtsId)
@@ -335,10 +357,14 @@ void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String
             return;
         }
     }
+#else
+    juce::ignoreUnused(paramID, newValue);
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::timerCallback()
 {
+#if JUCE_WEB_BROWSER
     if (!useNativeUI && webComponent.isVisible())
     {
         if (!hwndStylesConfigured || ++hwndCheckCounter >= 25)
@@ -389,6 +415,7 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
         sendScopeDataToWeb();
     }
     else
+#endif
     {
         // Native UI: update status button texts and states
         powerButton.setButtonText(processorRef.getPoweredOn() ? "POWER ON" : "STANDBY");
@@ -420,6 +447,7 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
 
 void BRAUN_AS42AudioProcessorEditor::sendScopeDataToWeb()
 {
+#if JUCE_WEB_BROWSER
     if (!processorRef.getPoweredOn() || !webComponent.isVisible())
         return;
 
@@ -466,42 +494,60 @@ void BRAUN_AS42AudioProcessorEditor::sendScopeDataToWeb()
     obj->setProperty("l", juce::Base64::toBase64(bytesL, kSamples));
     obj->setProperty("r", juce::Base64::toBase64(bytesR, kSamples));
     webComponent.emitEventIfBrowserIsVisible("scopeFrame", juce::var(obj));
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::sendPowerUpdateToWeb(bool on)
 {
+#if JUCE_WEB_BROWSER
     auto* obj = new juce::DynamicObject();
     obj->setProperty("id", "power");
     obj->setProperty("value", on ? 1.0f : 0.0f);
     webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+#else
+    juce::ignoreUnused(on);
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::sendDroneActiveUpdateToWeb(int droneId, bool active)
 {
+#if JUCE_WEB_BROWSER
     auto* obj = new juce::DynamicObject();
     obj->setProperty("id", droneId == 1 ? "drone1_active" : "drone2_active");
     obj->setProperty("value", active ? 1.0f : 0.0f);
     webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+#else
+    juce::ignoreUnused(droneId, active);
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::sendDroneTrackUpdateToWeb(bool track)
 {
+#if JUCE_WEB_BROWSER
     auto* obj = new juce::DynamicObject();
     obj->setProperty("id", "drone_track_midi");
     obj->setProperty("value", track ? 1.0f : 0.0f);
     webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+#else
+    juce::ignoreUnused(track);
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::sendRecordingStateUpdateToWeb(bool isRecording)
 {
+#if JUCE_WEB_BROWSER
     auto* obj = new juce::DynamicObject();
     obj->setProperty("id", "isRecording");
     obj->setProperty("value", isRecording ? 1.0f : 0.0f);
     webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+#else
+    juce::ignoreUnused(isRecording);
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
 {
+#if JUCE_WEB_BROWSER
     sendPowerUpdateToWeb(processorRef.getPoweredOn());
     sendDroneActiveUpdateToWeb(1, processorRef.getDrone1Active());
     sendDroneActiveUpdateToWeb(2, processorRef.getDrone2Active());
@@ -515,6 +561,7 @@ void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
             sendParameterUpdateToWeb(item.apvtsId, rawVal->load(std::memory_order_relaxed));
         }
     }
+#endif
 }
 
 void BRAUN_AS42AudioProcessorEditor::handleNoteOnFromWeb(const juce::var& data)
@@ -814,10 +861,12 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
     }
 }
 
+#if JUCE_WEB_BROWSER
 std::optional<juce::WebBrowserComponent::Resource> BRAUN_AS42AudioProcessorEditor::getResource(const juce::String& url)
 {
     return resourceManager.getResource(url);
 }
+#endif
 
 void BRAUN_AS42AudioProcessorEditor::registerParameterListeners()
 {
@@ -847,10 +896,14 @@ juce::File BRAUN_AS42AudioProcessorEditor::getSettingsFile()
 
 void BRAUN_AS42AudioProcessorEditor::updateNativeControlVisibility()
 {
+#if JUCE_WEB_BROWSER
     viewModeButton.setVisible(useNativeUI);
     viewModeButton.setButtonText("SWITCH TO WEB UI");
     if (useNativeUI)
         viewModeButton.toFront(true);
+#else
+    viewModeButton.setVisible(false);
+#endif
 
     const bool nativeVisible = useNativeUI;
     powerButton.setVisible(nativeVisible);
@@ -912,6 +965,7 @@ void BRAUN_AS42AudioProcessorEditor::updateNativeControlVisibility()
 
 void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
 {
+#if JUCE_WEB_BROWSER
     useNativeUI = native;
 
     // Save mode so it persists across DAW sessions
@@ -935,6 +989,10 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
         webComponent.setBounds(getLocalBounds());
         webComponent.toFront(false);
     }
+#else
+    juce::ignoreUnused(native);
+    useNativeUI = true;
+#endif
 
     updateNativeControlVisibility();
     resized();
@@ -980,12 +1038,14 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
     };
     addChildComponent(recordButton);
 
+#if JUCE_WEB_BROWSER
     // View Mode button (Switch back to Web UI)
     viewModeButton.setButtonText("SWITCH TO WEB UI");
     viewModeButton.onClick = [this] {
         setNativeMode(false);
     };
     addChildComponent(viewModeButton);
+#endif
 
     // Preset management controls for Native UI
     presetLabel.setText("PRESET:", juce::dontSendNotification);

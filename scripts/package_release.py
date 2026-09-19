@@ -11,7 +11,7 @@ os.makedirs(release_dir, exist_ok=True)
 # Extract version from package.json
 with open(os.path.join(root_dir, "package.json"), "r", encoding="utf-8") as f:
     pkg = json.load(f)
-version = pkg.get("version", "1.3.9")
+version = pkg.get("version", "1.4.1")
 
 # 1. Package Windows-x64 full zip
 zip_path = os.path.join(release_dir, f"BRAUN_AS42-v{version}-Windows-x64.zip")
@@ -50,3 +50,28 @@ with zipfile.ZipFile(vst3_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(os.path.join(root_dir, "LICENSE"), "LICENSE")
 
 print(f"Created {vst3_zip_path}: {os.path.getsize(vst3_zip_path):,} bytes")
+
+# 3. Compute SHA-256 digests and write SHA256SUMS.txt
+import hashlib
+
+def compute_sha256(filepath):
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+sha256_path = os.path.join(release_dir, "SHA256SUMS.txt")
+zip_files = sorted([f for f in os.listdir(release_dir) if f.endswith(".zip")])
+
+checksum_lines = []
+for zfname in zip_files:
+    zpath = os.path.join(release_dir, zfname)
+    digest = compute_sha256(zpath)
+    checksum_lines.append(f"{digest}  {zfname}\n")
+    print(f"SHA-256 ({zfname}) = {digest}")
+
+with open(sha256_path, "w", encoding="utf-8") as f:
+    f.writelines(checksum_lines)
+
+print(f"Created {sha256_path} with {len(checksum_lines)} checksums.")

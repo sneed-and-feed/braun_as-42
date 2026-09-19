@@ -541,15 +541,127 @@ export class AudioEngine {
     this.applyDrone1Snap();
     this.applyDrone2Snap();
 
+    // Low-end decoupling for Drone Reverb Send:
+    // Dedicated 120 Hz 4th-order (cascaded Butterworth) highpass filter prevents sub-bass drone energy (<120 Hz)
+    // from entering the convolution reverb tank or early reflections, keeping sub-bass tight and centered.
+    this.droneReverbHpFilter1 = (typeof this.ctx.createBiquadFilter === 'function') ? this.ctx.createBiquadFilter() : null;
+    this.droneReverbHpFilter2 = (typeof this.ctx.createBiquadFilter === 'function') ? this.ctx.createBiquadFilter() : null;
+    if (this.droneReverbHpFilter1) {
+      this.droneReverbHpFilter1.type = 'highpass';
+      if (this.droneReverbHpFilter1.frequency && typeof this.droneReverbHpFilter1.frequency.setValueAtTime === 'function') {
+        this.droneReverbHpFilter1.frequency.setValueAtTime(120, this.ctx.currentTime);
+      }
+      if (this.droneReverbHpFilter1.Q && typeof this.droneReverbHpFilter1.Q.setValueAtTime === 'function') {
+        this.droneReverbHpFilter1.Q.setValueAtTime(0.7071, this.ctx.currentTime);
+      }
+    }
+    if (this.droneReverbHpFilter2) {
+      this.droneReverbHpFilter2.type = 'highpass';
+      if (this.droneReverbHpFilter2.frequency && typeof this.droneReverbHpFilter2.frequency.setValueAtTime === 'function') {
+        this.droneReverbHpFilter2.frequency.setValueAtTime(120, this.ctx.currentTime);
+      }
+      if (this.droneReverbHpFilter2.Q && typeof this.droneReverbHpFilter2.Q.setValueAtTime === 'function') {
+        this.droneReverbHpFilter2.Q.setValueAtTime(0.7071, this.ctx.currentTime);
+      }
+    }
+    this.droneReverbHpFilter = this.droneReverbHpFilter1; // Inspection alias
+
+    // Sub-Bass Elliptical Filter (M/S Mono-Maker below 120 Hz) for Drone Bus
+    // Collapses side channel <120 Hz to centered mono, eliminating subwoofer phase smearing
+    let droneOutputBus = this.droneBus;
+    const canBuildElliptical = (typeof this.ctx.createChannelSplitter === 'function') &&
+                               (typeof this.ctx.createChannelMerger === 'function') &&
+                               (typeof this.ctx.createBiquadFilter === 'function');
+    if (canBuildElliptical) {
+      try {
+        this.droneEllipticalSplitter = this.ctx.createChannelSplitter(2);
+        this.droneEllipticalMerger = this.ctx.createChannelMerger(2);
+
+        this.droneMidL = this.ctx.createGain();
+        this.droneMidR = this.ctx.createGain();
+        this.droneMidBus = this.ctx.createGain();
+        this.droneMidL.gain.setValueAtTime(0.5, this.ctx.currentTime);
+        this.droneMidR.gain.setValueAtTime(0.5, this.ctx.currentTime);
+
+        this.droneSideL = this.ctx.createGain();
+        this.droneSideR = this.ctx.createGain();
+        this.droneSideBus = this.ctx.createGain();
+        this.droneSideL.gain.setValueAtTime(0.5, this.ctx.currentTime);
+        this.droneSideR.gain.setValueAtTime(-0.5, this.ctx.currentTime);
+
+        this.droneSideHp1 = this.ctx.createBiquadFilter();
+        this.droneSideHp2 = this.ctx.createBiquadFilter();
+        this.droneSideHp1.type = 'highpass';
+        this.droneSideHp2.type = 'highpass';
+        this.droneSideHp1.frequency.setValueAtTime(120, this.ctx.currentTime);
+        this.droneSideHp2.frequency.setValueAtTime(120, this.ctx.currentTime);
+        this.droneSideHp1.Q.setValueAtTime(0.7071, this.ctx.currentTime);
+        this.droneSideHp2.Q.setValueAtTime(0.7071, this.ctx.currentTime);
+
+        this.droneOutL = this.ctx.createGain();
+        this.droneOutR = this.ctx.createGain();
+        this.droneSideInv = this.ctx.createGain();
+        this.droneSideInv.gain.setValueAtTime(-1.0, this.ctx.currentTime);
+
+        this.droneBus.connect(this.droneEllipticalSplitter);
+        this.droneEllipticalSplitter.connect(this.droneMidL, 0);
+        this.droneEllipticalSplitter.connect(this.droneMidR, 1);
+        this.droneMidL.connect(this.droneMidBus);
+        this.droneMidR.connect(this.droneMidBus);
+
+        this.droneEllipticalSplitter.connect(this.droneSideL, 0);
+        this.droneEllipticalSplitter.connect(this.droneSideR, 1);
+        this.droneSideL.connect(this.droneSideBus);
+        this.droneSideR.connect(this.droneSideBus);
+
+        this.droneSideBus.connect(this.droneSideHp1);
+        this.droneSideHp1.connect(this.droneSideHp2);
+
+        this.droneMidBus.connect(this.droneOutL);
+        this.droneSideHp2.connect(this.droneOutL);
+
+        this.droneMidBus.connect(this.droneOutR);
+        this.droneSideHp2.connect(this.droneSideInv);
+        this.droneSideInv.connect(this.droneOutR);
+
+        this.droneOutL.connect(this.droneEllipticalMerger, 0, 0);
+        this.droneOutR.connect(this.droneEllipticalMerger, 0, 1);
+
+        droneOutputBus = this.droneEllipticalMerger;
+      } catch (e) {
+        droneOutputBus = this.droneBus;
+      }
+    }
+
     if (this.droneGateNode) {
-      this.droneBus.connect(this.droneGateNode);
+      droneOutputBus.connect(this.droneGateNode);
       this.droneGateNode.connect(this.masterBus);
       this.droneGateNode.connect(this.tapeDelay.input);
-      this.droneGateNode.connect(this.shimmerReverb.input);
+
+      if (this.droneReverbHpFilter1 && this.droneReverbHpFilter2) {
+        this.droneGateNode.connect(this.droneReverbHpFilter1);
+        this.droneReverbHpFilter1.connect(this.droneReverbHpFilter2);
+        this.droneReverbHpFilter2.connect(this.shimmerReverb.input);
+      } else if (this.droneReverbHpFilter1) {
+        this.droneGateNode.connect(this.droneReverbHpFilter1);
+        this.droneReverbHpFilter1.connect(this.shimmerReverb.input);
+      } else {
+        this.droneGateNode.connect(this.shimmerReverb.input);
+      }
     } else {
-      this.droneBus.connect(this.masterBus);
-      this.droneBus.connect(this.tapeDelay.input);
-      this.droneBus.connect(this.shimmerReverb.input);
+      droneOutputBus.connect(this.masterBus);
+      droneOutputBus.connect(this.tapeDelay.input);
+
+      if (this.droneReverbHpFilter1 && this.droneReverbHpFilter2) {
+        droneOutputBus.connect(this.droneReverbHpFilter1);
+        this.droneReverbHpFilter1.connect(this.droneReverbHpFilter2);
+        this.droneReverbHpFilter2.connect(this.shimmerReverb.input);
+      } else if (this.droneReverbHpFilter1) {
+        droneOutputBus.connect(this.droneReverbHpFilter1);
+        this.droneReverbHpFilter1.connect(this.shimmerReverb.input);
+      } else {
+        droneOutputBus.connect(this.shimmerReverb.input);
+      }
     }
 
     // Resume AudioContext only after all nodes, wavetables, felt voices,
