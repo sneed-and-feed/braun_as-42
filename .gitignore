@@ -16,3 +16,7 @@ build/
 *.ilk
 *.suo
 *.user
+
+# Distribution archives
+releases/
+*.zip
