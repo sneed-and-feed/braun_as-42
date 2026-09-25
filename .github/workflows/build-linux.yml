@@ -1,0 +1,139 @@
+name: Build Linux Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore: ['**.md', 'docs/**', 'wiki/**']
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux x64 (VST3, Standalone)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            libasound2-dev \
+            libx11-dev \
+            libxinerama-dev \
+            libxext-dev \
+            libfreetype6-dev \
+            libgl1-mesa-dev \
+            libwebkit2gtk-4.1-dev \
+            libcurl4-openssl-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAS42_USE_WEBVIEW=ON \
+            -DAS42_BUILD_TESTS=OFF
+
+      - name: Compile Release Targets
+        run: |
+          cmake --build build --config Release -j$(nproc)
+
+      - name: Determine Version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            PKG_VER=$(node -p "require('./package.json').version")
+            TAG="v${PKG_VER}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Detected version tag: ${TAG}"
+
+      - name: Package Distribution Archive & Compute Checksum
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          STAGE_DIR="package/BRAUN_AS42-${TAG}-Linux-x64"
+          mkdir -p "${STAGE_DIR}/VST3" "${STAGE_DIR}/Standalone"
+
+          echo "Locating built artifacts:"
+          find build -name "*.vst3" -o -name "BRAUN_AS42" -type f || true
+
+          for d in $(find build -type d -name "BRAUN_AS42.vst3"); do
+            echo "Copying VST3 from $d"
+            cp -R "$d" "${STAGE_DIR}/VST3/"
+            break
+          done
+
+          STANDALONE_BIN=$(find build -name "BRAUN_AS42" -type f -executable | grep -v "CMakeFiles" | head -n 1)
+          if [ -n "${STANDALONE_BIN}" ]; then
+            echo "Copying Standalone from ${STANDALONE_BIN}"
+            cp "${STANDALONE_BIN}" "${STAGE_DIR}/Standalone/BRAUN_AS42"
+            chmod +x "${STAGE_DIR}/Standalone/BRAUN_AS42"
+          fi
+
+          [ -f LICENSE ] && cp LICENSE "${STAGE_DIR}/" || true
+          [ -f README.md ] && cp README.md "${STAGE_DIR}/" || true
+
+          cat << 'EOF' > "${STAGE_DIR}/INSTALL.txt"
+          BRAUN AS-42 AMBIENT GENERATIVE SYNTHESIZER
+          LINUX X86_64 INSTALLATION GUIDE
+          Standard: DIN 1451 Technical Specification
+
+          1. VST3 PLUGIN INSTALLATION:
+             Copy the directory 'BRAUN_AS42.vst3' into:
+             ~/.vst3/
+             (or /usr/lib/vst3/ for system-wide availability)
+
+          2. STANDALONE APPLICATION:
+             Ensure executable permissions: chmod +x BRAUN_AS42
+             Launch with ALSA, JACK, or PipeWire audio server active.
+          EOF
+
+          ARCHIVE_NAME="BRAUN_AS42-${TAG}-Linux-x64.tar.gz"
+          tar -czvf "${ARCHIVE_NAME}" -C package "BRAUN_AS42-${TAG}-Linux-x64"
+          shasum -a 256 "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+          cat "${ARCHIVE_NAME}.sha256"
+
+          echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> $GITHUB_ENV
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRAUN_AS42-${{ steps.version.outputs.tag }}-Linux-x64
+          path: |
+            ${{ env.ARCHIVE_NAME }}
+            ${{ env.ARCHIVE_NAME }}.sha256
+
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          ARCHIVE="${{ env.ARCHIVE_NAME }}"
+          SHA_NAME="${ARCHIVE}.sha256"
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release ${TAG} exists. Uploading Linux release assets..."
+            for attempt in 1 2 3; do
+              if gh release upload "${TAG}" "${ARCHIVE}" "${SHA_NAME}" --repo "${{ github.repository }}" --clobber; then
+                echo "Upload succeeded!"
+                exit 0
+              fi
+              echo "Attempt $attempt failed, retrying in 10s..."
+              sleep 10
+            done
+            exit 1
+          else
+            echo "Release ${TAG} does not exist yet on GitHub. Asset is preserved in workflow artifacts."
+          fi
