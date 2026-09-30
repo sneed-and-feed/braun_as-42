@@ -80,7 +80,7 @@ private:
     braun::DspEngine dspEngine;
 
     // Power, drone voice active states, and drone MIDI tracking state
-    std::atomic<bool> isPoweredOn { false };
+    std::atomic<bool> isPoweredOn { true };
     std::atomic<bool> powerStateDirty { false };
     std::atomic<bool> resetRequested { false };
     std::atomic<bool> drone1Active { false };

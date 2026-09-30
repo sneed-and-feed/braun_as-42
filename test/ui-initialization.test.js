@@ -8,7 +8,7 @@ import { test, describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
 
 // Lightweight DOM element mock
-class MockElement {
+export class MockElement {
   constructor(tagName = 'div') {
     this.tagName = tagName.toUpperCase();
     this.children = [];
@@ -225,7 +225,7 @@ class MockElement {
 }
 
 // Setup full browser-like environment
-function setupMockBrowser() {
+export function setupMockBrowser() {
   const elementsById = new Map();
 
   const register = (id, tag = 'div', extra = {}) => {
@@ -237,6 +237,7 @@ function setupMockBrowser() {
   };
 
   // Header & Controls
+  register('btn-ui-mode', 'button');
   register('select-root', 'select');
   register('select-scale', 'select');
   const tuning = register('select-tuning', 'select');
@@ -385,10 +386,13 @@ function setupMockBrowser() {
     body.appendChild(b);
   });
 
+  const documentListeners = new Map();
   const mockDocument = {
     body,
     activeElement: body,
     readyState: 'complete',
+    visibilityState: 'visible',
+    hidden: false,
     getElementById: (id) => elementsById.get(id) || body.querySelector('#' + id) || null,
     createElement: (tag) => new MockElement(tag),
     querySelectorAll: (sel) => {
@@ -411,7 +415,19 @@ function setupMockBrowser() {
       }
       return Array.from(new Set(results));
     },
-    addEventListener: () => {}
+    addEventListener: (type, fn) => {
+      if (!documentListeners.has(type)) documentListeners.set(type, []);
+      documentListeners.get(type).push(fn);
+    },
+    removeEventListener: (type, fn) => {
+      if (documentListeners.has(type)) {
+        documentListeners.set(type, documentListeners.get(type).filter(f => f !== fn));
+      }
+    },
+    dispatchEvent: (e) => {
+      const fns = documentListeners.get(e.type) || [];
+      fns.forEach(fn => fn(e));
+    }
   };
 
   // Mock Web Audio Context
@@ -527,7 +543,7 @@ function setupMockBrowser() {
   };
   globalThis.AudioContext = MockAudioContext;
 
-  return { elementsById, mockDocument };
+  return { elementsById, mockDocument, documentListeners, windowListeners };
 }
 
 describe('UI Initialization and DOM Wiring Verification', () => {

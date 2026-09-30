@@ -70,6 +70,36 @@ jobs:
             break
           done
 
+          # Sanity check: Ensure required binaries were packaged
+          if [ ! -d "package/VST3/BRAUN_AS42.vst3" ]; then
+            echo "Error: BRAUN_AS42.vst3 was not copied into package!" >&2
+            exit 1
+          fi
+          if [ ! -d "package/AU/BRAUN_AS42.component" ]; then
+            echo "Error: BRAUN_AS42.component was not copied into package!" >&2
+            exit 1
+          fi
+          if [ ! -d "package/Standalone/BRAUN_AS42.app" ]; then
+            echo "Error: BRAUN_AS42.app was not copied into package!" >&2
+            exit 1
+          fi
+
+          echo "Stripping quarantine attributes and applying ad-hoc signatures for Apple Silicon / Gatekeeper..."
+          for bundle in "package/VST3/BRAUN_AS42.vst3" "package/AU/BRAUN_AS42.component" "package/Standalone/BRAUN_AS42.app"; do
+            if [ -e "$bundle" ]; then
+              echo "Processing $bundle..."
+              xattr -cr "$bundle" 2>/dev/null || true
+              codesign --force --deep --sign - "$bundle"
+            fi
+          done
+
+          # Copy easy-run scripts into package root and grant execute permissions
+          if [ -d "scripts/macos" ]; then
+            echo "Copying macOS easy-run helper scripts..."
+            cp scripts/macos/*.command package/ 2>/dev/null || true
+            chmod +x package/*.command 2>/dev/null || true
+          fi
+
           [ -f LICENSE ] && cp LICENSE package/ || true
           [ -f README.md ] && cp README.md package/ || true
           ZIP_NAME="BRAUN_AS42-${TAG}-macOS-Universal.zip"

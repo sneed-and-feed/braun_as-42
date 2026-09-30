@@ -3,12 +3,10 @@ cmake_minimum_required(VERSION 3.22)
 # Configure Apple deployment target before project()
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum macOS deployment target")
-    if(NOT CMAKE_OSX_ARCHITECTURES)
-        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
-    endif()
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 endif()
 
-project(BRAUN_AS42_PROJECT VERSION 1.4.1 LANGUAGES C CXX)
+project(BRAUN_AS42_PROJECT VERSION 1.4.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -129,7 +127,7 @@ endif()
 juce_add_plugin(BRAUN_AS42
     COMPANY_NAME "Sneed's Feed & Seed Ltd."
     BUNDLE_ID "com.sneedandfeed.braun_as42"
-    VERSION "1.4.1"
+    VERSION "1.4.2"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE

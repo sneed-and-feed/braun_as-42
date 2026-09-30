@@ -259,6 +259,14 @@ export class AmbientApp {
     this._isJuce = Boolean(val);
   }
 
+  get display() {
+    return this.scope;
+  }
+
+  set display(val) {
+    this.scope = val;
+  }
+
   init() {
     if (this._initialized) return;
     this._initialized = true;
@@ -477,6 +485,9 @@ export class AmbientApp {
     const uiModeBtn = document.getElementById('btn-ui-mode');
     if (uiModeBtn) {
       uiModeBtn.addEventListener('click', () => {
+        if (this.display && typeof this.display.stop === 'function') {
+          this.display.stop();
+        }
         this._emitJuceParamChange('toggleNativeUI', 1);
         if (typeof uiModeBtn.blur === 'function') uiModeBtn.blur();
       });
@@ -712,7 +723,12 @@ export class AmbientApp {
     const canvas = document.getElementById('scope-canvas');
     if (canvas && !this.scope) {
       this.scope = new BraunOscilloscope(canvas, this.engine.analyser);
-      this.scope.start();
+      this.display = this.scope;
+      if (this.isPowerOn && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
+        this.display.start();
+      } else {
+        this.display.draw();
+      }
     }
 
     // Render Playable Chime Strip & Macro Chord Buttons
@@ -852,8 +868,22 @@ export class AmbientApp {
     });
 
     // Interruption recovery for iPadOS Safari (screen lock, tab switch, app backgrounding)
+    // and canvas pausing on occlusion, window blur, and standby
     const handleInterruptionRecovery = async () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const isHidden = (typeof document !== 'undefined' && (document.visibilityState === 'hidden' || document.hidden));
+      if (isHidden) {
+        if (this.display && typeof this.display.stop === 'function') {
+          this.display.stop();
+        }
+        return;
+      }
+
+      if (this.isPowerOn) {
+        if (this.display && typeof this.display.start === 'function') {
+          this.display.start();
+        }
+      }
+
       if (this.engine && this.engine.ctx && (this.engine.ctx.state === 'suspended' || this.engine.ctx.state === 'interrupted')) {
         try {
           if (typeof this.engine.ctx.resume === 'function') {
@@ -865,12 +895,29 @@ export class AmbientApp {
       }
     };
 
+    const handleWindowBlur = () => {
+      if (this.display && typeof this.display.stop === 'function') {
+        this.display.stop();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      if (this.isPowerOn && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
+        if (this.display && typeof this.display.start === 'function') {
+          this.display.start();
+        }
+      }
+    };
+
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
       document.addEventListener('visibilitychange', handleInterruptionRecovery);
     }
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener('visibilitychange', handleInterruptionRecovery);
       window.addEventListener('pageshow', handleInterruptionRecovery);
+      window.addEventListener('pagehide', handleWindowBlur);
+      window.addEventListener('blur', handleWindowBlur);
+      window.addEventListener('focus', handleWindowFocus);
     }
   }
 
@@ -1577,11 +1624,18 @@ export class AmbientApp {
       this.isPowerOn = true;
 
       // Connect audio analyser to active CRT oscilloscope
-      if (this.scope) {
-        if (!this.isJuce && this.engine.analyser) {
-          this.scope.setAnalyser(this.engine.analyser);
+      if (this.display) {
+        if (!this.isJuce && this.engine.analyser && typeof this.display.setAnalyser === 'function') {
+          this.display.setAnalyser(this.engine.analyser);
         }
-        this.scope.setPower(true);
+        if (typeof this.display.setPower === 'function') {
+          this.display.setPower(true);
+        }
+        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+          if (typeof this.display.start === 'function') {
+            this.display.start();
+          }
+        }
       }
 
       // Update power button UI
@@ -1623,11 +1677,16 @@ export class AmbientApp {
         if (textEl) textEl.textContent = 'POWER ON';
       }
 
-      // Reset oscilloscope back to standby phosphor beam
-      if (this.scope) {
-        this.scope.setPower(false);
-        if (!this.isJuce) {
-          this.scope.setAnalyser(null);
+      // Stop oscilloscope rendering and reset back to standby phosphor beam
+      if (this.display) {
+        if (typeof this.display.stop === 'function') {
+          this.display.stop();
+        }
+        if (typeof this.display.setPower === 'function') {
+          this.display.setPower(false);
+        }
+        if (!this.isJuce && typeof this.display.setAnalyser === 'function') {
+          this.display.setAnalyser(null);
         }
       }
 
@@ -2204,8 +2263,18 @@ export class AmbientApp {
             } else if (!nextPower && this.isPowerOn) {
               this.togglePower({ emitToNative: false }).catch(() => {});
             }
-            if (this.scope) {
-              this.scope.setPower(nextPower);
+            if (this.display) {
+              if (!nextPower && typeof this.display.stop === 'function') {
+                this.display.stop();
+              }
+              if (typeof this.display.setPower === 'function') {
+                this.display.setPower(nextPower);
+              }
+              if (nextPower && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
+                if (typeof this.display.start === 'function') {
+                  this.display.start();
+                }
+              }
             }
             return;
           }
@@ -2313,6 +2382,23 @@ export class AmbientApp {
           }
           if (payload && payload.path) {
             console.log('[JUCE] Lossless WAV recording saved to:', payload.path);
+          }
+        });
+      }
+
+      // 4. Listen for nativeModeChange from JUCE C++ PluginEditor
+      if (typeof backend.addEventListener === 'function') {
+        backend.addEventListener('nativeModeChange', (payload) => {
+          if (!payload || typeof payload !== 'object') return;
+          const isNative = Boolean(payload.nativeMode);
+          if (isNative) {
+            if (this.display && typeof this.display.stop === 'function') {
+              this.display.stop();
+            }
+          } else if (this.isPowerOn && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
+            if (this.display && typeof this.display.start === 'function') {
+              this.display.start();
+            }
           }
         });
       }

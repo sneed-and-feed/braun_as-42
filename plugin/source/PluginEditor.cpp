@@ -97,15 +97,12 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
     // - Disable Web MIDI in Chromium (prevents WinMM device contention with DAW MIDI inputs)
     // - Disable background Chromium features that create unneeded threads / network queries
     // - Disable CalculateNativeWinOcclusion to eliminate global SetWinEventHook desktop dragging lag
-    // - Disable backgrounding and timer throttling for occluded windows to prevent dirty rect stalls
+    // - Allow natural background timer throttling, occluded window idling, and renderer backgrounding
     _wputenv_s(
         L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
         L"--mute-audio "
         L"--disable-audio-output "
         L"--disable-web-midi "
-        L"--disable-background-timer-throttling "
-        L"--disable-backgrounding-occluded-windows "
-        L"--disable-renderer-backgrounding "
         L"--disable-features=Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions,CalculateNativeWinOcclusion"
     );
 #endif
@@ -979,15 +976,71 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
 
     if (useNativeUI)
     {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("nativeMode", true);
+        webComponent.emitEventIfBrowserIsVisible("nativeModeChange", juce::var(obj));
+
         webComponent.setVisible(false);
         webComponent.setBounds(0, 0, 0, 0);
         webComponent.toBack();
+
+#if JUCE_WINDOWS
+        if (auto* peer = getPeer())
+        {
+            if (HWND parentHwnd = static_cast<HWND>(peer->getNativeHandle()))
+            {
+                ::EnumChildWindows(parentHwnd, [](HWND child, LPARAM) -> BOOL {
+                    if (child != nullptr && ::IsWindow(child))
+                    {
+                        wchar_t className[256];
+                        if (::GetClassNameW(child, className, 256) > 0)
+                        {
+                            if (wcsstr(className, L"Chrome") != nullptr ||
+                                wcsstr(className, L"Intermediate D3D Window") != nullptr)
+                            {
+                                ::ShowWindow(child, SW_HIDE);
+                            }
+                        }
+                    }
+                    return TRUE;
+                }, 0);
+            }
+        }
+#endif
     }
     else
     {
         webComponent.setVisible(true);
         webComponent.setBounds(getLocalBounds());
         webComponent.toFront(false);
+
+#if JUCE_WINDOWS
+        if (auto* peer = getPeer())
+        {
+            if (HWND parentHwnd = static_cast<HWND>(peer->getNativeHandle()))
+            {
+                ::EnumChildWindows(parentHwnd, [](HWND child, LPARAM) -> BOOL {
+                    if (child != nullptr && ::IsWindow(child))
+                    {
+                        wchar_t className[256];
+                        if (::GetClassNameW(child, className, 256) > 0)
+                        {
+                            if (wcsstr(className, L"Chrome") != nullptr ||
+                                wcsstr(className, L"Intermediate D3D Window") != nullptr)
+                            {
+                                ::ShowWindow(child, SW_SHOW);
+                            }
+                        }
+                    }
+                    return TRUE;
+                }, 0);
+            }
+        }
+#endif
+
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("nativeMode", false);
+        webComponent.emitEventIfBrowserIsVisible("nativeModeChange", juce::var(obj));
     }
 #else
     juce::ignoreUnused(native);

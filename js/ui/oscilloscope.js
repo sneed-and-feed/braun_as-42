@@ -56,7 +56,7 @@ export class BraunOscilloscope {
       this.timeData.fill(128);
       this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
       this.hasNativeData = false;
-      if (!this.isRunning) {
+      if (this.isPowered && !this.isRunning && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
         this.start();
       }
     } else {
@@ -67,8 +67,12 @@ export class BraunOscilloscope {
   setPower(isPowered) {
     this.isPowered = Boolean(isPowered);
     this.silentFrames = 0;
-    if (!this.isRunning) {
-      this.start();
+    if (this.isPowered) {
+      if (!this.isRunning && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
+        this.start();
+      }
+    } else {
+      this.stop();
     }
     this.draw();
   }
@@ -108,7 +112,7 @@ export class BraunOscilloscope {
     }
 
     this.silentFrames = 0;
-    if (!this.isRunning) {
+    if (!this.isRunning && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
       this.start();
     }
   }
@@ -148,6 +152,7 @@ export class BraunOscilloscope {
 
   start() {
     if (this.isRunning) return;
+    if (typeof document !== 'undefined' && (document.visibilityState === 'hidden' || document.hidden)) return;
     this.isRunning = true;
     this.lastRenderTime = 0;
     this.silentFrames = 0;

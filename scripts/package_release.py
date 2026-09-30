@@ -8,10 +8,15 @@ build_dir = os.path.join(root_dir, "build", "BRAUN_AS42_artefacts", "Release")
 
 os.makedirs(release_dir, exist_ok=True)
 
-# Extract version from package.json
-with open(os.path.join(root_dir, "package.json"), "r", encoding="utf-8") as f:
-    pkg = json.load(f)
-version = pkg.get("version", "1.4.1")
+import sys
+
+# Extract version from command line or package.json
+if len(sys.argv) > 1 and sys.argv[1].strip():
+    version = sys.argv[1].strip()
+else:
+    with open(os.path.join(root_dir, "package.json"), "r", encoding="utf-8") as f:
+        pkg = json.load(f)
+    version = pkg.get("version", "1.4.2")
 
 # 1. Package Windows-x64 full zip
 zip_path = os.path.join(release_dir, f"BRAUN_AS42-v{version}-Windows-x64.zip")
@@ -62,14 +67,22 @@ def compute_sha256(filepath):
     return h.hexdigest()
 
 sha256_path = os.path.join(release_dir, "SHA256SUMS.txt")
-zip_files = sorted([f for f in os.listdir(release_dir) if f.endswith(".zip")])
+existing_checksums = {}
+if os.path.exists(sha256_path):
+    with open(sha256_path, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) == 2:
+                existing_checksums[parts[1]] = parts[0]
 
-checksum_lines = []
+zip_files = sorted([f for f in os.listdir(release_dir) if f.endswith(".zip")])
 for zfname in zip_files:
     zpath = os.path.join(release_dir, zfname)
     digest = compute_sha256(zpath)
-    checksum_lines.append(f"{digest}  {zfname}\n")
+    existing_checksums[zfname] = digest
     print(f"SHA-256 ({zfname}) = {digest}")
+
+checksum_lines = [f"{existing_checksums[k]}  {k}\n" for k in sorted(existing_checksums.keys())]
 
 with open(sha256_path, "w", encoding="utf-8") as f:
     f.writelines(checksum_lines)

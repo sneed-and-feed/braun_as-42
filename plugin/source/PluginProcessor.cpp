@@ -235,7 +235,7 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     }
     midiMessages.clear();
 
-    // Power gating: Check if plugin is powered on or triggered by Note-On from UI or Host MIDI
+    // Power gating: Check if plugin is powered on or triggered by Note-On from UI or Host MIDI, or drone activation
     if (!isPoweredOn.load(std::memory_order_relaxed))
     {
         bool hasNoteOn = false;
@@ -248,7 +248,7 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             }
         }
 
-        if (hasNoteOn)
+        if (hasNoteOn || drone1Active.load(std::memory_order_relaxed) || drone2Active.load(std::memory_order_relaxed))
         {
             isPoweredOn.store(true, std::memory_order_relaxed);
             powerStateDirty.store(true, std::memory_order_relaxed);
@@ -390,6 +390,11 @@ void BRAUN_AS42AudioProcessor::setDrone1Active(bool active) noexcept
 {
     drone1Active.store(active, std::memory_order_relaxed);
     drone1StateDirty.store(true, std::memory_order_relaxed);
+    if (active && !isPoweredOn.load(std::memory_order_relaxed))
+    {
+        isPoweredOn.store(true, std::memory_order_relaxed);
+        powerStateDirty.store(true, std::memory_order_relaxed);
+    }
 }
 
 bool BRAUN_AS42AudioProcessor::getDrone1Active() const noexcept
@@ -406,6 +411,11 @@ void BRAUN_AS42AudioProcessor::setDrone2Active(bool active) noexcept
 {
     drone2Active.store(active, std::memory_order_relaxed);
     drone2StateDirty.store(true, std::memory_order_relaxed);
+    if (active && !isPoweredOn.load(std::memory_order_relaxed))
+    {
+        isPoweredOn.store(true, std::memory_order_relaxed);
+        powerStateDirty.store(true, std::memory_order_relaxed);
+    }
 }
 
 bool BRAUN_AS42AudioProcessor::getDrone2Active() const noexcept
@@ -544,14 +554,20 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
     {
         auto vt = juce::ValueTree::fromXml(*xmlState);
         apvts.replaceState(vt);
-        if (vt.hasProperty("isPoweredOn"))
-            setPoweredOn(static_cast<bool>(vt.getProperty("isPoweredOn")));
         if (vt.hasProperty("drone1Active"))
             setDrone1Active(static_cast<bool>(vt.getProperty("drone1Active")));
         if (vt.hasProperty("drone2Active"))
             setDrone2Active(static_cast<bool>(vt.getProperty("drone2Active")));
         if (vt.hasProperty("droneTrackMidi"))
             setDroneTrackMidi(static_cast<bool>(vt.getProperty("droneTrackMidi")));
+
+        if (vt.hasProperty("isPoweredOn"))
+            setPoweredOn(static_cast<bool>(vt.getProperty("isPoweredOn")));
+        else
+            setPoweredOn(true);
+
+        if (drone1Active.load(std::memory_order_relaxed) || drone2Active.load(std::memory_order_relaxed))
+            setPoweredOn(true);
     }
 }
 
