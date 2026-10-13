@@ -2305,6 +2305,68 @@ export class AmbientApp {
             }
             return;
           }
+          if (id === 'reverbFreeze' || id === 'shimmer_freeze') {
+            const isFrozen = (typeof value === 'number') ? (value > 0.5) : Boolean(value);
+            if (this.engine && typeof this.engine.setReverbFreeze === 'function') {
+              this.engine.setReverbFreeze(isFrozen);
+            }
+            const freezeBtn = document.getElementById('toggle-freeze');
+            if (freezeBtn) {
+              freezeBtn.classList.toggle('is-active', isFrozen);
+              const led = freezeBtn.querySelector('.braun-led');
+              if (led) led.classList.toggle('is-active', isFrozen);
+              const textEl = freezeBtn.querySelector('.braun-status-text');
+              if (textEl) textEl.textContent = isFrozen ? 'FREEZE ON' : 'FREEZE OFF';
+            }
+            return;
+          }
+          if (id === 'feltWaveform' || id === 'felt_waveform') {
+            const waveNames = ['felt', 'sine', 'saw', 'square', 'cs80', 'triangle', 'warm'];
+            const waveStr = (typeof value === 'number')
+              ? (waveNames[Math.max(0, Math.min(waveNames.length - 1, Math.round(value)))] || 'felt')
+              : String(value).toLowerCase();
+            if (this.engine && typeof this.engine.setFeltWaveform === 'function') {
+              this.engine.setFeltWaveform(waveStr);
+            }
+            if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+              const pianoWaveBtns = document.querySelectorAll('.piano-wave-btn');
+              pianoWaveBtns.forEach(btn => {
+                btn.classList.toggle('is-active', isWaveformMatch(btn.getAttribute('data-wave'), waveStr));
+              });
+            }
+            return;
+          }
+          if (id === 'drone1WaveA' || id === 'drone1_waveA' || id === 'drone1WaveB' || id === 'drone1_waveB' ||
+              id === 'drone2WaveA' || id === 'drone2_waveA' || id === 'drone2WaveB' || id === 'drone2_waveB') {
+            const waveNames = ['felt', 'sine', 'saw', 'square', 'cs80', 'triangle', 'warm'];
+            const waveStr = (typeof value === 'number')
+              ? (waveNames[Math.max(0, Math.min(waveNames.length - 1, Math.round(value)))] || 'saw')
+              : String(value).toLowerCase();
+            const dId = id.startsWith('drone2') ? 2 : 1;
+            const isWaveB = id.endsWith('B');
+            if (this.engine) {
+              if (isWaveB && typeof this.engine.setDroneWaveB === 'function') {
+                this.engine.setDroneWaveB(dId, waveStr);
+              } else if (!isWaveB && typeof this.engine.setDroneWaveA === 'function') {
+                this.engine.setDroneWaveA(dId, waveStr);
+              }
+            }
+            if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+              const selector = `.drone${dId}-wave-${isWaveB ? 'b' : 'a'}`;
+              const btns = document.querySelectorAll(selector);
+              btns.forEach(btn => {
+                btn.classList.toggle('is-active', isWaveformMatch(btn.getAttribute('data-wave'), waveStr));
+              });
+            }
+            return;
+          }
+          if (id === 'drone1SubBass' || id === 'drone1_isSubBass') {
+            const isSub = (typeof value === 'number') ? (value > 0.5) : Boolean(value);
+            if (this.engine && this.engine.drone1) {
+              this.engine.drone1.isSubBass = isSub;
+            }
+            return;
+          }
           let knob = this.knobs[id];
           if (!knob) {
             if (id === 'felt_tone') knob = this.knobs.feltTone;

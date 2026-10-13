@@ -1153,6 +1153,16 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
         processorRef.pushUINoteOn(64, 0.65f);
         processorRef.pushUINoteOn(67, 0.65f);
         processorRef.pushUINoteOn(71, 0.60f);
+        juce::Component::SafePointer<BRAUN_AS42AudioProcessorEditor> safeThis(this);
+        juce::Timer::callAfterDelay(650, [safeThis] {
+            if (safeThis != nullptr)
+            {
+                safeThis->processorRef.pushUINoteOff(60);
+                safeThis->processorRef.pushUINoteOff(64);
+                safeThis->processorRef.pushUINoteOff(67);
+                safeThis->processorRef.pushUINoteOff(71);
+            }
+        });
     };
     addChildComponent(chordTriggerBtn);
 
@@ -1160,6 +1170,11 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
     impulseTriggerBtn.onClick = [this] {
         if (!processorRef.getPoweredOn()) processorRef.setPoweredOn(true);
         processorRef.pushUINoteOn(60, 1.0f);
+        juce::Component::SafePointer<BRAUN_AS42AudioProcessorEditor> safeThis(this);
+        juce::Timer::callAfterDelay(150, [safeThis] {
+            if (safeThis != nullptr)
+                safeThis->processorRef.pushUINoteOff(60);
+        });
     };
     addChildComponent(impulseTriggerBtn);
 
@@ -1560,7 +1575,11 @@ void BRAUN_AS42AudioProcessorEditor::drawBraunChassis(juce::Graphics& g, juce::R
                 auto infoArea = cell.removeFromBottom(24).reduced(8, 2);
                 g.setColour(braunLookAndFeel.findColour(braun::BraunColours::textMutedColourId));
                 g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::plain)));
-                g.drawText("TRUE PEAK LIMITER ACTIVE " + juce::String::charToString(0x00B7) + " 48 KHZ", infoArea, juce::Justification::centred);
+                const double sr = processorRef.getSampleRate() > 0.0 ? processorRef.getSampleRate() : 48000.0;
+                const juce::String srStr = ( std::abs(sr - std::round(sr / 1000.0) * 1000.0) < 1.0 )
+                    ? juce::String(static_cast<int>(std::round(sr / 1000.0))) + " KHZ"
+                    : juce::String(sr / 1000.0, 1) + " KHZ";
+                g.drawText("TRUE PEAK LIMITER ACTIVE " + juce::String::charToString(0x00B7) + " " + srStr, infoArea, juce::Justification::centred);
             }
         }
     }
@@ -1625,7 +1644,11 @@ void BRAUN_AS42AudioProcessorEditor::drawCrtDisplay(juce::Graphics& g, juce::Rec
     g.strokePath(wavePath, juce::PathStrokeType(1.2f));
 
     g.setFont(juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::plain)));
-    g.drawText("CRT PHOSPHOR OSCILLOSCOPE [48 KHZ]", scopeArea.getX() + 6, scopeArea.getY() + 4, 220, 12, juce::Justification::left);
+    const double crtSr = processorRef.getSampleRate() > 0.0 ? processorRef.getSampleRate() : 48000.0;
+    const juce::String crtSrStr = ( std::abs(crtSr - std::round(crtSr / 1000.0) * 1000.0) < 1.0 )
+        ? juce::String(static_cast<int>(std::round(crtSr / 1000.0))) + " KHZ"
+        : juce::String(crtSr / 1000.0, 1) + " KHZ";
+    g.drawText("CRT PHOSPHOR OSCILLOSCOPE [" + crtSrStr + "]", scopeArea.getX() + 6, scopeArea.getY() + 4, 240, 12, juce::Justification::left);
 
     auto drawBar = [&](const juce::String& label, float rms, juce::Colour col, int yOffset) {
         const float db = 20.0f * std::log10(juce::jmax(1e-5f, rms));

@@ -2,6 +2,37 @@
 
 All notable changes, architectural modernizations, DSP optimizations, and bug remediations for the BRAUN AS 42 ambient synthesizer are documented in this file.
 
+## What's New in v1.4.3
+
+* **Real-Time DSP CPU & Transcendental Math Optimizations:**
+  * **Shimmer Reverb Freeze Smoother Guarding:** Guarded `mFreezeFeedbackSmoother`, `mFreezeWetSmoother`, and `mFreezeInputSmoother` time-constant (`setTimeConstant`) and target updates behind `params.freeze != mWasFrozen` transitions in `ShimmerReverbDsp.h`, eliminating ~144,000 redundant `std::exp()` evaluations per second at 48 kHz.
+  * **Precomputed Early Reflection Taps:** Precomputed sample-rate-scaled delay offsets (`mEarlyTapDelays`) and stereo pan gains (`mEarlyTapGainL`, `mEarlyTapGainR`) across all 10 early reflection taps in `ShimmerReverbDsp::prepare()`.
+  * **Drone Voice Trig & Power Caching:** Precomputed constant-power stereo panner gains (`mPanLeftGain`, `mPanRightGain`, `kCenterPanGain`) in `SolarDroneVoice::prepare()` and cached `mCachedDetuneRatio = std::pow(2.0f, detuneCents / 1200.0f)` in `DroneVoiceDsp.h`, eliminating ~192,000 per-second `std::cos`/`std::sin` and `std::pow` calls.
+  * **Sympathetic Filter Coefficient Caching:** Cached `mLastSymTone` in `FeltPianoSynthesizer::updateSympatheticFilters()` so the dual sympathetic bandpass resonators only recompute coefficients when `tone` changes.
+* **DSP Stability, Envelope & Bus Routing Fixes:**
+  * **Freeze Smoother Reset Integrity:** Explicitly reset `mFreezeFeedbackSmoother` (`0.0f`), `mFreezeWetSmoother` (`0.0f`), and `mFreezeInputSmoother` (`1.0f`) inside `ShimmerReverbDsp::reset()` so resetting while frozen never leaves reverb input ducked at `0.08f`.
+  * **Bass Register Decay Knob Consistency:** Updated `FeltPianoVoice::updateDecay()` in `FeltPianoDsp.h` to apply the exact bass register multiplier (`mCurrentMidi < 48` $\rightarrow 1.45 + (48 - \text{midi}) \times 0.04$) matching `FeltPianoVoice::trigger()`, preventing sudden decay drops when turning the Decay knob while holding a bass note.
+  * **Zero-Volume Voice Envelope Advancement:** Fixed `FeltPianoSynthesizer::process()` when `volume < 1e-5` so active/releasing voices advance naturally to completion rather than freezing in time while muted.
+  * **True Mono Bus Downmixing:** Fixed `DspEngine::process()` when `left == right` (mono bus layout) to output a balanced mono sum `0.5f * (finalL + finalR)` instead of overwriting the left channel with the right channel.
+  * **MIDI Sample Offset Clamping:** Clamped `juce::MidiBuffer` event sample positions to `[0, numSamples - 1]` in `PluginProcessor::processBlock` and `DspEngine::process`.
+* **Native JUCE Program Presets, Audition Gate & Bidirectional WebView Sync:**
+  * **4 Curated Factory Programs:** Implemented `CALIBRATED DEFAULT`, `HAROLD BUDD · PAVILION`, `VANGELIS · CS-80 BRASS`, and `ENO · MUSIC FOR AIRPORTS` in `PluginProcessor` (`getNumPrograms`, `getCurrentProgram`, `setCurrentProgram`, `getProgramName`) with full state serialization in `getStateInformation` / `setStateInformation`.
+  * **Native UI Audition Note-Off Gate & Dynamic Sample Rate Display:** Added automatic timed `pushUINoteOff` release (`Timer::callAfterDelay` with `SafePointer`) to `AMBIENT CHORD` and `DIRAC IMPULSE` audition buttons (preventing stuck notes in CS-80 and MIDI-tracked drone modes) and dynamically formatted the host sample rate in kHz on the Native UI chassis and CRT display.
+  * **Bidirectional Discrete Parameter Sync:** Extended the `paramUpdate` listener in `js/app.js` to synchronize `feltWaveform`, `drone1WaveA`, `drone1WaveB`, `drone2WaveA`, `drone2WaveB`, `drone1SubBass`, and `reverbFreeze` from C++ host automation and Native UI changes into the WebView UI and JS engine.
+* **Certified 580-Test Pass Benchmark:**
+  * 100% pass rate across 580 automated tests: 512 Node.js Web Audio, UI & MIDI assertions and 68 real-time native C++ DSP assertions (including new Test 47 `test_audit_fixes_freeze_reset_bass_decay_zero_vol_and_mono_downmix`).
+
+---
+
+## What's New in v1.4.2
+
+* **Power Auto-Wake, Apple Silicon Universal Build, Gatekeeper Signing & WebView2 Occlusion Management:**
+  * Automatic synthesizer power-on when triggering MIDI notes or activating drones from standby.
+  * Universal macOS binary build workflow (`arm64;x86_64`) with ad-hoc Gatekeeper signing and one-line installer scripts (`scripts/macos/`).
+  * WebView2 memory and CPU lifecycle management pausing canvas rendering when occluded, minimized, or switched to Native UI mode.
+
+---
+
 ## What's New in v1.4.1
 
 * **Documentation Re-Architecture & Tri-Split:**

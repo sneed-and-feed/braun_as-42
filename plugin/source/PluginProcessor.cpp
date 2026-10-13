@@ -92,21 +92,205 @@ double BRAUN_AS42AudioProcessor::getTailLengthSeconds() const
 
 int BRAUN_AS42AudioProcessor::getNumPrograms()
 {
-    return 1;
+    return 4;
 }
 
 int BRAUN_AS42AudioProcessor::getCurrentProgram()
 {
-    return 0;
+    return currentProgram.load(std::memory_order_relaxed);
 }
 
-void BRAUN_AS42AudioProcessor::setCurrentProgram(int)
+void BRAUN_AS42AudioProcessor::setCurrentProgram(int index)
 {
+    const int idx = std::clamp(index, 0, getNumPrograms() - 1);
+    currentProgram.store(idx, std::memory_order_relaxed);
+
+    auto setParam = [this](const juce::String& paramId, float plainVal) {
+        if (auto* p = apvts.getParameter(paramId))
+            p->setValueNotifyingHost(p->convertTo0to1(plainVal));
+    };
+
+    switch (idx)
+    {
+        case 0: // CALIBRATED DEFAULT
+            setParam("felt_volume",      0.80f);
+            setParam("felt_decay",       1.10f);
+            setParam("felt_tone",        0.62f);
+            setParam("felt_hammer",      0.45f);
+            setParam("felt_space",       0.45f);
+            setParam("felt_waveform",    0.0f); // Felt
+            setParam("drone1_volume",    0.55f);
+            setParam("drone1_pitch",     65.41f);
+            setParam("drone1_fold",      45.0f);
+            setParam("drone1_cutoff",    650.0f);
+            setParam("drone1_resonance", 3.5f);
+            setParam("drone1_beat",      0.35f);
+            setParam("drone1_detune",    2.5f);
+            setParam("drone1_lfo",       0.12f);
+            setParam("drone1_waveA",     2.0f); // Saw
+            setParam("drone1_waveB",     6.0f); // Warm
+            setParam("drone1_isSubBass", 0.0f);
+            setParam("drone2_volume",    0.55f);
+            setParam("drone2_pitch",     98.00f);
+            setParam("drone2_fold",      45.0f);
+            setParam("drone2_cutoff",    850.0f);
+            setParam("drone2_resonance", 3.5f);
+            setParam("drone2_beat",      0.65f);
+            setParam("drone2_detune",    -3.2f);
+            setParam("drone2_lfo",       0.12f);
+            setParam("drone2_waveA",     3.0f); // Square
+            setParam("drone2_waveB",     5.0f); // Triangle
+            setParam("tape_time",        0.460f);
+            setParam("tape_feedback",    0.55f);
+            setParam("tape_mix",         0.40f);
+            setParam("tape_wow",         0.45f);
+            setParam("tape_tone",        3600.0f);
+            setParam("shimmer_mix",      0.45f);
+            setParam("shimmer_decay",    8.5f);
+            setParam("shimmer_damping",  0.60f);
+            setParam("shimmer_amount",   0.45f);
+            setParam("shimmer_freeze",   0.0f);
+            setParam("master_volume",    0.80f);
+            break;
+
+        case 1: // HAROLD BUDD · PAVILION
+            setParam("felt_volume",      0.85f);
+            setParam("felt_decay",       1.60f);
+            setParam("felt_tone",        0.35f);
+            setParam("felt_hammer",      0.55f);
+            setParam("felt_space",       0.65f);
+            setParam("felt_waveform",    0.0f); // Felt
+            setParam("drone1_volume",    0.48f);
+            setParam("drone1_pitch",     65.41f);
+            setParam("drone1_fold",      25.0f);
+            setParam("drone1_cutoff",    480.0f);
+            setParam("drone1_resonance", 2.2f);
+            setParam("drone1_beat",      0.20f);
+            setParam("drone1_detune",    1.8f);
+            setParam("drone1_lfo",       0.08f);
+            setParam("drone1_waveA",     1.0f); // Sine
+            setParam("drone1_waveB",     6.0f); // Warm
+            setParam("drone1_isSubBass", 0.0f);
+            setParam("drone2_volume",    0.45f);
+            setParam("drone2_pitch",     98.00f);
+            setParam("drone2_fold",      20.0f);
+            setParam("drone2_cutoff",    600.0f);
+            setParam("drone2_resonance", 2.0f);
+            setParam("drone2_beat",      0.40f);
+            setParam("drone2_detune",    -2.0f);
+            setParam("drone2_lfo",       0.08f);
+            setParam("drone2_waveA",     5.0f); // Triangle
+            setParam("drone2_waveB",     1.0f); // Sine
+            setParam("tape_time",        0.520f);
+            setParam("tape_feedback",    0.60f);
+            setParam("tape_mix",         0.45f);
+            setParam("tape_wow",         0.50f);
+            setParam("tape_tone",        2800.0f);
+            setParam("shimmer_mix",      0.55f);
+            setParam("shimmer_decay",    12.0f);
+            setParam("shimmer_damping",  0.70f);
+            setParam("shimmer_amount",   0.35f);
+            setParam("shimmer_freeze",   0.0f);
+            setParam("master_volume",    0.82f);
+            break;
+
+        case 2: // VANGELIS · CS-80 BRASS
+            setParam("felt_volume",      0.88f);
+            setParam("felt_decay",       1.80f);
+            setParam("felt_tone",        0.80f);
+            setParam("felt_hammer",      0.20f);
+            setParam("felt_space",       0.30f);
+            setParam("felt_waveform",    4.0f); // CS-80
+            setParam("drone1_volume",    0.42f);
+            setParam("drone1_pitch",     65.41f);
+            setParam("drone1_fold",      32.0f);
+            setParam("drone1_cutoff",    600.0f);
+            setParam("drone1_resonance", 2.6f);
+            setParam("drone1_beat",      0.85f);
+            setParam("drone1_detune",    4.5f);
+            setParam("drone1_lfo",       0.25f);
+            setParam("drone1_waveA",     2.0f); // Saw
+            setParam("drone1_waveB",     2.0f); // Saw
+            setParam("drone1_isSubBass", 0.0f);
+            setParam("drone2_volume",    0.38f);
+            setParam("drone2_pitch",     73.59f); // Major 9th
+            setParam("drone2_fold",      36.0f);
+            setParam("drone2_cutoff",    750.0f);
+            setParam("drone2_resonance", 2.8f);
+            setParam("drone2_beat",      1.20f);
+            setParam("drone2_detune",    -5.0f);
+            setParam("drone2_lfo",       0.30f);
+            setParam("drone2_waveA",     2.0f); // Saw
+            setParam("drone2_waveB",     3.0f); // Square
+            setParam("tape_time",        0.380f);
+            setParam("tape_feedback",    0.52f);
+            setParam("tape_mix",         0.45f);
+            setParam("tape_wow",         0.40f);
+            setParam("tape_tone",        4500.0f);
+            setParam("shimmer_mix",      0.50f);
+            setParam("shimmer_decay",    9.0f);
+            setParam("shimmer_damping",  0.45f);
+            setParam("shimmer_amount",   0.65f);
+            setParam("shimmer_freeze",   0.0f);
+            setParam("master_volume",    0.78f);
+            break;
+
+        case 3: // ENO · MUSIC FOR AIRPORTS
+            setParam("felt_volume",      0.75f);
+            setParam("felt_decay",       2.00f);
+            setParam("felt_tone",        0.70f);
+            setParam("felt_hammer",      0.35f);
+            setParam("felt_space",       0.55f);
+            setParam("felt_waveform",    1.0f); // Sine
+            setParam("drone1_volume",    0.45f);
+            setParam("drone1_pitch",     32.70f); // C1 Sub-Bass
+            setParam("drone1_fold",      15.0f);
+            setParam("drone1_cutoff",    550.0f);
+            setParam("drone1_resonance", 2.0f);
+            setParam("drone1_beat",      0.35f);
+            setParam("drone1_detune",    1.5f);
+            setParam("drone1_lfo",       0.05f);
+            setParam("drone1_waveA",     1.0f); // Sine
+            setParam("drone1_waveB",     5.0f); // Triangle
+            setParam("drone1_isSubBass", 1.0f); // Sub-Bass ON
+            setParam("drone2_volume",    0.45f);
+            setParam("drone2_pitch",     65.41f); // Unison
+            setParam("drone2_fold",      15.0f);
+            setParam("drone2_cutoff",    550.0f);
+            setParam("drone2_resonance", 2.0f);
+            setParam("drone2_beat",      0.35f);
+            setParam("drone2_detune",    -1.5f);
+            setParam("drone2_lfo",       0.05f);
+            setParam("drone2_waveA",     1.0f); // Sine
+            setParam("drone2_waveB",     5.0f); // Triangle
+            setParam("tape_time",        0.680f);
+            setParam("tape_feedback",    0.68f);
+            setParam("tape_mix",         0.50f);
+            setParam("tape_wow",         0.60f);
+            setParam("tape_tone",        5000.0f);
+            setParam("shimmer_mix",      0.58f);
+            setParam("shimmer_decay",    15.0f);
+            setParam("shimmer_damping",  0.55f);
+            setParam("shimmer_amount",   0.55f);
+            setParam("shimmer_freeze",   0.0f);
+            setParam("master_volume",    0.80f);
+            break;
+
+        default:
+            break;
+    }
 }
 
-const juce::String BRAUN_AS42AudioProcessor::getProgramName(int)
+const juce::String BRAUN_AS42AudioProcessor::getProgramName(int index)
 {
-    return "Default";
+    switch (index)
+    {
+        case 0: return "CALIBRATED DEFAULT";
+        case 1: return "HAROLD BUDD " + juce::String::charToString(0x00B7) + " PAVILION";
+        case 2: return "VANGELIS " + juce::String::charToString(0x00B7) + " CS-80 BRASS";
+        case 3: return "ENO " + juce::String::charToString(0x00B7) + " MUSIC FOR AIRPORTS";
+        default: return "CALIBRATED DEFAULT";
+    }
 }
 
 void BRAUN_AS42AudioProcessor::changeProgramName(int, const juce::String&)
@@ -226,7 +410,7 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         const int numBytes = metadata.numBytes;
         if (numBytes >= 1)
         {
-            midiEventsStack[eventCount].sampleOffset = metadata.samplePosition;
+            midiEventsStack[eventCount].sampleOffset = std::clamp(metadata.samplePosition, 0, std::max(0, numSamples - 1));
             midiEventsStack[eventCount].status = rawData[0];
             midiEventsStack[eventCount].data1 = (numBytes > 1) ? rawData[1] : 0;
             midiEventsStack[eventCount].data2 = (numBytes > 2) ? rawData[2] : 0;
@@ -543,6 +727,7 @@ void BRAUN_AS42AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     state.setProperty("drone1Active", drone1Active.load(std::memory_order_relaxed), nullptr);
     state.setProperty("drone2Active", drone2Active.load(std::memory_order_relaxed), nullptr);
     state.setProperty("droneTrackMidi", droneTrackMidi.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("currentProgram", currentProgram.load(std::memory_order_relaxed), nullptr);
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
 }
@@ -554,6 +739,8 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
     {
         auto vt = juce::ValueTree::fromXml(*xmlState);
         apvts.replaceState(vt);
+        if (vt.hasProperty("currentProgram"))
+            currentProgram.store(std::clamp(static_cast<int>(vt.getProperty("currentProgram")), 0, getNumPrograms() - 1), std::memory_order_relaxed);
         if (vt.hasProperty("drone1Active"))
             setDrone1Active(static_cast<bool>(vt.getProperty("drone1Active")));
         if (vt.hasProperty("drone2Active"))

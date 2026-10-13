@@ -335,9 +335,11 @@ public:
     void updateDecay(float newDecay) noexcept {
         if (!mIsActive) return;
         const bool isCS80 = (mCurrentWaveform == WaveformType::CS80);
-        const float registerDecayMult = (mCurrentMidi >= 72)
-            ? std::max(0.48f, 1.0f - static_cast<float>(mCurrentMidi - 71) * 0.035f)
-            : 1.0f;
+        const float registerDecayMult = (mCurrentMidi < 48)
+            ? (1.45f + std::max(0.0f, static_cast<float>(48 - mCurrentMidi) * 0.04f))
+            : ((mCurrentMidi >= 72)
+                ? std::max(0.48f, 1.0f - static_cast<float>(mCurrentMidi - 71) * 0.035f)
+                : 1.0f);
         const float baseDecay = std::clamp(7.5f * std::pow(220.0f / std::max(60.0f, mCurrentFreq), 0.45f), 1.2f, 10.0f)
                                 * newDecay * registerDecayMult;
         const float decayDuration = isCS80 ? (0.25f * newDecay) : baseDecay;
@@ -716,6 +718,7 @@ public:
         mSymDelayBuffer.fill(0.0f);
         mSymDelayPos = 0;
         mSymTailSamples = 0;
+        mLastSymTone = -1.0f;
 
         updateSympatheticFilters();
 
@@ -1001,6 +1004,32 @@ public:
     // Process a block of samples, summing into left and right
     void process(float* outL, float* outR, int numSamples) noexcept {
         if (mParams.volume < 1.0e-5f) {
+            mHeadroomSmoother.reset(0.0f);
+            if (mNumActiveVoices == 0) {
+                mCurrentSampleCount += static_cast<uint64_t>(numSamples);
+                mSymTailSamples = 0;
+                return;
+            }
+            for (int s = 0; s < numSamples; ++s) {
+                ++mCurrentSampleCount;
+                size_t writeIdx = 0;
+                for (size_t a = 0; a < mNumActiveVoices; ++a) {
+                    const uint8_t vIdx = mActiveVoices[a];
+                    auto& voice = mVoices[vIdx];
+                    (void)voice.processSample(mParams);
+                    if (voice.isActive()) {
+                        mActiveVoices[writeIdx++] = vIdx;
+                    }
+                }
+                mNumActiveVoices = writeIdx;
+                if (mNumActiveVoices == 0) {
+                    mLastActiveCount = 0;
+                    mSymTailSamples = 0;
+                    mCurrentSampleCount += static_cast<uint64_t>(numSamples - 1 - s);
+                    break;
+                }
+            }
+            mLastActiveCount = static_cast<int>(mNumActiveVoices);
             return;
         }
 
@@ -1074,6 +1103,10 @@ private:
     }
 
     void updateSympatheticFilters() noexcept {
+        if (std::abs(mParams.tone - mLastSymTone) < 1.0e-5f) {
+            return;
+        }
+        mLastSymTone = mParams.tone;
         const float f1 = 220.0f + mParams.tone * 120.0f;
         const float f2 = 440.0f + mParams.tone * 200.0f;
         mSympatheticFilter1.configure(Biquad::Type::Bandpass, mSampleRate, f1, 2.0f);
@@ -1165,6 +1198,7 @@ private:
     OnePoleSmoother mHeadroomSmoother;
 
     float mPitchBendCents { 0.0f };
+    float mLastSymTone { -1.0f };
     FeltPianoParams mParams;
     VoiceStealPolicy mStealPolicy { VoiceStealPolicy::OldestNoteFirst };
 };

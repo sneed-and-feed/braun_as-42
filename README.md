@@ -1,10 +1,10 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
-[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.1/BRAUN_AS42-v1.4.1-macOS-Universal.zip)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.1/BRAUN_AS42-v1.4.1-Windows-x64.zip)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-macOS-Universal.zip)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#native-plugins--downloads)
-[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(540%2F540)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
+[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(580%2F580)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
 
 > **Legal Homage Notice:** Not affiliated with Braun GmbH. Dieter Rams inspired design homage. Published by Sneed's Feed & Seed Ltd.  
@@ -25,8 +25,8 @@
 
 | Platform | Format | Distribution | Quick Action |
 | :--- | :--- | :--- | :--- |
-| **macOS** | AUv2 (`.component`), VST3, Standalone (`.app`) | Universal Binary (Apple Silicon & Intel) | [💾 Download `macOS-Universal.zip`](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.1/BRAUN_AS42-v1.4.1-macOS-Universal.zip) |
-| **Windows** | VST3, Standalone (`.exe`) | 64-bit Installer / Portable Archive | [💾 Download `Windows-x64.zip`](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.1/BRAUN_AS42-v1.4.1-Windows-x64.zip) or [VST3 Only](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.1/BRAUN_AS42-v1.4.1-VST3-Windows-x64.zip) |
+| **macOS** | AUv2 (`.component`), VST3, Standalone (`.app`) | Universal Binary (Apple Silicon & Intel) | [💾 Download `macOS-Universal.zip`](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-macOS-Universal.zip) |
+| **Windows** | VST3, Standalone (`.exe`) | 64-bit Installer / Portable Archive | [💾 Download `Windows-x64.zip`](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-Windows-x64.zip) or [VST3 Only](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-VST3-Windows-x64.zip) |
 | **Linux** | VST3, Standalone | Source Build (GCC/Clang) | `cmake -B build -DAS42_USE_WEBVIEW=OFF && cmake --build build` |
 
 *Companion Reverb: Check out the sibling [**BRAUN RB-26 Master Studio Reverberator**](https://github.com/sneed-and-feed/braun_rb-26).*
@@ -88,8 +88,8 @@ The AS 42 unites three complementary ambient acoustics into a tactile, foolproof
 ## 📚 Technical Documentation & Verification
 
 * 🏛️ [**ARCHITECTURE.md**](ARCHITECTURE.md) — Comprehensive technical datasheet: physical modeling mechanics, Zavalishin biquad cascades, FDN shimmer matrix, and full 38-parameter APVTS mapping.
-* 📋 [**CHANGELOG.md**](CHANGELOG.md) — Detailed engineering changelog from v1.3.0 through v1.4.1 modernizations.
-* 🔬 [**VERIFICATION_CHECKLIST.md**](VERIFICATION_CHECKLIST.md) — Certified test harness report (540 PASS: 473 Web Audio & MIDI tests + 67 C++ real-time DSP tests, 0 memory leaks, 0 denormals).
+* 📋 [**CHANGELOG.md**](CHANGELOG.md) — Detailed engineering changelog from v1.3.0 through v1.4.3 modernizations.
+* 🔬 [**VERIFICATION_CHECKLIST.md**](VERIFICATION_CHECKLIST.md) — Certified test harness report (580 PASS: 512 Web Audio & MIDI tests + 68 C++ real-time DSP tests, 0 memory leaks, 0 denormals).
 
 ---
 

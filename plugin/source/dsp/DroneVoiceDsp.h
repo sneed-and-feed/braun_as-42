@@ -72,6 +72,9 @@ public:
         mVoiceId = voiceId;
 
         mPan = (voiceId == 1) ? -0.45f : 0.45f;
+        const float panNorm = (mPan + 1.0f) * 0.5f;
+        mPanLeftGain = std::cos(kHalfPi * panNorm);
+        mPanRightGain = std::sin(kHalfPi * panNorm);
         const float defaultFreq = (voiceId == 1) ? 65.41f : 98.00f; // C2 or G2
         const float defaultBeat = (voiceId == 1) ? 0.35f : 0.65f;
         const float defaultDetune = (voiceId == 1) ? 2.5f : -3.2f;
@@ -98,6 +101,8 @@ public:
 
         mBeatHz = defaultBeat;
         mDetuneCents = defaultDetune;
+        mCachedDetuneCents = defaultDetune;
+        mCachedDetuneRatio = std::pow(2.0f, defaultDetune / 1200.0f);
 
         // Pillar 3: Sub-Bass DC-Blocker / Infrasonic High-Pass initialization (~15 Hz)
         mSubBassDcBlocker.setSampleRate(mSampleRate, 15.0f);
@@ -214,8 +219,12 @@ public:
                                       foldDrive, foldAmount, effectivePan, gainTrim);
         } else {
             // Standard Drone Voice Path: microtonal beating, cents detuning, and LFO modulation
+            if (params.detuneCents != mCachedDetuneCents) {
+                mCachedDetuneCents = params.detuneCents;
+                mCachedDetuneRatio = std::pow(2.0f, params.detuneCents / 1200.0f);
+            }
             freqA = baseFreq;
-            freqB = (baseFreq + params.beatHz) * std::pow(2.0f, params.detuneCents / 1200.0f);
+            freqB = (baseFreq + params.beatHz) * mCachedDetuneRatio;
 
             // LFO filter cutoff modulation (organic breathing movement)
             const float lfoSine = std::sin(kTwoPi * mLfoPhase);
@@ -294,9 +303,9 @@ public:
 
         // 9. Pillar 2: Stereo Monofication & constant power panning
         // Sub-bass mode sets effectivePan = 0.0f (mono center); standard mode uses mPan.
-        const float panNorm = (effectivePan + 1.0f) * 0.5f; // 0.0 (left) to 1.0 (right)
-        const float leftGain = std::cos(kHalfPi * panNorm);
-        const float rightGain = std::sin(kHalfPi * panNorm);
+        constexpr float kCenterPanGain = 0.70710678f; // cos(pi/4) = sin(pi/4)
+        const float leftGain = (effectivePan == 0.0f) ? kCenterPanGain : mPanLeftGain;
+        const float rightGain = (effectivePan == 0.0f) ? kCenterPanGain : mPanRightGain;
 
         outL += finalVoiceOut * leftGain;
         outR += finalVoiceOut * rightGain;
@@ -380,6 +389,8 @@ private:
     const WavetableBank* mWavetables { nullptr };
     int mVoiceId { 1 };
     float mPan { -0.45f };
+    float mPanLeftGain { 0.9102f };
+    float mPanRightGain { 0.4142f };
 
     float mPhaseA { 0.0f };
     float mPhaseB { 0.0f };
@@ -387,6 +398,8 @@ private:
 
     float mBeatHz { 0.35f };
     float mDetuneCents { 2.5f };
+    float mCachedDetuneCents { 2.5f };
+    float mCachedDetuneRatio { 1.001445f };
 
     OnePoleSmoother mFreqSmoother;
     OnePoleSmoother mCutoffSmoother;

@@ -1,12 +1,12 @@
 # BRAUN AS 42 · Reproducible Verification Checklist & DSP Benchmark Report
 
-[![Verification Status](https://img.shields.io/badge/Verification-100%25%20PASS%20(540%2F540)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#verification-summary)
-[![Tests Passing](https://img.shields.io/badge/Tests-473%2F473%20PASS-success?style=for-the-badge&logo=node.js&logoColor=white)](#1-test-suite-coverage--verification-matrix)
+[![Verification Status](https://img.shields.io/badge/Verification-100%25%20PASS%20(580%2F580)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#verification-summary)
+[![Tests Passing](https://img.shields.io/badge/Tests-512%2F512%20PASS-success?style=for-the-badge&logo=node.js&logoColor=white)](#1-test-suite-coverage--verification-matrix)
 [![Sample Rates](https://img.shields.io/badge/Sample%20Rates-44.1k%20--%20192k%20Hz-blue?style=for-the-badge)](#2-audio-engineering--dsp-specifications)
 [![Latency](https://img.shields.io/badge/Algorithmic%20Latency-0%20Samples-orange?style=for-the-badge)](#latency-profile)
 [![License](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
 
-> **Document Version:** 1.4.1  
+> **Document Version:** 1.4.3  
 > **Status:** Verified & Certified  
 > **Engine:** Dual Web Audio API & Native C++20 DSP (AUv2 / VST3 / Standalone)  
 > **Aesthetic & Engineering Standard:** Dieter Rams Functionalist Audio Architecture (*"Weniger, aber besser"*)
@@ -17,8 +17,8 @@
 
 | Metric | Certified Result | Target Threshold | Status |
 | :--- | :--- | :--- | :--- |
-| **Node.js Automated Test Harness** | **473 / 473 Passed** (108 suites) | 100% Pass, 0 Failures | **PASS** |
-| **Native C++ DSP & Real-Time Suites** | **67 / 67 Passed** (3 suites) | 100% Pass, 0 Failures | **PASS** |
+| **Node.js Automated Test Harness** | **512 / 512 Passed** (110 suites) | 100% Pass, 0 Failures | **PASS** |
+| **Native C++ DSP & Real-Time Suites** | **68 / 68 Passed** (3 suites) | 100% Pass, 0 Failures | **PASS** |
 | **Fast Verification Checklist Suite** | **100% Passed** (`verify:checklist`) | 0 Errors | **PASS** |
 | **Real-Time Memory Safety** | **0 leaks, 0 heap allocations in `processBlock()`** | 0 bytes allocated | **PASS** |
 | **Numerical Integrity** | **0 NaNs, 0 Infinities, 0 Denormals** | Strict FP bounded | **PASS** |
@@ -194,5 +194,5 @@ The AS-42 employs a three-tier anti-clipping architecture to ensure clean, warm 
 ## 8. Verification Sign-Off
 
 * **Lead Verification Engineer:** Antigravity Audio Engineering Team
-* **Target Release:** BRAUN AS-42 v1.4.1 / sneed-and-feed.github.io
+* **Target Release:** BRAUN AS-42 v1.4.3 / sneed-and-feed.github.io
 * **Verification Outcome:** **100% PASS** — All criteria met with zero defects.

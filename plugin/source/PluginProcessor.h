@@ -89,6 +89,7 @@ private:
     std::atomic<bool> drone2StateDirty { false };
     std::atomic<bool> droneTrackMidi { false };
     std::atomic<bool> droneTrackMidiDirty { false };
+    std::atomic<int> currentProgram { 0 };
 
     // Lock-free FIFO queue for UI MIDI events
     struct UIMidiEvent {

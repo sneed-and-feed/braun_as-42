@@ -3121,6 +3121,121 @@ void test_soft_compressor_knee_ratio_and_timing() {
 }
 
 // ============================================================================
+// Test 47: Audit Fixes (Freeze Reset, Bass Decay Update, Zero-Vol Envelopes, Mono Downmix)
+// ============================================================================
+void test_audit_fixes_freeze_reset_bass_decay_zero_vol_and_mono_downmix() {
+    // 1. ShimmerReverbDsp::reset() while frozen must restore input smoother to 1.0f
+    {
+        braun::ShimmerReverbDsp reverb;
+        reverb.prepare(48000.0);
+        braun::ShimmerReverbParams revParams;
+        revParams.decaySec = 8.5f;
+        revParams.damping = 0.5f;
+        revParams.shimmer = 0.45f;
+        revParams.mix = 0.5f;
+        revParams.freeze = true;
+
+        float outL = 0.0f, outR = 0.0f;
+        for (int i = 0; i < 48000; ++i) {
+            reverb.processSample(0.2f, 0.2f, revParams, outL, outR);
+        }
+        // Reset while frozen, then process unfrozen
+        reverb.reset();
+        revParams.freeze = false;
+        float energyAfterReset = 0.0f;
+        for (int i = 0; i < 4096; ++i) {
+            const float in = (i < 256) ? 0.5f : 0.0f;
+            reverb.processSample(in, in, revParams, outL, outR);
+            energyAfterReset += outL * outL + outR * outR;
+        }
+        TEST_ASSERT(energyAfterReset > 0.1f, "Reverb input remained ducked after reset() while frozen");
+    }
+
+    // 2. FeltPianoVoice::updateDecay() in bass register (< MIDI 48) preserves bass register multiplier
+    {
+        braun::WavetableBank wavetables;
+        std::vector<float> hammerNoise(512, 0.05f);
+        braun::FeltPianoVoice voiceTriggered, voiceUpdated;
+        voiceTriggered.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 0);
+        voiceUpdated.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 1);
+
+        braun::FeltPianoParams params;
+        params.decay = 1.0f;
+        const float bassFreq = 65.406f; // C2 (MIDI 36)
+        voiceUpdated.trigger(bassFreq, 0.8f, 3.5f, params, true, false, 0);
+
+        params.decay = 1.5f;
+        voiceUpdated.updateDecay(1.5f);
+        voiceTriggered.trigger(bassFreq, 0.8f, 3.5f, params, true, false, 0);
+
+        for (int i = 0; i < 48000; ++i) {
+            voiceTriggered.processSample(params);
+            voiceUpdated.processSample(params);
+        }
+        TEST_ASSERT(std::abs(voiceTriggered.getEnvGain() - voiceUpdated.getEnvGain()) < 1.0e-5f,
+                    "updateDecay() in bass register diverged from trigger() bass multiplier");
+    }
+
+    // 3. FeltPianoSynthesizer::process() when volume == 0 advances active voices to completion
+    {
+        braun::WavetableBank wavetables;
+        braun::FeltPianoSynthesizer piano;
+        piano.prepare(48000.0, &wavetables);
+
+        braun::FeltPianoParams params;
+        params.volume = 0.8f;
+        params.decay = 0.25f;
+        piano.setParams(params);
+        piano.noteOn(60, 0.8f);
+        piano.noteOff(60);
+
+        std::vector<float> outL(512, 0.0f), outR(512, 0.0f);
+        params.volume = 0.0f;
+        piano.setParams(params);
+
+        // Run for 2 seconds with volume = 0.0f; voice must complete its release rather than freezing
+        for (int b = 0; b < 200; ++b) {
+            piano.process(outL.data(), outR.data(), 512);
+        }
+        params.volume = 0.8f;
+        piano.setParams(params);
+        std::fill(outL.begin(), outL.end(), 0.0f);
+        std::fill(outR.begin(), outR.end(), 0.0f);
+        piano.process(outL.data(), outR.data(), 512);
+
+        float maxResumed = 0.0f;
+        for (int i = 0; i < 512; ++i) {
+            maxResumed = std::max(maxResumed, std::abs(outL[i]));
+        }
+        TEST_ASSERT(maxResumed < 1.0e-5f, "Released voice froze while volume == 0 and resumed audibly later");
+    }
+
+    // 4. DspEngine::process() with left == right (mono buffer) downmixes (L + R) * 0.5f
+    {
+        braun::DspEngine engineStereo, engineMono;
+        engineStereo.prepare(48000.0, 256);
+        engineMono.prepare(48000.0, 256);
+
+        braun::ParameterSnapshot snap;
+        snap.drone1_active = true;
+        snap.drone1_volume = 0.7f;
+        snap.drone2_active = false;
+        snap.shimmer_mix = 0.0f;
+        snap.tape_mix = 0.0f;
+
+        std::vector<float> stereoL(256, 0.0f), stereoR(256, 0.0f), monoBuf(256, 0.0f);
+        engineStereo.process(stereoL.data(), stereoR.data(), 256, snap, nullptr, 0);
+        engineMono.process(monoBuf.data(), monoBuf.data(), 256, snap, nullptr, 0);
+
+        for (int i = 0; i < 256; ++i) {
+            const float expectedMono = 0.5f * (stereoL[i] + stereoR[i]);
+            TEST_ASSERT(std::abs(monoBuf[i] - expectedMono) < 1.0e-6f,
+                        "Mono buffer downmix mismatch at sample " + std::to_string(i));
+        }
+    }
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -3174,6 +3289,7 @@ int main() {
     RUN_TEST(test_shimmer_reverb_freeze_sustain_and_decay);
     RUN_TEST(test_felt_piano_reverb_pitch_stability_and_tail_bloom);
     RUN_TEST(test_soft_compressor_knee_ratio_and_timing);
+    RUN_TEST(test_audit_fixes_freeze_reset_bass_decay_zero_vol_and_mono_downmix);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

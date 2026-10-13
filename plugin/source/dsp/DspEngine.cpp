@@ -410,8 +410,12 @@ void DspEngine::process(float* left, float* right, int numSamples,
             float finalR = 0.0f;
             mMasterLimiter.processSample(masterSumL, masterSumR, masterParams, finalL, finalR);
 
-            left[s] = finalL;
-            right[s] = finalR;
+            if (left == right) {
+                left[s] = 0.5f * (finalL + finalR);
+            } else {
+                left[s] = finalL;
+                right[s] = finalR;
+            }
         }
 
         currentSample += sliceSamples;
@@ -435,7 +439,7 @@ void DspEngine::process(juce::AudioBuffer<float>& buffer,
         const auto* rawData = metadata.data;
         const int numBytes = metadata.numBytes;
         if (numBytes >= 1) {
-            midiEventsStack[eventCount].sampleOffset = metadata.samplePosition;
+            midiEventsStack[eventCount].sampleOffset = std::clamp(metadata.samplePosition, 0, std::max(0, numSamples - 1));
             midiEventsStack[eventCount].status = rawData[0];
             midiEventsStack[eventCount].data1 = (numBytes > 1) ? rawData[1] : 0;
             midiEventsStack[eventCount].data2 = (numBytes > 2) ? rawData[2] : 0;

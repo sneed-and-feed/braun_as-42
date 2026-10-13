@@ -139,6 +139,12 @@ public:
         mEarlyBufferL.assign(mEarlyDelaySamples, 0.0f);
         mEarlyBufferR.assign(mEarlyDelaySamples, 0.0f);
         mEarlyWriteIndex = 0;
+        for (size_t k = 0; k < kNumEarlyTaps; ++k) {
+            mEarlyTapDelays[k] = static_cast<size_t>(kEarlyTapTimes[k] * mSampleRate);
+            const float pan = (k % 2 == 0) ? 0.70f : -0.70f;
+            mEarlyTapGainL[k] = (kEarlyGains[k] * 0.18f) * (1.0f - pan * 0.5f);
+            mEarlyTapGainR[k] = (kEarlyGains[k] * 0.18f) * (1.0f + pan * 0.5f);
+        }
 
         // 5. Prepare High-Diffusion FDN Delay Lines with Tail Modulator
         mTailModulator.prepare(mSampleRate);
@@ -175,15 +181,15 @@ public:
         mFreezeHpFilterR.configure(Biquad::Type::Highpass, mSampleRate, 75.0f, 0.7071f);
 
         mFreezeFeedbackSmoother.setSampleRate(mSampleRate);
-        mFreezeFeedbackSmoother.setTimeConstant(0.080f);
+        mFreezeFeedbackSmoother.setTimeConstant(0.025f);
         mFreezeFeedbackSmoother.reset(0.0f);
 
         mFreezeWetSmoother.setSampleRate(mSampleRate);
-        mFreezeWetSmoother.setTimeConstant(0.080f);
+        mFreezeWetSmoother.setTimeConstant(0.028f);
         mFreezeWetSmoother.reset(0.0f);
 
         mFreezeInputSmoother.setSampleRate(mSampleRate);
-        mFreezeInputSmoother.setTimeConstant(0.100f);
+        mFreezeInputSmoother.setTimeConstant(0.030f);
         mFreezeInputSmoother.reset(1.0f);
 
         mDampingSmoother.setSampleRate(mSampleRate);
@@ -263,6 +269,12 @@ public:
         mFreezeHpFilterL.reset();
         mFreezeHpFilterR.reset();
         mWasFrozen = false;
+        mFreezeFeedbackSmoother.setTimeConstant(0.025f);
+        mFreezeFeedbackSmoother.reset(0.0f);
+        mFreezeWetSmoother.setTimeConstant(0.028f);
+        mFreezeWetSmoother.reset(0.0f);
+        mFreezeInputSmoother.setTimeConstant(0.030f);
+        mFreezeInputSmoother.reset(1.0f);
 
         mShimmerFeedbackL = 0.0f;
         mShimmerFeedbackR = 0.0f;
@@ -297,22 +309,24 @@ public:
         const float curShimmerFb = mShimmerFeedbackSmoother.next();
 
         // 3. Freeze parameters update: contractive bounding (0.988f) & smooth clickless transitions
-        if (params.freeze) {
-            mFreezeFeedbackSmoother.setTimeConstant(0.050f);
-            mFreezeFeedbackSmoother.setTarget(0.988f);
-            mFreezeWetSmoother.setTimeConstant(0.050f);
-            mFreezeWetSmoother.setTarget(0.85f);
-            mFreezeInputSmoother.setTimeConstant(0.080f);
-            mFreezeInputSmoother.setTarget(0.08f);
-        } else {
-            mFreezeFeedbackSmoother.setTimeConstant(0.025f);
-            mFreezeFeedbackSmoother.setTarget(0.0f);
-            mFreezeWetSmoother.setTimeConstant(0.028f);
-            mFreezeWetSmoother.setTarget(0.0f);
-            mFreezeInputSmoother.setTimeConstant(0.030f);
-            mFreezeInputSmoother.setTarget(1.0f);
+        if (params.freeze != mWasFrozen) {
+            if (params.freeze) {
+                mFreezeFeedbackSmoother.setTimeConstant(0.050f);
+                mFreezeFeedbackSmoother.setTarget(0.988f);
+                mFreezeWetSmoother.setTimeConstant(0.050f);
+                mFreezeWetSmoother.setTarget(0.85f);
+                mFreezeInputSmoother.setTimeConstant(0.080f);
+                mFreezeInputSmoother.setTarget(0.08f);
+            } else {
+                mFreezeFeedbackSmoother.setTimeConstant(0.025f);
+                mFreezeFeedbackSmoother.setTarget(0.0f);
+                mFreezeWetSmoother.setTimeConstant(0.028f);
+                mFreezeWetSmoother.setTarget(0.0f);
+                mFreezeInputSmoother.setTimeConstant(0.030f);
+                mFreezeInputSmoother.setTarget(1.0f);
+            }
+            mWasFrozen = params.freeze;
         }
-        mWasFrozen = params.freeze;
 
         const float freezeFb = mFreezeFeedbackSmoother.next();
         const float freezeWet = mFreezeWetSmoother.next();
@@ -331,13 +345,9 @@ public:
         float earlyR = 0.0f;
 
         for (size_t k = 0; k < kNumEarlyTaps; ++k) {
-            const size_t tapDelay = static_cast<size_t>(kEarlyTapTimes[k] * mSampleRate);
-            const size_t readIdx = (mEarlyWriteIndex + mEarlyDelaySamples - tapDelay) % mEarlyDelaySamples;
-            const float tapL = mEarlyBufferL[readIdx] * (kEarlyGains[k] * 0.18f);
-            const float tapR = mEarlyBufferR[readIdx] * (kEarlyGains[k] * 0.18f);
-            const float pan = (k % 2 == 0) ? 0.70f : -0.70f;
-            earlyL += tapL * (1.0f - pan * 0.5f);
-            earlyR += tapR * (1.0f + pan * 0.5f);
+            const size_t readIdx = (mEarlyWriteIndex + mEarlyDelaySamples - mEarlyTapDelays[k]) % mEarlyDelaySamples;
+            earlyL += mEarlyBufferL[readIdx] * mEarlyTapGainL[k];
+            earlyR += mEarlyBufferR[readIdx] * mEarlyTapGainR[k];
         }
 
         mEarlyWriteIndex = (mEarlyWriteIndex + 1) % mEarlyDelaySamples;
@@ -548,6 +558,9 @@ private:
         0.75f, -0.68f, 0.62f, -0.55f, 0.49f, -0.42f, 0.38f, -0.31f, 0.28f, -0.22f
     };
     size_t mEarlyDelaySamples { 8000 };
+    std::array<size_t, kNumEarlyTaps> mEarlyTapDelays {};
+    std::array<float, kNumEarlyTaps> mEarlyTapGainL {};
+    std::array<float, kNumEarlyTaps> mEarlyTapGainR {};
     std::vector<float> mEarlyBufferL;
     std::vector<float> mEarlyBufferR;
     size_t mEarlyWriteIndex { 0 };
