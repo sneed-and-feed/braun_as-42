@@ -2413,7 +2413,7 @@ export class AmbientApp {
     if (typeof window === 'undefined') return;
 
     const setupBackend = () => {
-      const backend = window.__JUCE__?.backend;
+      const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
       if (!backend || this._juceBridgeInitialized) return;
       this._juceBridgeInitialized = true;
       this.isJuce = true;
@@ -2714,19 +2714,32 @@ export class AmbientApp {
       this._emitJuceParamChange('requestSync', 1.0);
     };
 
-    if (window.__JUCE__?.backend) {
+    if (this._juceBridgePoll) {
+      clearInterval(this._juceBridgePoll);
+      this._juceBridgePoll = null;
+    }
+
+    if (typeof window !== 'undefined' && window.__JUCE__?.backend) {
       setupBackend();
     } else {
       let attempts = 0;
       const poll = setInterval(() => {
+        if (typeof window === 'undefined') {
+          clearInterval(poll);
+          if (this._juceBridgePoll === poll) this._juceBridgePoll = null;
+          return;
+        }
         attempts++;
         if (window.__JUCE__?.backend) {
           clearInterval(poll);
+          if (this._juceBridgePoll === poll) this._juceBridgePoll = null;
           setupBackend();
         } else if (attempts >= 50) {
           clearInterval(poll);
+          if (this._juceBridgePoll === poll) this._juceBridgePoll = null;
         }
       }, 100);
+      this._juceBridgePoll = poll;
       if (typeof poll.unref === 'function') {
         poll.unref();
       }

@@ -468,5 +468,10 @@ describe('Standalone WebView2 Startup Drone Disarm & Sync Guard (v1.5.0)', () =>
     assert.strictEqual(elementsById.get('btn-drone1-active').classList.contains('is-active'), false);
     assert.strictEqual(elementsById.get('btn-power').classList.contains('is-active'), false);
     assert.ok(suspendCalls >= 1 || app.engine.ctx.state === 'suspended');
+
+    // 3. Tear down globalThis.window and wait >120ms so _initJuceBridge's 100ms poll tick self-clears without ReferenceError
+    delete globalThis.window;
+    await new Promise(r => setTimeout(r, 130));
+    assert.strictEqual(app._juceBridgePoll, null);
   });
 });

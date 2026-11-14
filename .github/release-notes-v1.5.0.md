@@ -66,8 +66,8 @@
 
 | Package Archive | Size | SHA-256 Checksum |
 | :--- | :--- | :--- |
-| **`BRAUN_AS42-v1.5.0-Windows-x64.zip`** | 7,190,086 bytes (~6.86 MiB / 7.19 MB) | `964064dfa127228f3c89b603274bbfccf48091ba972d9323b38cfa0bc34d8f81` |
-| **`BRAUN_AS42-v1.5.0-VST3-Windows-x64.zip`** | 3,611,435 bytes (~3.44 MiB / 3.61 MB) | `31bcf208e79cf53332dfdcdc527c1c1ee552b2835ada10bf155fc5b8085ed785` |
+| **`BRAUN_AS42-v1.5.0-Windows-x64.zip`** | 7,190,123 bytes (~6.86 MiB / 7.19 MB) | `848296771c9bb4ba4b32ffe37f404ec187a24c7803b2fe16c7b1f3098a96f9bf` |
+| **`BRAUN_AS42-v1.5.0-VST3-Windows-x64.zip`** | 3,611,435 bytes (~3.44 MiB / 3.61 MB) | `20d5b34fa51f91d69966960f2e9edb58d31be9101c451ef8f6c1bf7337dce9a2` |
 | **`BRAUN_AS42-v1.5.0-macOS-Universal.zip`** | Target Binary | *(Generated on macOS Universal CI/CD runner)* |
 
 ---
