@@ -26,6 +26,9 @@ export class BraunMidiManager {
     /** @type {Set<any>} Voices sustained by pedal held after physical key release */
     this.latchedVoices = new Set();
 
+    /** @type {WeakMap<object, number>} Monotonic triggerId recorded when MIDI allocated voice */
+    this._voiceTriggerIds = new WeakMap();
+
     /** @type {Set<any>} Connected MIDI input ports currently monitored */
     this._attachedInputs = new Set();
 
@@ -250,6 +253,9 @@ export class BraunMidiManager {
 
     if (voice) {
       voice.currentMidi = note;
+      if (typeof voice === 'object') {
+        this._voiceTriggerIds.set(voice, voice.triggerId);
+      }
 
       // Remove stolen voice from any other note's set in activeNotes
       for (const [otherNote, voiceSet] of this.activeNotes.entries()) {
@@ -296,12 +302,18 @@ export class BraunMidiManager {
       if (voice && typeof voice.currentMidi === 'number' && voice.currentMidi !== note) {
         continue;
       }
+      if (voice && typeof voice === 'object' && this._voiceTriggerIds.has(voice)) {
+        const recId = this._voiceTriggerIds.get(voice);
+        if (recId !== undefined && voice.triggerId !== undefined && recId !== voice.triggerId) {
+          continue;
+        }
+      }
       if (this.isSustainDown) {
         // Pedal held down: latch voices to sound until pedal released
         this.latchedVoices.add(voice);
       } else {
-        // Pedal up: release voices immediately
-        if (voice && typeof voice.release === 'function') {
+        // Pedal up: release voices immediately (skip duplicate release if engine.noteOff already released it)
+        if (voice && typeof voice.release === 'function' && !voice._isReleased) {
           voice.release();
         }
       }
@@ -338,7 +350,13 @@ export class BraunMidiManager {
         // Release only voices in latchedVoices whose physical key is NOT currently held
         for (const voice of this.latchedVoices) {
           if (!heldVoices.has(voice)) {
-            if (voice && typeof voice.release === 'function') {
+            if (voice && typeof voice === 'object' && this._voiceTriggerIds.has(voice)) {
+              const recId = this._voiceTriggerIds.get(voice);
+              if (recId !== undefined && voice.triggerId !== undefined && recId !== voice.triggerId) {
+                continue;
+              }
+            }
+            if (voice && typeof voice.release === 'function' && !voice._isReleased) {
               voice.release();
             }
           }

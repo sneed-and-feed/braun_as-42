@@ -18,8 +18,8 @@
   * JUCE's `StandaloneFilterWindow` automatically saves plugin state to `%APPDATA%\BRAUN_AS42.settings` on exit and calls `setStateInformation()` on the next cold launch prior to `createEditor()`. Previously, if a user closed `BRAUN_AS42.exe` with Drone 1, Drone 2, or Shimmer Freeze active, reloading that `.settings` file invoked `setDrone1Active(true)` / `setDrone2Active(true)`, which triggered v1.4.2 Power Auto-Wake (`isPoweredOn = true`) and immediately blasted drones out of studio monitors on launch.
   * **Wrapper-Aware State Machine**: `BRAUN_AS42AudioProcessor` now initializes `isPoweredOn = false` when `wrapperType == wrapperType_Standalone` and intercepts the initial cold-boot `setStateInformation()` reload (`!standaloneStartupStateConsumed`). All 38 user parameter calibrations, oscillator waveforms, `currentProgram`, and `droneTrackMidi` preferences are faithfully restored, while `drone1Active`, `drone2Active`, `shimmer_freeze`, and `isPoweredOn` are strictly disarmed (`Standby` + scope flush + deferred `dspEngine.reset()`).
   * **Full DAW Session Recall Preserved**: Under `wrapperType_VST3` and `wrapperType_AudioUnit`, `setStateInformation()` continues to restore active drones, freeze latch, and power states transparently so DAW project reloads and offline bounces render identically.
-* **WebView2 Storage & Standby Scope Hygiene (`index.html`, `js/app.js`)**:
-  * Purged any residual `localStorage` / `sessionStorage` drone or freeze keys on JUCE bridge initialization, disarmed both JS/DOM drone toggles prior to `requestSync`, added `autocomplete="off"` on all `<select>` and `<input>` elements, and guarded `scopeFrame` telemetry with `this.isPowerOn` so late in-flight frames never wake the Standby CRT display.
+* **WebView2 Storage, Standby/BFCache & `loadPatch` Sync Hygiene (`index.html`, `js/app.js`, `js/audio/engine.js`, `js/midi/midi-manager.js`)**:
+  * Purged residual `localStorage` / `sessionStorage` drone or freeze keys on JUCE bridge initialization, disarmed both JS/DOM drone toggles prior to `requestSync`, added `autocomplete="off"` on all `<select>` and `<input>` elements, guarded `scopeFrame` telemetry and Web Audio `ctx.resume()` behind `this.isPowerOn` (with BFCache `pageshow`/`pagehide` disarming), wired full C++ APVTS IPC synchronization across knobs/waveforms/pitches/sub-bass in `loadPatch()`, and implemented multi-voice `_noteVoiceMap` + `triggerId` stolen-voice protection for Web Audio `CC 64` sustain pedal latching.
 
 #### 2. 🎛️ Click-Free 15 ms Drone Gate, Multi-Steal Pitch Lock & Biquad Hygiene
 * **15 ms Anti-Click Drone ON/OFF Gate (`DroneVoiceDsp.h`)**:
@@ -38,23 +38,23 @@
 * **Dynamic DAW Tail Length & 0-Sample MIDI Safety (`PluginProcessor.cpp`)**:
   * Implemented dynamic `getTailLengthSeconds()` returning `0.0` in Standby, `infinity` while Drone 1, Drone 2, or Shimmer Freeze is engaged (preventing VST3/AU hosts from auto-suspending `processBlock` on tracks without active MIDI regions), and `max(8.0, reverbDecay + delayTail)` otherwise.
   * Guaranteed 0-sample `processBlock` calls still execute `resetRequested` and drain queued UI/host Note-Off events so notes never hang across transport stops.
-* **Bidirectional Program Sync, Resource Path Confinement & Clean Release Checksums (`PluginEditor.cpp`, `WebResourceManager.cpp`, `scripts/package_release.py`)**:
+* **Bidirectional Program Sync, Windows PE Metadata, Resource Path Confinement & Clean Checksums (`CMakeLists.txt`, `PluginEditor.cpp`, `WebResourceManager.cpp`, `scripts/package_release.py`)**:
   * Added `fullSyncRequested` state-recall synchronization and bidirectional `currentProgram` sync (`setCurrentProgramIndexOnly`) between C++ APVTS, Native UI, and WebView2 without parameter echo loops, and zeroed Native UI CRT scope & `OUT L`/`OUT R` meters in Standby.
   * Hardened `WebResourceManager::getResource()` to reject relative path traversal (`..`, `:`) and enforce `isAChildOf(rootDir)` confinement.
-  * Updated `scripts/package_release.py` to remove stale old-version `.zip` archives and generate `releases/SHA256SUMS.txt` exclusively for active `v1.5.0` release bundles.
+  * Fixed JUCE 8 incremental Windows `.rc` caching in `CMakeLists.txt` (`BRAUN_AS42_resources.rc` regeneration + `OBJECT_DEPENDS`) and added `ctypes` Windows PE `VERSIONINFO` verification (`1.5.0` / `Sneed's Feed & Seed Ltd.`), stale `.zip` pruning, and clean `SHA256SUMS.txt` generation in `scripts/package_release.py`.
 
 ---
 
-### 🔬 Certified Quality & Verification Matrix (589 Core Tests + 64 Probes = 100% PASS)
+### 🔬 Certified Quality & Verification Matrix (592 Core Tests + 64 Probes = 100% PASS)
 
 | Test Harness / Suite | Assertions | Result | Status |
 | :--- | :--- | :--- | :--- |
-| **Node.js Web Audio, UI & MIDI Automation (`npm test`)** | 516 tests (111 suites) | 516 Passed, 0 Failed | **PASS** |
+| **Node.js Web Audio, UI & MIDI Automation (`npm test`)** | 519 tests (111 suites) | 519 Passed, 0 Failed | **PASS** |
 | **Native C++ Real-Time DSP Units (`dsp_tests.exe`)** | 48 tests | 48 Passed, 0 Failed | **PASS** |
 | **Adversarial Challenger Stress Suite (`challenger_stress_tests.exe`)** | 10 tests | 10 Passed, 0 Failed | **PASS** |
 | **Adversarial Empirical Challenge Suite (`adversarial_challenge_suite.exe`)** | 11 tests | 11 Passed, 0 Failed | **PASS** |
 | **JUCE AudioProcessor Lifecycle Suite (`plugin_lifecycle_tests.exe`)** | 4 tests | 4 Passed, 0 Failed | **PASS** |
-| **Core Automated Test Total (`npm test` + Native C++ `ctest`)** | **589 Tests** | **589 Passed, 0 Failed** | **100% PASS** |
+| **Core Automated Test Total (`npm test` + Native C++ `ctest`)** | **592 Tests** | **592 Passed, 0 Failed** | **100% PASS** |
 | **Standalone Fast Verification Checklist (`npm run verify:checklist`)** | 16 criteria | 16 Passed, 0 Errors | **PASS** |
 | **Embedded Web Assets & APVTS Roundtrip (`web-assets-and-mime-stress.mjs`)** | 48 checks | 48 Passed, 0 Errors | **PASS** |
 
@@ -66,8 +66,8 @@
 
 | Package Archive | Size | SHA-256 Checksum |
 | :--- | :--- | :--- |
-| **`BRAUN_AS42-v1.5.0-Windows-x64.zip`** | 7,187,025 bytes (~6.85 MiB / 7.19 MB) | `ddd729b5e1170d47cafccf39e75f8d664fb6859b15902a3b3651568caa6c91bf` |
-| **`BRAUN_AS42-v1.5.0-VST3-Windows-x64.zip`** | 3,610,180 bytes (~3.44 MiB / 3.61 MB) | `9467cc62d21d20383abfffc84440a027a714e7b35108b29b1ba3c100504eafc3` |
+| **`BRAUN_AS42-v1.5.0-Windows-x64.zip`** | 7,190,086 bytes (~6.86 MiB / 7.19 MB) | `964064dfa127228f3c89b603274bbfccf48091ba972d9323b38cfa0bc34d8f81` |
+| **`BRAUN_AS42-v1.5.0-VST3-Windows-x64.zip`** | 3,611,435 bytes (~3.44 MiB / 3.61 MB) | `31bcf208e79cf53332dfdcdc527c1c1ee552b2835ada10bf155fc5b8085ed785` |
 | **`BRAUN_AS42-v1.5.0-macOS-Universal.zip`** | Target Binary | *(Generated on macOS Universal CI/CD runner)* |
 
 ---

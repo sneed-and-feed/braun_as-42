@@ -23,9 +23,9 @@ What's New in v1.5.0:
 - Ultra-High Sample Rate FDN Scaling, Host Tail Reporting & Security Hardening:
   * Dynamically scaled ShimmerReverbDsp power-of-two FDN delay buffer capacity for ultra-high sample rates (192 kHz / 384 kHz+) with safe Hermite read clamping.
   * Implemented dynamic getTailLengthSeconds() in PluginProcessor (infinity while drones or freeze are active so DAWs never auto-suspend ambient beds; reverb + delay tail otherwise; 0 in Standby).
-  * Hardened WebResourceManager against relative path traversal and added bidirectional factory program sync without parameter echo loops.
+  * Hardened WebResourceManager against relative path traversal, added full C++ APVTS synchronization in loadPatch(), fixed Web Audio CC 64 sustain pedal latching & Standby/BFCache guards, enforced Windows PE VERSIONINFO regeneration (1.5.0 / Sneed's Feed & Seed Ltd.), and added bidirectional factory program sync without parameter echo loops.
 - Master Verification:
-  * 100% test pass rate across 589 core automated tests (516 Web Audio, UI & MIDI tests + 73 Native C++ DSP & AudioProcessor lifecycle tests) plus 64 checklist/asset roundtrip assertions with 0 memory leaks, 0 denormals, and 0 NaNs.
+  * 100% test pass rate across 592 core automated tests (519 Web Audio, UI & MIDI tests + 73 Native C++ DSP & AudioProcessor lifecycle tests) plus 64 checklist/asset roundtrip assertions with 0 memory leaks, 0 denormals, and 0 NaNs.
 
 Project & Source: https://github.com/sneed-and-feed/braun_as-42
 Web Demo: https://sneed-and-feed.github.io/

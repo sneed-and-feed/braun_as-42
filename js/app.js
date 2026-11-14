@@ -868,8 +868,26 @@ export class AmbientApp {
     });
 
     // Interruption recovery for iPadOS Safari (screen lock, tab switch, app backgrounding)
-    // and canvas pausing on occlusion, window blur, and standby
-    const handleInterruptionRecovery = async () => {
+    // and canvas pausing on occlusion, window blur, BFCache navigation, and standby.
+    // CRITICAL: Never resume AudioContext when isPowerOn is false, and on BFCache restore
+    // (pageshow with event.persisted === true) strictly disarm drones & return to standby!
+    const handleInterruptionRecovery = async (event) => {
+      if (event && event.type === 'pageshow' && event.persisted) {
+        if (typeof this._disarmAllAudioAndSyncStandbyUI === 'function') {
+          this._disarmAllAudioAndSyncStandbyUI();
+        }
+        if (!this.isJuce && this.engine && this.engine.ctx) {
+          try {
+            if (typeof this.engine.powerOff === 'function') {
+              await this.engine.powerOff();
+            } else if (typeof this.engine.ctx.suspend === 'function' && this.engine.ctx.state === 'running') {
+              await this.engine.ctx.suspend();
+            }
+          } catch (e) {}
+        }
+        return;
+      }
+
       const isHidden = (typeof document !== 'undefined' && (document.visibilityState === 'hidden' || document.hidden));
       if (isHidden) {
         if (this.display && typeof this.display.stop === 'function') {
@@ -878,13 +896,15 @@ export class AmbientApp {
         return;
       }
 
-      if (this.isPowerOn) {
-        if (this.display && typeof this.display.start === 'function') {
-          this.display.start();
-        }
+      if (this.isPowerOn === false) {
+        return;
       }
 
-      if (this.engine && this.engine.ctx && (this.engine.ctx.state === 'suspended' || this.engine.ctx.state === 'interrupted')) {
+      if (this.isPowerOn && this.display && typeof this.display.start === 'function') {
+        this.display.start();
+      }
+
+      if (!this.isJuce && this.engine && this.engine.ctx && (this.engine.ctx.state === 'suspended' || this.engine.ctx.state === 'interrupted')) {
         try {
           if (typeof this.engine.ctx.resume === 'function') {
             await this.engine.ctx.resume();
@@ -898,6 +918,26 @@ export class AmbientApp {
     const handleWindowBlur = () => {
       if (this.display && typeof this.display.stop === 'function') {
         this.display.stop();
+      }
+    };
+
+    const handlePageHide = (event) => {
+      if (this.display && typeof this.display.stop === 'function') {
+        this.display.stop();
+      }
+      if (event && event.persisted) {
+        if (typeof this._disarmAllAudioAndSyncStandbyUI === 'function') {
+          this._disarmAllAudioAndSyncStandbyUI();
+        }
+        if (!this.isJuce && this.engine && this.engine.ctx) {
+          try {
+            if (typeof this.engine.powerOff === 'function') {
+              Promise.resolve(this.engine.powerOff()).catch(() => {});
+            } else if (typeof this.engine.ctx.suspend === 'function' && this.engine.ctx.state === 'running') {
+              Promise.resolve(this.engine.ctx.suspend()).catch(() => {});
+            }
+          } catch (e) {}
+        }
       }
     };
 
@@ -915,9 +955,99 @@ export class AmbientApp {
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener('visibilitychange', handleInterruptionRecovery);
       window.addEventListener('pageshow', handleInterruptionRecovery);
-      window.addEventListener('pagehide', handleWindowBlur);
+      window.addEventListener('pagehide', handlePageHide);
       window.addEventListener('blur', handleWindowBlur);
       window.addEventListener('focus', handleWindowFocus);
+    }
+  }
+
+  _disarmAllAudioAndSyncStandbyUI() {
+    this.isPowerOn = false;
+
+    for (const dId of [1, 2]) {
+      if (this.engine) {
+        if (this.engine.droneParams && this.engine.droneParams[dId]) {
+          this.engine.droneParams[dId].active = false;
+        }
+        if (typeof this.engine.setDroneActive === 'function') {
+          this.engine.setDroneActive(dId, false);
+        }
+      }
+      if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
+        const dBtn = document.getElementById(`btn-drone${dId}-active`) || document.getElementById(`toggle-drone-${dId}`);
+        if (dBtn) {
+          dBtn.classList?.remove('is-active');
+          const dLed = dBtn.querySelector?.('.braun-led');
+          dLed?.classList?.remove('is-active');
+          const dText = dBtn.querySelector?.('.braun-status-text');
+          if (dText) dText.textContent = `DRONE ${dId} OFF`;
+        }
+      }
+    }
+
+    if (this.engine) {
+      if (typeof this.engine.setReverbFreeze === 'function') {
+        this.engine.setReverbFreeze(false);
+      } else if (this.engine.reverbParams) {
+        this.engine.reverbParams.freeze = false;
+      }
+      if (this.engine.shimmerReverb && typeof this.engine.shimmerReverb.quenchFreeze === 'function') {
+        this.engine.shimmerReverb.quenchFreeze();
+      }
+      if (this.engine.poisson && this.engine.poisson.isRunning) {
+        this.engine.poisson.stop();
+      }
+      if (this.engine.phaseLoops && this.engine.phaseLoops.isRunning) {
+        this.engine.phaseLoops.stop();
+        if (Array.isArray(this.engine.phaseLoops.loops)) {
+          this.engine.phaseLoops.loops.forEach(l => {
+            const bar = this._getLoopBar ? this._getLoopBar(l.id) : null;
+            if (bar && bar.style) bar.style.width = '0%';
+          });
+        }
+      }
+      if (typeof this.engine.releaseAllNotes === 'function') {
+        this.engine.releaseAllNotes();
+      }
+    }
+
+    if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
+      const freezeBtn = document.getElementById('toggle-freeze') || document.getElementById('btn-freeze');
+      if (freezeBtn) {
+        freezeBtn.classList?.remove('is-active');
+        freezeBtn.querySelector?.('.braun-led')?.classList?.remove('is-active');
+        const fText = freezeBtn.querySelector?.('.braun-status-text');
+        if (fText) fText.textContent = 'FREEZE OFF';
+      }
+      const powerBtn = document.getElementById('btn-power');
+      if (powerBtn) {
+        powerBtn.classList?.remove('is-active');
+        powerBtn.querySelector?.('.braun-led')?.classList?.remove('is-active');
+        const pText = powerBtn.querySelector?.('.braun-status-text');
+        if (pText) pText.textContent = 'POWER ON';
+      }
+      const autoEvolveBtn = document.getElementById('toggle-auto-evolve');
+      if (autoEvolveBtn) {
+        autoEvolveBtn.classList?.remove('is-active');
+        autoEvolveBtn.querySelector?.('.braun-led')?.classList?.remove('is-active');
+        const aText = autoEvolveBtn.querySelector?.('.braun-status-text');
+        if (aText) aText.textContent = 'AUTO EVOLVE OFF';
+      }
+      const loopsBtn = document.getElementById('toggle-phase-loops');
+      if (loopsBtn) {
+        loopsBtn.classList?.remove('is-active');
+        loopsBtn.querySelector?.('.braun-led')?.classList?.remove('is-active');
+        const lText = loopsBtn.querySelector?.('.braun-status-text');
+        if (lText) lText.textContent = 'AIRPORTS LOOPS OFF';
+      }
+    }
+
+    if (this.display) {
+      if (typeof this.display.setPower === 'function') {
+        this.display.setPower(false);
+      } else if (typeof this.display.stop === 'function') {
+        this.display.stop();
+      }
     }
   }
 
@@ -1048,9 +1178,14 @@ export class AmbientApp {
     });
 
     if (this.engine) {
+      const isSubBass1 = Boolean(
+        (this.engine.drone1 && this.engine.drone1.isSubBass) ||
+        this.engine.droneParams?.[1]?.isSubBass ||
+        this.engine.droneSnap?.[1] === 'sub-bass'
+      );
       this._emitJuceParamChange('drone1_pitch', this.engine.drone1Freq);
       this._emitJuceParamChange('drone2_pitch', this.engine.drone2Freq);
-      this._emitJuceParamChange('drone1_isSubBass', (this.engine.drone1 && this.engine.drone1.isSubBass) ? 1.0 : 0.0);
+      this._emitJuceParamChange('drone1_isSubBass', isSubBass1 ? 1.0 : 0.0);
     }
 
     // 5. Vector Pad Coordinates (sync visual coordinates without stomping calibrated preset knobs)
@@ -1317,6 +1452,17 @@ export class AmbientApp {
       }
     }
 
+    const emitJuce = (id, val) => {
+      if (typeof this._emitJuceParamChange === 'function') {
+        this._emitJuceParamChange(id, val);
+      }
+    };
+
+    const presetProgramMap = { DEFAULT: 0, HAROLD_BUDD: 1, VANGELIS: 2, ENO_AIRPORTS: 3 };
+    if (this.isJuce && Object.prototype.hasOwnProperty.call(presetProgramMap, this.currentPresetKey)) {
+      emitJuce('currentProgram', presetProgramMap[this.currentPresetKey]);
+    }
+
     // 1. Root, Scale, and Tuning
     if (this.engine) {
       const root = patch.rootPitchClass !== undefined ? patch.rootPitchClass : this.engine.rootPitchClass;
@@ -1370,13 +1516,17 @@ export class AmbientApp {
             this.knobs[key].setValue(val, false);
           }
         }
+        emitJuce(key, val);
       });
-      if (patch.knobs.masterVolume !== undefined && this.knobs.masterVol && patch.knobs.masterVol === undefined) {
-        if (shouldAnimate && typeof this.knobs.masterVol.animateTo === 'function') {
-          this.knobs.masterVol.animateTo(patch.knobs.masterVolume, duration, null, false, false);
-        } else if (typeof this.knobs.masterVol.setValue === 'function') {
-          this.knobs.masterVol.setValue(patch.knobs.masterVolume, false);
+      if (patch.knobs.masterVolume !== undefined && patch.knobs.masterVol === undefined) {
+        if (this.knobs.masterVol) {
+          if (shouldAnimate && typeof this.knobs.masterVol.animateTo === 'function') {
+            this.knobs.masterVol.animateTo(patch.knobs.masterVolume, duration, null, false, false);
+          } else if (typeof this.knobs.masterVol.setValue === 'function') {
+            this.knobs.masterVol.setValue(patch.knobs.masterVolume, false);
+          }
         }
+        emitJuce('masterVol', patch.knobs.masterVolume);
       }
 
       // Also update engine immediately to guarantee parameters are synchronized
@@ -1428,6 +1578,7 @@ export class AmbientApp {
         btn.classList.toggle('is-active', match);
       });
       this.engine.setFeltWaveform(patch.pianoWave);
+      emitJuce('felt_waveform', patch.pianoWave);
     }
 
     // 4. Drone settings
@@ -1443,6 +1594,7 @@ export class AmbientApp {
               b.classList.toggle('is-active', isWaveformMatch(b.getAttribute('data-wave'), droneData.waveA));
             });
             this.engine.setDroneWaveA(id, droneData.waveA);
+            emitJuce(`drone${id}_waveA`, droneData.waveA);
           }
           if (droneData.waveB) {
             const btnsB = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
@@ -1452,6 +1604,7 @@ export class AmbientApp {
               b.classList.toggle('is-active', isWaveformMatch(b.getAttribute('data-wave'), droneData.waveB));
             });
             this.engine.setDroneWaveB(id, droneData.waveB);
+            emitJuce(`drone${id}_waveB`, droneData.waveB);
           }
           if (droneData.snap) {
             const snapBtns = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
@@ -1468,10 +1621,19 @@ export class AmbientApp {
               const textEl = toggleBtn.querySelector('.braun-status-text');
               if (textEl) textEl.textContent = droneData.active ? `DRONE ${id} ON` : `DRONE ${id} OFF`;
             }
-            this._emitJuceParamChange(`drone${id}_active`, droneData.active ? 1.0 : 0.0);
+            emitJuce(`drone${id}_active`, droneData.active ? 1.0 : 0.0);
           }
         }
       });
+
+      const isSubBass1 = Boolean(
+        (this.engine.drone1 && this.engine.drone1.isSubBass) ||
+        this.engine.droneParams?.[1]?.isSubBass ||
+        this.engine.droneSnap?.[1] === 'sub-bass'
+      );
+      emitJuce('drone1_pitch', this.engine.drone1Freq);
+      emitJuce('drone2_pitch', this.engine.drone2Freq);
+      emitJuce('drone1_isSubBass', isSubBass1 ? 1.0 : 0.0);
     }
 
     // 5. Vector Pad

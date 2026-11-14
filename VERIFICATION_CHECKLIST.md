@@ -1,7 +1,7 @@
 # BRAUN AS 42 · Reproducible Verification Checklist & DSP Benchmark Report
 
-[![Verification Status](https://img.shields.io/badge/Verification-100%25%20PASS%20(589%2F589)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#verification-summary)
-[![Tests Passing](https://img.shields.io/badge/Tests-516%2F516%20PASS-success?style=for-the-badge&logo=node.js&logoColor=white)](#1-test-suite-coverage--verification-matrix)
+[![Verification Status](https://img.shields.io/badge/Verification-100%25%20PASS%20(592%2F592)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#verification-summary)
+[![Tests Passing](https://img.shields.io/badge/Tests-519%2F519%20PASS-success?style=for-the-badge&logo=node.js&logoColor=white)](#1-test-suite-coverage--verification-matrix)
 [![Sample Rates](https://img.shields.io/badge/Sample%20Rates-44.1k%20--%20384k%20Hz-blue?style=for-the-badge)](#2-audio-engineering--dsp-specifications)
 [![Latency](https://img.shields.io/badge/Algorithmic%20Latency-0%20Samples-orange?style=for-the-badge)](#latency-profile)
 [![License](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
@@ -17,7 +17,7 @@
 
 | Metric | Certified Result | Target Threshold | Status |
 | :--- | :--- | :--- | :--- |
-| **Node.js Automated Test Harness (`npm test`)** | **516 / 516 Passed** (111 suites) | 100% Pass, 0 Failures | **PASS** |
+| **Node.js Automated Test Harness (`npm test`)** | **519 / 519 Passed** (111 suites) | 100% Pass, 0 Failures | **PASS** |
 | **Native C++ DSP & Lifecycle Suites (`ctest`)** | **73 / 73 Passed** (4 suites) | 100% Pass, 0 Failures | **PASS** |
 | **Fast Verification Checklist (`verify:checklist`)** | **16 / 16 Passed** | 0 Errors | **PASS** |
 | **Embedded Web Assets & APVTS Roundtrip** | **48 / 48 Passed** | 0 Integrity / Sync Errors | **PASS** |
@@ -37,10 +37,10 @@ To reproduce all verification tests and DSP benchmarks on any local installation
 # 1. Run the standalone verification checklist harness (16 criteria, < 250ms)
 npm run verify:checklist
 
-# 2. Run the complete Node.js Web Audio, UI & MIDI automated test suite (516 tests)
+# 2. Run the complete Node.js Web Audio, UI & MIDI automated test suite (519 tests)
 npm test
 
-# 3. Run the unified JS master runner (16 checklist + 48 asset/APVTS + 516 unit = 580 checks)
+# 3. Run the unified JS master runner (16 checklist + 48 asset/APVTS + 519 unit = 583 checks)
 node tests/verify.mjs
 
 # 4. Run all 4 compiled C++20 Release test suites via CTest (73 tests)
@@ -51,10 +51,10 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## 1. Test Suite Coverage & Verification Matrix
 
-The AS-42 v1.5.0 verification framework spans **589 core automated tests** (516 Node.js + 73 C++20) plus **64 standalone checklist and asset/APVTS roundtrip probes** (653 total automated checks):
+The AS-42 v1.5.0 verification framework spans **592 core automated tests** (519 Node.js + 73 C++20) plus **64 standalone checklist and asset/APVTS roundtrip probes** (656 total automated checks):
 
 ### 1.1 Node.js Automated Test Suite (`npm test`)
-* **Total Tests:** 516 passed, 0 failed, 0 skipped, 0 canceled across 111 test suites.
+* **Total Tests:** 519 passed, 0 failed, 0 skipped, 0 canceled across 111 test suites.
 * **Coverage Scope:**
   * Standalone WebView2 cold-boot drone/freeze storage purge, silent Standby initialization, echo-free `currentProgram` sync, and Standby `scopeFrame` suppression (`standalone-startup-drone-guard.test.js`).
   * Voice de-duplication, 24-voice lifecycle management, and note-off tracking (`web-audio-audit-regressions.test.js`, `audio-enhancements.test.js`).
@@ -189,4 +189,4 @@ $$y = \tanh\left(\sin(0.5\pi D x) - F \sin(1.5\pi D x)\right)$$
 
 * **Lead Verification Engineer:** Antigravity Audio Engineering Team
 * **Target Release:** BRAUN AS-42 v1.5.0 / sneed-and-feed.github.io
-* **Verification Outcome:** **100% PASS** — All 589 core automated tests + 64 checklist/asset roundtrip probes passed with zero defects.
+* **Verification Outcome:** **100% PASS** — All 592 core automated tests + 64 checklist/asset roundtrip probes passed with zero defects.

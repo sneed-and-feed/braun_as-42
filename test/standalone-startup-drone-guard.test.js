@@ -294,4 +294,179 @@ describe('Standalone WebView2 Startup Drone Disarm & Sync Guard (v1.5.0)', () =>
     drone.voiceGain.gain.value = 0.42;
     assert.ok(Math.abs(drone._getInstantGain(1.0) - 0.42) < 1e-6, 'Inactive fading drone must report live voiceGain');
   });
+
+  it('synchronizes all knobs, waveforms, drone pitches, and sub-bass to C++ APVTS in loadPatch()', async () => {
+    const { emittedToNative } = setupMockJuceDom();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    emittedToNative.length = 0;
+    const ok = app.loadPatch({
+      name: 'Custom Studio Patch',
+      rootPitchClass: 2, // D
+      currentScaleKey: 'LYDIAN_AMBIENT',
+      a4: 432,
+      pianoWave: 'cs80',
+      knobs: {
+        feltTone: 74,
+        feltDecay: 1.6,
+        drone1Cutoff: 620,
+        drone2Fold: 0.48,
+        delayTime: 520,
+        reverbShimmer: 62,
+        masterVolume: 78
+      },
+      drone1: { active: true, waveA: 'triangle', waveB: 'sine', snap: 'sub-bass' },
+      drone2: { active: false, waveA: 'saw', waveB: 'warm', snap: 'perfect-5th' }
+    }, { animate: false });
+
+    assert.strictEqual(ok, true);
+    const byId = new Map();
+    for (const evt of emittedToNative) {
+      if (evt.eventName === 'paramChange' && evt.payload) {
+        byId.set(evt.payload.id, evt.payload.value);
+      }
+    }
+
+    assert.strictEqual(byId.get('feltTone'), 74);
+    assert.strictEqual(byId.get('feltDecay'), 1.6);
+    assert.strictEqual(byId.get('drone1Cutoff'), 620);
+    assert.strictEqual(byId.get('drone2Fold'), 0.48);
+    assert.strictEqual(byId.get('delayTime'), 520);
+    assert.strictEqual(byId.get('reverbShimmer'), 62);
+    assert.strictEqual(byId.get('masterVol'), 78);
+    assert.strictEqual(byId.get('felt_waveform'), 'cs80');
+    assert.strictEqual(byId.get('drone1_waveA'), 'triangle');
+    assert.strictEqual(byId.get('drone1_waveB'), 'sine');
+    assert.strictEqual(byId.get('drone2_waveA'), 'saw');
+    assert.strictEqual(byId.get('drone2_waveB'), 'warm');
+    assert.strictEqual(byId.get('drone1_active'), 1.0);
+    assert.strictEqual(byId.get('drone2_active'), 0.0);
+    assert.strictEqual(byId.get('drone1_isSubBass'), 1.0);
+    assert.ok(typeof byId.get('drone1_pitch') === 'number' && byId.get('drone1_pitch') > 20);
+    assert.ok(typeof byId.get('drone2_pitch') === 'number' && byId.get('drone2_pitch') > 20);
+  });
+
+  it('sustains MIDI notes under CC 64 damper pedal without premature noteOff kill or retuned re-strike orphans', async () => {
+    const { AudioEngine } = await import('../js/audio/engine.js');
+    const { BraunMidiManager } = await import('../js/midi/midi-manager.js');
+
+    const engine = new AudioEngine();
+    const voices = Array.from({ length: 8 }, (_, idx) => ({
+      idx,
+      isActive: false,
+      isHold: false,
+      _isReleased: false,
+      currentFreq: 0,
+      triggerId: 0,
+      releaseCalls: 0,
+      release() {
+        this.isHold = false;
+        this._isReleased = true;
+        this.isActive = false;
+        this.releaseCalls += 1;
+      }
+    }));
+    let nextId = 0;
+    engine.feltPiano = {
+      voices,
+      playNote(freq, _vel, _dur, isHold) {
+        let v = voices.find(x => x.isActive && !x.isHold && Math.abs(x.currentFreq - freq) < 0.5);
+        if (!v) v = voices.find(x => !x.isActive) || voices[0];
+        v.isActive = true;
+        v.isHold = Boolean(isHold);
+        v._isReleased = false;
+        v.currentFreq = freq;
+        v.triggerId = ++nextId;
+        return v;
+      },
+      release(freq) {
+        for (const v of voices) {
+          if (v.isActive && Math.abs(v.currentFreq - freq) < 0.5) v.release();
+        }
+      },
+      releaseAllNotes() {
+        for (const v of voices) if (v.isActive) v.release();
+      }
+    };
+
+    const midi = new BraunMidiManager(engine, null);
+
+    // 1. Engage CC 64 sustain pedal, play MIDI 60, then release physical key -> voice MUST stay sustained!
+    midi.handleMidiMessage({ data: new Uint8Array([0xB0, 64, 127]) }); // CC 64 down
+    midi.handleMidiMessage({ data: new Uint8Array([0x90, 60, 100]) }); // Note-On 60
+    const v0 = voices[0];
+    assert.strictEqual(v0.isActive, true);
+    assert.strictEqual(v0._isReleased, false);
+
+    midi.handleMidiMessage({ data: new Uint8Array([0x80, 60, 0]) }); // Note-Off 60 while pedal down
+    assert.strictEqual(v0.isActive, true, 'CC 64 must keep voice active after physical Note-Off');
+    assert.strictEqual(v0._isReleased, false);
+    assert.strictEqual(v0.releaseCalls, 0);
+
+    // 2. Retune 440 -> 432 Hz while MIDI 60 is pedal-latched and re-strike MIDI 60 -> prior v0 must release cleanly!
+    engine.a4 = 432;
+    midi.handleMidiMessage({ data: new Uint8Array([0x90, 60, 100]) });
+    const v1 = voices[1];
+    assert.strictEqual(v0.releaseCalls, 1, 'Retuned pedal-latched voice must not be orphaned on re-strike');
+    assert.strictEqual(v1.isActive, true);
+    midi.handleMidiMessage({ data: new Uint8Array([0x80, 60, 0]) });
+    assert.strictEqual(v1.isActive, true, 'Re-struck note must remain latched while pedal is down');
+
+    // 3. Lift CC 64 -> latched voice releases exactly once
+    midi.handleMidiMessage({ data: new Uint8Array([0xB0, 64, 0]) });
+    assert.strictEqual(v1.isActive, false);
+    assert.strictEqual(v1.releaseCalls, 1);
+  });
+
+  it('never resumes Web Audio context in Standby on visibility/pageshow and disarms on BFCache restore', async () => {
+    const windowListeners = new Map();
+    const { elementsById } = setupMockJuceDom();
+    globalThis.window.__IS_JUCE__ = false;
+    delete globalThis.window.__JUCE__;
+    globalThis.window.location.hostname = 'localhost';
+    globalThis.window.addEventListener = (evt, cb) => {
+      if (!windowListeners.has(evt)) windowListeners.set(evt, []);
+      windowListeners.get(evt).push(cb);
+    };
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+    assert.strictEqual(app.isJuce, false);
+
+    let resumeCalls = 0;
+    let suspendCalls = 0;
+    app.engine.ctx = {
+      state: 'suspended',
+      currentTime: 0,
+      resume: async () => { resumeCalls += 1; app.engine.ctx.state = 'running'; },
+      suspend: async () => { suspendCalls += 1; app.engine.ctx.state = 'suspended'; }
+    };
+    app.isPowerOn = false;
+
+    // 1. Visibility/pageshow while Standby (isPowerOn === false) must NEVER resume AudioContext
+    for (const cb of (windowListeners.get('visibilitychange') || [])) {
+      await cb({ type: 'visibilitychange' });
+    }
+    for (const cb of (windowListeners.get('pageshow') || [])) {
+      await cb({ type: 'pageshow', persisted: false });
+    }
+    assert.strictEqual(resumeCalls, 0, 'Standby AudioContext must never auto-resume on visibilitychange/pageshow');
+
+    // 2. BFCache restore (pageshow with persisted === true) must disarm active power & drones
+    app.isPowerOn = true;
+    app.engine.ctx.state = 'running';
+    app.engine.droneParams[1].active = true;
+    elementsById.get('btn-drone1-active').classList.add('is-active');
+    elementsById.get('btn-power').classList.add('is-active');
+
+    for (const cb of (windowListeners.get('pageshow') || [])) {
+      await cb({ type: 'pageshow', persisted: true });
+    }
+    assert.strictEqual(app.isPowerOn, false);
+    assert.strictEqual(app.engine.droneParams[1].active, false);
+    assert.strictEqual(elementsById.get('btn-drone1-active').classList.contains('is-active'), false);
+    assert.strictEqual(elementsById.get('btn-power').classList.contains('is-active'), false);
+    assert.ok(suspendCalls >= 1 || app.engine.ctx.state === 'suspended');
+  });
 });

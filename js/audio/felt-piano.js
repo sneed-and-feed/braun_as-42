@@ -405,6 +405,7 @@ export class FeltPianoVoice {
     const cancelTime = Math.max(now, ctx.currentTime);
 
     const hold = Boolean(isHold || duration === 20.0 || duration === Infinity || (typeof duration === 'number' && !isFinite(duration)));
+    this.triggerId = (this.synth ? (this.synth._nextTriggerId = (this.synth._nextTriggerId || 0) + 1) : ((this.triggerId || 0) + 1));
     this.isHold = hold;
     this._isReleased = false;
     this._releaseTime = null;
@@ -1333,6 +1334,7 @@ export class FeltPianoSynthesizer {
       this.voices.push(new FeltPianoVoice(ctx, this.voiceMixer, wavetables, this.hammerBuffer, this, i));
     }
     this.voiceIndex = 0;
+    this._nextTriggerId = 0;
   }
 
   /**

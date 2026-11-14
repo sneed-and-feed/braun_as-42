@@ -141,6 +141,29 @@ juce_add_plugin(BRAUN_AS42
     ${AS42_EXTRA_PLUGIN_ARGS}
 )
 
+# Work around JUCE 8 _juce_add_resources_rc omitting DEPENDS on JUCE_INFO_FILE,
+# which otherwise leaves stale VERSIONINFO / CompanyName in BRAUN_AS42_resources.rc
+# across incremental version bumps.
+if(WIN32)
+    get_target_property(AS42_JUCE_GEN_DIR BRAUN_AS42 JUCE_GENERATED_SOURCES_DIRECTORY)
+    get_target_property(AS42_JUCE_INFO_FILE BRAUN_AS42 JUCE_INFO_FILE)
+    if(AS42_JUCE_GEN_DIR)
+        set(AS42_RC_FILE "${AS42_JUCE_GEN_DIR}/BRAUN_AS42_resources.rc")
+        if(EXISTS "${AS42_RC_FILE}")
+            file(READ "${AS42_RC_FILE}" AS42_RC_CONTENT)
+            if(NOT AS42_RC_CONTENT MATCHES "\"FileVersion\",[ ]*\"${PROJECT_VERSION}\\\\0\""
+               OR NOT AS42_RC_CONTENT MATCHES "\"ProductVersion\",[ ]*\"${PROJECT_VERSION}\\\\0\""
+               OR NOT AS42_RC_CONTENT MATCHES "\"CompanyName\",[ ]*\"Sneed's Feed & Seed Ltd\\.\\\\0\"")
+                message(STATUS "Removing stale Windows VERSIONINFO resource (${AS42_RC_FILE}) for regeneration...")
+                file(REMOVE "${AS42_RC_FILE}")
+            endif()
+        endif()
+        if(AS42_JUCE_INFO_FILE)
+            set_source_files_properties("${AS42_RC_FILE}" PROPERTIES OBJECT_DEPENDS "${AS42_JUCE_INFO_FILE}")
+        endif()
+    endif()
+endif()
+
 target_sources(BRAUN_AS42
     PRIVATE
         plugin/source/PluginProcessor.cpp

@@ -778,9 +778,12 @@ export class AudioEngine {
     const newFreq = midiToFrequency(midi, this.a4);
     const oldFreq = this.drone1Freq;
     this.drone1Freq = newFreq;
+    const isSub = (snapKey === 'sub-bass');
+    if (this.droneParams && this.droneParams[1]) {
+      this.droneParams[1].isSubBass = isSub;
+    }
 
     if (this.drone1) {
-      const isSub = (snapKey === 'sub-bass');
       const targetGain = this.drone1.volume * (isSub ? 1.70 : 1.0);
       if (this.isInitialized && this.drone1.isActive && Math.abs(newFreq - (oldFreq || newFreq)) >= 1.0) {
         if (typeof this.drone1.declickTransition === 'function') {
@@ -956,18 +959,79 @@ export class AudioEngine {
     this._updateDroneGating();
   }
 
+  _releaseTrackedVoicesForNote(note) {
+    const hasTrackedEntry = Boolean(this._noteVoiceMap && this._noteVoiceMap.has(note));
+    const records = hasTrackedEntry ? this._noteVoiceMap.get(note) : null;
+    if (hasTrackedEntry) {
+      this._noteVoiceMap.delete(note);
+    }
+    if (hasTrackedEntry && Array.isArray(records)) {
+      let lastResult;
+      for (const rec of records) {
+        if (rec && rec.voice && typeof rec.voice.release === 'function') {
+          if (rec.voice.isActive && !rec.voice._isReleased && (rec.triggerId === undefined || rec.voice.triggerId === rec.triggerId)) {
+            lastResult = rec.voice.release();
+          }
+        }
+      }
+      return lastResult;
+    }
+    if (this.feltPiano && typeof this.feltPiano.release === 'function') {
+      const freq = midiToFrequency(note, this.a4 || 440);
+      return this.feltPiano.release(freq);
+    }
+    return undefined;
+  }
+
   noteOn(note, velocity = 0.65, duration = 3.5, isHold = false, isChord = false) {
+    let priorLatchedRecords = null;
     if (typeof note === 'number') {
       if (!this._heldNotes) this._heldNotes = new Set();
       if (!this._latchedNotes) this._latchedNotes = new Set();
+      if (!this._noteVoiceMap) this._noteVoiceMap = new Map();
+      // If re-striking a note currently sustained only by the damper pedal:
+      // allow same-voice acoustic re-trigger when pitch matches, and release any non-reused latched voices
+      if (this._latchedNotes.has(note)) {
+        const prevRecords = this._noteVoiceMap.get(note);
+        if (Array.isArray(prevRecords) && prevRecords.length > 0) {
+          priorLatchedRecords = prevRecords.filter(
+            rec => rec && rec.voice && rec.voice.isActive && !rec.voice._isReleased &&
+              (rec.triggerId === undefined || rec.voice.triggerId === rec.triggerId)
+          );
+          for (const rec of priorLatchedRecords) {
+            rec.voice.isHold = false;
+          }
+        }
+        this._latchedNotes.delete(note);
+      }
       this._heldNotes.add(note);
-      this._latchedNotes.delete(note);
       this.trackDronePitch(note);
     }
     this._updateDroneGating();
     if (this.feltPiano && typeof note === 'number') {
       const freq = midiToFrequency(note, this.a4 || 440);
-      return this.feltPiano.playNote(freq, velocity, duration, isHold, isChord);
+      const voice = this.feltPiano.playNote(freq, velocity, duration, isHold, isChord);
+      if (priorLatchedRecords) {
+        for (const rec of priorLatchedRecords) {
+          if (rec.voice !== voice && rec.voice.isActive && !rec.voice._isReleased &&
+              (rec.triggerId === undefined || rec.voice.triggerId === rec.triggerId) &&
+              typeof rec.voice.release === 'function') {
+            rec.voice.release();
+          }
+        }
+      }
+      if (voice) {
+        if (!this._noteVoiceMap) this._noteVoiceMap = new Map();
+        const prevRecords = Array.isArray(this._noteVoiceMap.get(note)) ? this._noteVoiceMap.get(note) : [];
+        const liveRecords = prevRecords.filter(
+          rec => rec && rec.voice && rec.voice !== voice &&
+            rec.voice.isActive && !rec.voice._isReleased &&
+            (rec.triggerId === undefined || rec.voice.triggerId === rec.triggerId)
+        );
+        liveRecords.push({ voice, triggerId: voice.triggerId });
+        this._noteVoiceMap.set(note, liveRecords);
+      }
+      return voice;
     }
     return null;
   }
@@ -975,20 +1039,34 @@ export class AudioEngine {
   noteOff(note) {
     if (typeof note === 'number') {
       if (this._heldNotes) this._heldNotes.delete(note);
-      if (this._isSustainPedalDown && this._latchedNotes) {
+      if (this._isSustainPedalDown) {
+        if (!this._latchedNotes) this._latchedNotes = new Set();
         this._latchedNotes.add(note);
+        this._updateDroneGating();
+        return;
       }
+      if (this._latchedNotes) this._latchedNotes.delete(note);
     }
     this._updateDroneGating();
     if (this.feltPiano && typeof note === 'number') {
-      const freq = midiToFrequency(note, this.a4 || 440);
-      return this.feltPiano.release(freq);
+      return this._releaseTrackedVoicesForNote(note);
     }
   }
 
   setSustainPedal(isDown) {
-    this._isSustainPedalDown = Boolean(isDown);
-    if (!this._isSustainPedalDown && this._latchedNotes) {
+    const down = Boolean(isDown);
+    const wasDown = Boolean(this._isSustainPedalDown);
+    this._isSustainPedalDown = down;
+    if (!down && wasDown && this._latchedNotes && this._latchedNotes.size > 0) {
+      const notesToRelease = Array.from(this._latchedNotes);
+      this._latchedNotes.clear();
+      for (const note of notesToRelease) {
+        if (this._heldNotes && this._heldNotes.has(note)) {
+          continue;
+        }
+        this._releaseTrackedVoicesForNote(note);
+      }
+    } else if (!down && this._latchedNotes) {
       this._latchedNotes.clear();
     }
     this._updateDroneGating();
@@ -997,6 +1075,7 @@ export class AudioEngine {
   releaseAllNotes() {
     if (this._heldNotes) this._heldNotes.clear();
     if (this._latchedNotes) this._latchedNotes.clear();
+    if (this._noteVoiceMap) this._noteVoiceMap.clear();
     if (this.feltPiano && typeof this.feltPiano.releaseAllNotes === 'function') {
       this.feltPiano.releaseAllNotes();
     }
