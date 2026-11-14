@@ -74,12 +74,21 @@ juce::String WebResourceManager::getMimeTypeForPath(const juce::String& path) co
 std::optional<juce::WebBrowserComponent::Resource> WebResourceManager::getResource(const juce::String& url)
 {
     const juce::String cleanPath = sanitizeUrl(url);
+
+    // Security guard: reject any path traversal segments or drive-qualified paths
+    const juce::String normalizedCheck = cleanPath.replaceCharacter('\\', '/');
+    if (normalizedCheck.contains("..") || normalizedCheck.containsChar(':'))
+        return std::nullopt;
+
     const juce::String mimeType = getMimeTypeForPath(cleanPath);
 
-    // 1. Check local file system fallback
-    auto checkDiskFile = [&](const juce::File& file) -> std::optional<juce::WebBrowserComponent::Resource>
+    // 1. Check local file system fallback (strictly confined within candidate root directory)
+    auto checkDiskFile = [&](const juce::File& rootDir) -> std::optional<juce::WebBrowserComponent::Resource>
     {
-        if (file.existsAsFile())
+        if (!rootDir.isDirectory())
+            return std::nullopt;
+        const juce::File file = rootDir.getChildFile(cleanPath);
+        if (file.isAChildOf(rootDir) && file.existsAsFile())
         {
             juce::MemoryBlock mb;
             if (file.loadFileAsData(mb))
@@ -93,14 +102,14 @@ std::optional<juce::WebBrowserComponent::Resource> WebResourceManager::getResour
     };
 
     // Check current working directory
-    if (auto res = checkDiskFile(juce::File::getCurrentWorkingDirectory().getChildFile(cleanPath)))
+    if (auto res = checkDiskFile(juce::File::getCurrentWorkingDirectory()))
         return res;
 
     // Check ancestor directories of executable for local project layout
     auto dir = juce::File::getSpecialLocation(juce::File::SpecialLocationType::currentExecutableFile).getParentDirectory();
     for (int depth = 0; depth < 5; ++depth)
     {
-        if (auto res = checkDiskFile(dir.getChildFile(cleanPath)))
+        if (auto res = checkDiskFile(dir))
             return res;
         dir = dir.getParentDirectory();
     }

@@ -6,7 +6,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 endif()
 
-project(BRAUN_AS42_PROJECT VERSION 1.4.3 LANGUAGES C CXX)
+project(BRAUN_AS42_PROJECT VERSION 1.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -127,7 +127,7 @@ endif()
 juce_add_plugin(BRAUN_AS42
     COMPANY_NAME "Sneed's Feed & Seed Ltd."
     BUNDLE_ID "com.sneedandfeed.braun_as42"
-    VERSION "1.4.3"
+    VERSION "1.5.0"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
@@ -248,4 +248,21 @@ if(AS42_BUILD_TESTS)
         plugin/source/dsp
     )
     add_test(NAME adversarial_challenge_suite COMMAND adversarial_challenge_suite)
+
+    add_executable(plugin_lifecycle_tests
+        test/cpp/plugin_lifecycle_tests.cpp
+    )
+    target_include_directories(plugin_lifecycle_tests PRIVATE
+        plugin/source
+        plugin/source/dsp
+        $<TARGET_PROPERTY:BRAUN_AS42,INCLUDE_DIRECTORIES>
+    )
+    target_compile_definitions(plugin_lifecycle_tests PRIVATE
+        $<TARGET_PROPERTY:BRAUN_AS42,COMPILE_DEFINITIONS>
+    )
+    target_link_libraries(plugin_lifecycle_tests PRIVATE
+        BRAUN_AS42
+        $<TARGET_PROPERTY:BRAUN_AS42_Standalone,LINK_LIBRARIES>
+    )
+    add_test(NAME plugin_lifecycle_tests COMMAND plugin_lifecycle_tests)
 endif()

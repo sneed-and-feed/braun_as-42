@@ -56,6 +56,10 @@ public:
     bool getDroneTrackMidi() const noexcept;
     bool consumeDroneTrackMidiDirty() noexcept;
 
+    bool consumeFullSyncRequested() noexcept;
+    void setCurrentProgramIndexOnly(int index) noexcept;
+    void clearScopeBuffers() noexcept;
+
     // Lock-free UI MIDI Event injection (for onscreen play surface, macros, chords, and keyboard shortcuts)
     void pushUINoteOn(int noteNumber, float velocity) noexcept;
     void pushUINoteOff(int noteNumber, float velocity = 0.0f) noexcept;
@@ -90,6 +94,8 @@ private:
     std::atomic<bool> droneTrackMidi { false };
     std::atomic<bool> droneTrackMidiDirty { false };
     std::atomic<int> currentProgram { 0 };
+    std::atomic<bool> fullSyncRequested { false };
+    std::atomic<bool> standaloneStartupStateConsumed { false };
 
     // Lock-free FIFO queue for UI MIDI events
     struct UIMidiEvent {

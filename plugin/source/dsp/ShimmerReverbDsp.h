@@ -135,12 +135,12 @@ public:
         mAirDampingFilterR.configure(Biquad::Type::Lowpass, mSampleRate, initDampingHz, 0.7071f);
 
         // 4. Prepare Early Reflection Taps Buffer (10 prime-spaced taps up to 130 ms)
-        mEarlyDelaySamples = static_cast<size_t>(mSampleRate * 0.140f) + 128;
+        mEarlyDelaySamples = std::max<size_t>(16, static_cast<size_t>(mSampleRate * 0.140f) + 128);
         mEarlyBufferL.assign(mEarlyDelaySamples, 0.0f);
         mEarlyBufferR.assign(mEarlyDelaySamples, 0.0f);
         mEarlyWriteIndex = 0;
         for (size_t k = 0; k < kNumEarlyTaps; ++k) {
-            mEarlyTapDelays[k] = static_cast<size_t>(kEarlyTapTimes[k] * mSampleRate);
+            mEarlyTapDelays[k] = std::min(mEarlyDelaySamples - 1, static_cast<size_t>(kEarlyTapTimes[k] * mSampleRate));
             const float pan = (k % 2 == 0) ? 0.70f : -0.70f;
             mEarlyTapGainL[k] = (kEarlyGains[k] * 0.18f) * (1.0f - pan * 0.5f);
             mEarlyTapGainR[k] = (kEarlyGains[k] * 0.18f) * (1.0f + pan * 0.5f);
@@ -150,11 +150,19 @@ public:
         mTailModulator.prepare(mSampleRate);
         mTailModulator.setParameters(0.45f, 0.35f, 120.0f);
 
-        // Scaled to match 48 kHz base delays
+        // Scaled to match 48 kHz base delays, dynamically sizing power-of-two capacity for ultra-high sample rates
         const float scale = mSampleRate / 48000.0f;
+        const size_t maxScaledFdn = static_cast<size_t>(std::round(kBaseFdnLengths.back() * scale)) + 2048;
+        size_t cap = kFdnCapacity;
+        while (cap < maxScaledFdn) {
+            cap <<= 1;
+        }
+        mFdnCapacity = cap;
+        mFdnMask = mFdnCapacity - 1;
+
         for (size_t i = 0; i < kNumFdnLines; ++i) {
-            mFdnLengths[i] = static_cast<size_t>(std::round(kBaseFdnLengths[i] * scale));
-            mFdnBuffers[i].assign(kFdnCapacity, 0.0f);
+            mFdnLengths[i] = std::max<size_t>(8, static_cast<size_t>(std::round(kBaseFdnLengths[i] * scale)));
+            mFdnBuffers[i].assign(mFdnCapacity, 0.0f);
             mFdnWriteIndices[i] = 0;
             mFdnFilterStates[i] = 0.0f;
             mFdnDcBlockers[i].setCutoff(5.0f, mSampleRate);
@@ -162,14 +170,14 @@ public:
 
         // 6. Prepare Allpass Diffusers
         for (size_t i = 0; i < kNumAllpass; ++i) {
-            mAllpassLengths[i] = static_cast<size_t>(std::round(kBaseAllpassLengths[i] * scale));
+            mAllpassLengths[i] = std::max<size_t>(4, static_cast<size_t>(std::round(kBaseAllpassLengths[i] * scale)));
             mAllpassBuffers[i].assign(mAllpassLengths[i] + 16, 0.0f);
             mAllpassWriteIndices[i] = 0;
         }
 
         // 7. Prepare Infinite Freeze Matrix (387ms Left, 491ms Right, 3200Hz LPF)
-        mFreezeDelaySamplesL = static_cast<size_t>(mSampleRate * 0.387f);
-        mFreezeDelaySamplesR = static_cast<size_t>(mSampleRate * 0.491f);
+        mFreezeDelaySamplesL = std::max<size_t>(4, static_cast<size_t>(mSampleRate * 0.387f));
+        mFreezeDelaySamplesR = std::max<size_t>(4, static_cast<size_t>(mSampleRate * 0.491f));
         mFreezeBufferL.assign(mFreezeDelaySamplesL + 64, 0.0f);
         mFreezeBufferR.assign(mFreezeDelaySamplesR + 64, 0.0f);
         mFreezeWriteIndexL = 0;
@@ -373,10 +381,11 @@ public:
         const float damp = std::clamp(0.14f + params.damping * 0.38f, 0.14f, 0.58f);
 
         for (size_t i = 0; i < kNumFdnLines; ++i) {
-            const float delaySamples = static_cast<float>(mFdnLengths[i]) + excursions[i];
+            const float rawDelay = static_cast<float>(mFdnLengths[i]) + excursions[i];
+            const float delaySamples = std::clamp(rawDelay, 4.0f, static_cast<float>(mFdnCapacity - 8));
             const float delayed = TailModulator::readHermite(mFdnBuffers[i].data(),
-                                                             kFdnCapacity,
-                                                             kFdnMask,
+                                                             mFdnCapacity,
+                                                             mFdnMask,
                                                              mFdnWriteIndices[i],
                                                              delaySamples);
             // Gentle high-frequency one-pole shelf: y[n] = (1-d)*x[n] + d*y[n-1]
@@ -403,7 +412,7 @@ public:
             const float saturatedIn = applySmoothBoundaryKnee(nextIn, 0.72f);
             const float dcBlocked = mFdnDcBlockers[i].process(saturatedIn);
             mFdnBuffers[i][mFdnWriteIndices[i]] = flushDenormal(dcBlocked);
-            mFdnWriteIndices[i] = (mFdnWriteIndices[i] + 1) & kFdnMask;
+            mFdnWriteIndices[i] = (mFdnWriteIndices[i] + 1) & mFdnMask;
         }
 
         // Sum FDN into stereo channels (reformed Hadamard downmix with modal notch < 4.8 dB)
@@ -569,6 +578,8 @@ private:
     static constexpr std::array<size_t, kNumFdnLines> kBaseFdnLengths = {
         1133, 1381, 1619, 1949, 2137, 2477, 2749, 3121
     };
+    size_t mFdnCapacity { kFdnCapacity };
+    size_t mFdnMask { kFdnMask };
     std::array<size_t, kNumFdnLines> mFdnLengths;
     std::array<std::vector<float>, kNumFdnLines> mFdnBuffers;
     std::array<size_t, kNumFdnLines> mFdnWriteIndices;

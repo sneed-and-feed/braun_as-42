@@ -1,4 +1,4 @@
-BRAUN AS 42 · Ambient Generative Synthesizer (v1.4.3)
+BRAUN AS 42 · Ambient Generative Synthesizer (v1.5.0)
 =====================================================
 
 Included in this release:
@@ -7,29 +7,25 @@ Included in this release:
      C:\Program Files\Common Files\VST3\
    - Rescan plugins in your DAW (Ableton, FL Studio, Reaper, Cubase, Bitwig).
 
-2. BRAUN_AS42.exe
+2. BRAUN_AS42.exe (included in Full Windows-x64 archive)
    - Standalone desktop version with direct ASIO/WASAPI and hardware MIDI support.
    - Run directly, no DAW required.
 
-What's New in v1.4.3:
-- Real-Time DSP CPU & Trig Optimizations:
-  * Eliminated ~144,000 per-second std::exp() calls in ShimmerReverbDsp freeze smoothers (updating time constants only on state transitions) and precomputed early reflection tap delays and stereo pan gains in prepare().
-  * Eliminated ~192,000 per-second std::cos/std::sin and std::pow calls in SolarDroneVoice by precomputing constant-power pan gains and caching detune ratios.
-  * Cached sympathetic resonance filter coefficients in FeltPianoSynthesizer to avoid redundant trig updates per block.
-- Shimmer Freeze Reset & Felt Piano Envelope Hardening:
-  * Fixed ShimmerReverbDsp::reset() while frozen so input/feedback/wet smoothers restore cleanly to unfrozen defaults.
-  * Fixed FeltPianoVoice::updateDecay() in the bass register (< MIDI 48) to preserve the natural bass decay multiplier when adjusting the Decay knob mid-note.
-  * Fixed FeltPianoSynthesizer::process() when volume is 0 to advance active voice envelopes to natural completion instead of freezing voices in time.
-- Mono Bus Downmix & MIDI Sample Offset Clamping:
-  * Fixed mono bus output in DspEngine::process() so stereo outputs sum cleanly to 0.5 * (L + R) instead of overwriting the left channel.
-  * Clamped JUCE MidiBuffer event sample offsets to [0, numSamples - 1] in PluginProcessor::processBlock and DspEngine::process.
-- Native Factory Presets, Audition Note-Off & Bidirectional Discrete Sync:
-  * Implemented all 4 factory programs (Calibrated Default, Harold Budd Pavilion, Vangelis CS-80 Brass, Eno Music for Airports) in PluginProcessor with state persistence.
-  * Scheduled automatic Note-Off release for Native UI audition buttons and added dynamic host sample rate telemetry on the CRT display.
-  * Synchronized discrete parameters (waveforms, sub-bass, reverb freeze) from C++ paramUpdate events back into the WebView UI and JS engine.
+What's New in v1.5.0:
+- Critical Standalone Silent Cold-Boot Guard (BRAUN_AS42.exe):
+  * Fixed Standalone startup auto-sounding bug where closing BRAUN_AS42.exe with Drone 1, Drone 2, or Shimmer Freeze active saved active flags into JUCE's StandalonePluginHolder settings and immediately re-triggered Power Auto-Wake on next launch.
+  * Standalone cold boot now restores all calibrated continuous parameters, waveforms, program selection, and MIDI-track preferences while strictly disarming Drone 1, Drone 2, Shimmer Freeze, and Power (Standby). VST3/AU DAW project recall continues to restore active drones and power states faithfully.
+  * Hardened WebView2 startup hygiene by purging residual localStorage/sessionStorage drone/freeze keys, disabling browser form autofill on synth controls, and ignoring late scope frames in Standby.
+- Click-Free Drone Gate, Voice Stealing & Filter State Hygiene:
+  * Added 15 ms OnePoleSmoother active-gate envelope on SolarDroneVoice ON/OFF transitions, pre-aligned inactive parameter smoothers so cold drone activation never swoops in pitch/cutoff, and flushed biquad/DC-blocker states once the gate tail settles.
+  * Preserved active mStealFreq across mid-steal re-triggers in FeltPianoVoice, cleared per-voice biquad states on idle trigger and steal completion, aligned CS-80/Bass/Treble filter decay scaling in updateDecay(), and flushed sympathetic resonance delay/filter buffers on tail completion.
+  * Replaced discontinuous CC 1 mod-wheel threshold jump with continuous C0/C1-smooth tone interpolation in DspEngine, eliminated cubic Hermite foldback above +/-1.0 in Web Audio applySmoothBoundaryKnee / makeFreezeLimiterCurve, preserved RT60 decayScale in ShimmerReverb.setShimmer(), and preserved live voiceGain / 1.70x Sub-Bass trim in SolarDroneVoice & AudioEngine.
+- Ultra-High Sample Rate FDN Scaling, Host Tail Reporting & Security Hardening:
+  * Dynamically scaled ShimmerReverbDsp power-of-two FDN delay buffer capacity for ultra-high sample rates (192 kHz / 384 kHz+) with safe Hermite read clamping.
+  * Implemented dynamic getTailLengthSeconds() in PluginProcessor (infinity while drones or freeze are active so DAWs never auto-suspend ambient beds; reverb + delay tail otherwise; 0 in Standby).
+  * Hardened WebResourceManager against relative path traversal and added bidirectional factory program sync without parameter echo loops.
 - Master Verification:
-  * 100% test pass rate across 580 tests (512 Web Audio & MIDI tests + 68 Native C++ DSP tests) with 0 memory leaks, 0 denormals, and 0 NaNs.
+  * 100% test pass rate across 589 core automated tests (516 Web Audio, UI & MIDI tests + 73 Native C++ DSP & AudioProcessor lifecycle tests) plus 64 checklist/asset roundtrip assertions with 0 memory leaks, 0 denormals, and 0 NaNs.
 
 Project & Source: https://github.com/sneed-and-feed/braun_as-42
 Web Demo: https://sneed-and-feed.github.io/
-

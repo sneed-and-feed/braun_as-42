@@ -415,7 +415,12 @@ export class SolarDroneVoice {
    * @returns {number}
    */
   _getInstantGain(now) {
-    if (!this.isActive) return 0.0001;
+    if (!this.isActive) {
+      if (this.voiceGain && this.voiceGain.gain && typeof this.voiceGain.gain.value === 'number' && isFinite(this.voiceGain.gain.value)) {
+        return Math.max(0.0001, Math.min(1.5, this.voiceGain.gain.value));
+      }
+      return 0.0001;
+    }
     // If currently in a declick crossfade transition, interpolate the in-flight envelope
     if (this._declickEndTime && now < this._declickEndTime) {
       const tStart = this._declickStartTime || now;

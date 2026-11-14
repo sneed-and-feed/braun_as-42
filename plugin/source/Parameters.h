@@ -192,7 +192,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         tape_tone, "Tape Delay Tone",
         juce::NormalisableRange<float>(1000.0f, 10000.0f, 1.0f), 3600.0f));
 
-    // 5. Shimmer Reverb (4 parameters)
+    // 5. Shimmer Reverb (5 parameters)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         shimmer_mix, "Shimmer Reverb Mix",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.45f));

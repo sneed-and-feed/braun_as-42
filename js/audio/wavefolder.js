@@ -13,13 +13,17 @@
  * @returns {number}
  */
 export function applySmoothBoundaryKnee(y, knee = 0.70) {
-  if (y > knee) {
-    const u = (y - knee) / (1 - knee);
-    return knee + (1 - knee) * (u + u * u - u * u * u);
-  } else if (y < -knee) {
+  if (!Number.isFinite(y)) return 0.0;
+  if (y >= 1.0) return 1.0;
+  if (y <= -1.0) return -1.0;
+  const k = Math.max(0.20, Math.min(0.95, Number.isFinite(knee) ? knee : 0.70));
+  if (y > k) {
+    const u = (y - k) / (1 - k);
+    return k + (1 - k) * (u + u * u - u * u * u);
+  } else if (y < -k) {
     const absY = -y;
-    const u = (absY - knee) / (1 - knee);
-    return -(knee + (1 - knee) * (u + u * u - u * u * u));
+    const u = (absY - k) / (1 - k);
+    return -(k + (1 - k) * (u + u * u - u * u * u));
   }
   return y;
 }
@@ -92,12 +96,20 @@ export function makeShimmerLimiterCurve(samples = 2048, maxLevel = 0.85, knee = 
 export function makeSoftClipCurve(samples = 2048, drive = 1.5) {
   const curve = new Float32Array(samples);
   const half = (samples - 1) / 2;
-  const norm = Math.tanh(drive);
+  const safeDrive = Number.isFinite(drive) ? Math.max(0, drive) : 1.5;
+  if (safeDrive <= 1e-4) {
+    for (let i = 0; i < samples; i++) {
+      const x = (i - half) / half;
+      curve[i] = applySmoothBoundaryKnee(x, 0.70);
+    }
+    return curve;
+  }
+  const norm = Math.tanh(safeDrive);
 
   for (let i = 0; i < samples; i++) {
     const x = (i - half) / half; // -1 to +1
     // Hyperbolic tangent soft saturation smoothly normalized to unity bounds
-    const raw = Math.tanh(drive * x) / norm;
+    const raw = Math.tanh(safeDrive * x) / norm;
     // Apply C1 smooth boundary knee so derivative at +/-1.0 is exactly 0
     curve[i] = applySmoothBoundaryKnee(raw, 0.70);
   }

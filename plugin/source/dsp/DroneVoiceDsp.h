@@ -99,6 +99,10 @@ public:
         mFoldSmoother.setTimeConstant(0.025f);
         mFoldSmoother.reset(45.0f);
 
+        mActiveGateSmoother.setSampleRate(mSampleRate);
+        mActiveGateSmoother.setTimeConstant(0.015f);
+        mActiveGateSmoother.reset(0.0f);
+
         mBeatHz = defaultBeat;
         mDetuneCents = defaultDetune;
         mCachedDetuneCents = defaultDetune;
@@ -126,6 +130,7 @@ public:
         mActiveIsSubBass = false;
         mTargetIsSubBass = false;
         mHasSounded = false;
+        mActiveGateSmoother.reset(0.0f);
         mSubBassDcBlocker.reset();
     }
 
@@ -136,12 +141,48 @@ public:
     }
 
     bool isSubBassActive() const noexcept { return mActiveIsSubBass; }
+    bool isGateTailActive() const noexcept { return mActiveGateSmoother.getCurrent() > 1.0e-5f; }
+    float getActiveGate() const noexcept { return mActiveGateSmoother.getCurrent(); }
 
     inline void processSample(const DroneVoiceParams& params, float& outL, float& outR) noexcept {
-        if (!params.active) {
-            mHasSounded = false;
+        const float clampedRes = std::clamp(params.resonance, 0.5f, 12.0f);
+        const float clampedFold = std::clamp(params.foldPercent, 0.0f, 100.0f);
+
+        if (!params.active && mActiveGateSmoother.getCurrent() <= 1.0e-5f) {
+            mActiveGateSmoother.reset(0.0f);
+            mFreqSmoother.reset(params.pitchHz);
+            mCutoffSmoother.reset(params.cutoffHz);
+            mGainSmoother.reset(params.volume);
+            mResonanceSmoother.reset(clampedRes);
+            mFoldSmoother.reset(clampedFold);
+            if (mHasSounded) {
+                mFilter1.reset();
+                mFilter2.reset();
+                mFilterSubBlockCounter = 0;
+                mDeclickSamples = 0;
+                mDeclickGain = 1.0f;
+                mSubBassDcBlocker.reset();
+                mHasSounded = false;
+            }
             return;
         }
+
+        if (params.active && !mHasSounded && mActiveGateSmoother.getCurrent() <= 1.0e-5f) {
+            // Pre-align smoothers on fresh activation so inactive knob edits never swoop on onset
+            mFreqSmoother.reset(params.pitchHz);
+            mCutoffSmoother.reset(params.cutoffHz);
+            mGainSmoother.reset(params.volume);
+            mResonanceSmoother.reset(clampedRes);
+            mFoldSmoother.reset(clampedFold);
+            mActiveIsSubBass = params.isSubBass;
+            mTargetIsSubBass = params.isSubBass;
+            mDeclickSamples = 0;
+            mDeclickGain = 1.0f;
+            mFilterSubBlockCounter = 0;
+        }
+
+        mActiveGateSmoother.setTarget(params.active ? 1.0f : 0.0f);
+        const float activeGate = mActiveGateSmoother.next();
 
         // Dynamic Sub-Bass mode transition detection
         if (params.isSubBass != mTargetIsSubBass) {
@@ -292,8 +333,8 @@ public:
         const float f1 = mFilter1.process(combinedFilterInput);
         const float f2 = mFilter2.process(f1);
 
-        // 7. Apply smoothed gain and declick crossfader
-        const float voiceOut = f2 * currentGain * gainTrim * mDeclickGain;
+        // 7. Apply smoothed gain, active gate envelope, and declick crossfader
+        const float voiceOut = f2 * currentGain * gainTrim * mDeclickGain * activeGate;
 
         // 8. Pillar 3: Sub-Bass DC-Blocker / Infrasonic High-Pass (~15 Hz)
         // Eliminates DC offset and infrasonic drift from asymmetric saturation.
@@ -406,6 +447,7 @@ private:
     OnePoleSmoother mGainSmoother;
     OnePoleSmoother mResonanceSmoother;
     OnePoleSmoother mFoldSmoother;
+    OnePoleSmoother mActiveGateSmoother;
 
     Biquad mFilter1;
     Biquad mFilter2;

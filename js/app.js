@@ -951,6 +951,11 @@ export class AmbientApp {
       presetSelect.value = preset.id;
     }
 
+    const presetProgramMap = { DEFAULT: 0, HAROLD_BUDD: 1, VANGELIS: 2, ENO_AIRPORTS: 3 };
+    if (this.isJuce && Object.prototype.hasOwnProperty.call(presetProgramMap, preset.id)) {
+      this._emitJuceParamChange('currentProgram', presetProgramMap[preset.id]);
+    }
+
     // 2. Animate all rotary knobs to preset values (or snap immediately if not animating or in test environment)
     if (preset.knobs) {
       const shouldAnimate = animate && duration > 0 && typeof requestAnimationFrame === 'function';
@@ -2251,6 +2256,35 @@ export class AmbientApp {
       this._juceBridgeInitialized = true;
       this.isJuce = true;
 
+      // Defensive startup guard: purge any residual WebView2 localStorage/sessionStorage drone/latch keys
+      // and ensure both drone voices start strictly disarmed until C++ sync explicitly instructs otherwise.
+      try {
+        for (const store of [window.localStorage, window.sessionStorage]) {
+          if (store && typeof store.length === 'number') {
+            for (let i = store.length - 1; i >= 0; i--) {
+              const k = store.key(i);
+              if (k && /drone|freeze|power|braun|as42/i.test(k)) {
+                store.removeItem(k);
+              }
+            }
+          }
+        }
+      } catch (e) {}
+
+      for (const dId of [1, 2]) {
+        if (this.engine && typeof this.engine.setDroneActive === 'function') {
+          this.engine.setDroneActive(dId, false);
+        }
+        if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
+          const toggleBtn = document.getElementById(`btn-drone${dId}-active`) || document.getElementById(`toggle-drone-${dId}`);
+          if (toggleBtn) {
+            toggleBtn.classList.remove('is-active');
+            const textEl = toggleBtn.querySelector('.braun-status-text');
+            if (textEl) textEl.textContent = `DRONE ${dId} OFF`;
+          }
+        }
+      }
+
       // 1. Listen for paramUpdate events from JUCE C++ APVTS / host automation
       if (typeof backend.addEventListener === 'function') {
         backend.addEventListener('paramUpdate', (payload) => {
@@ -2360,10 +2394,27 @@ export class AmbientApp {
             }
             return;
           }
+          if (id === 'currentProgram' && typeof value === 'number') {
+            const programKeys = ['DEFAULT', 'HAROLD_BUDD', 'VANGELIS', 'ENO_AIRPORTS'];
+            const nextKey = programKeys[Math.max(0, Math.min(programKeys.length - 1, Math.round(value)))] || 'DEFAULT';
+            this.currentPresetKey = nextKey;
+            if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
+              const presetSelect = document.getElementById('select-preset');
+              if (presetSelect && presetSelect.value !== nextKey) {
+                presetSelect.value = nextKey;
+              }
+            }
+            return;
+          }
           if (id === 'drone1SubBass' || id === 'drone1_isSubBass') {
             const isSub = (typeof value === 'number') ? (value > 0.5) : Boolean(value);
-            if (this.engine && this.engine.drone1) {
-              this.engine.drone1.isSubBass = isSub;
+            if (this.engine) {
+              if (this.engine.droneParams && this.engine.droneParams[1]) {
+                this.engine.droneParams[1].isSubBass = isSub;
+              }
+              if (this.engine.drone1) {
+                this.engine.drone1.isSubBass = isSub;
+              }
             }
             return;
           }
@@ -2401,7 +2452,7 @@ export class AmbientApp {
       // 2. Listen for scopeFrame audio snapshots from JUCE C++ DSP engine
       if (typeof backend.addEventListener === 'function') {
         backend.addEventListener('scopeFrame', (payload) => {
-          if (!payload || !this.scope) return;
+          if (!payload || !this.scope || !this.isPowerOn) return;
           try {
             const rawL = (typeof payload.l === 'string') ? atob(payload.l) : null;
             const rawR = (typeof payload.r === 'string') ? atob(payload.r) : null;

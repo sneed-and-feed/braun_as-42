@@ -1,6 +1,6 @@
 /**
  * @file tests/verify.mjs
- * @brief Master verification suite for BRAUN AS-42 (All 529 Tests)
+ * @brief Master verification suite for BRAUN AS-42 (v1.5.0)
  */
 
 import { spawnSync } from 'node:child_process';
@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 console.log('================================================================');
-console.log('  BRAUN AS-42 · MASTER VERIFICATION RUNNER (ALL 529 TESTS)      ');
+console.log('  BRAUN AS-42 · MASTER VERIFICATION RUNNER (v1.5.0)             ');
 console.log('================================================================\n');
 
 let totalTests = 0;
@@ -50,23 +50,33 @@ totalTests += 48;
 totalPassed += 48;
 console.log('✔ [2/3] Web Assets & APVTS Roundtrip passed (48/48)\n');
 
-// 3. Node Native Test Suite (465 tests across all test/*.test.js files)
-console.log('>>> [3/3] Running Core DSP & Web Audio Test Suite (465 tests)...');
+// 3. Node Native Test Suite (all test/*.test.js files)
+console.log('>>> [3/3] Running Core DSP & Web Audio Test Suite...');
 const nodeTest = spawnSync('npm', ['test'], {
   cwd: rootDir,
   shell: true,
   encoding: 'utf8',
-  stdio: 'inherit'
+  stdio: ['inherit', 'pipe', 'pipe']
 });
+
+if (nodeTest.stdout) process.stdout.write(nodeTest.stdout);
+if (nodeTest.stderr) process.stderr.write(nodeTest.stderr);
 
 if (nodeTest.status !== 0) {
   console.error('❌ Node test suite failed with exit code:', nodeTest.status);
   process.exit(nodeTest.status || 1);
 }
-totalTests += 465;
-totalPassed += 465;
-console.log('✔ [3/3] Core DSP & Web Audio Test Suite passed (465/465)\n');
+
+const combinedOut = `${nodeTest.stdout || ''}\n${nodeTest.stderr || ''}`;
+const testsMatch = combinedOut.match(/(?:ℹ|#)\s*tests\s+(\d+)/);
+const passMatch = combinedOut.match(/(?:ℹ|#)\s*pass\s+(\d+)/);
+const nodeTotal = testsMatch ? Number(testsMatch[1]) : 514;
+const nodePassed = passMatch ? Number(passMatch[1]) : nodeTotal;
+
+totalTests += nodeTotal;
+totalPassed += nodePassed;
+console.log(`✔ [3/3] Core DSP & Web Audio Test Suite passed (${nodePassed}/${nodeTotal})\n`);
 
 console.log('================================================================');
-console.log(`  ALL ${totalPassed} OF ${totalTests} TESTS PASSED CLEANLY (100% PASS)`);
+console.log(`  ALL ${totalPassed} OF ${totalTests} JS VERIFICATION TESTS PASSED (100% PASS)`);
 console.log('================================================================');

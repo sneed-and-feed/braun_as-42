@@ -778,7 +778,9 @@ export class ShimmerReverb {
       this.shimmerFeedback.gain.cancelScheduledValues(now);
     }
     this.shimmerSend.gain.setTargetAtTime(this.shimmerAmount * 0.9, now, 0.025);
-    this.shimmerFeedback.gain.setTargetAtTime(0.2 + this.shimmerAmount * 0.45, now, 0.025);
+    const decayScale = Math.min(1.35, Math.max(0.70, (this.decayTime || 8.5) / 8.5));
+    const targetFeedback = Math.min(0.75, (0.2 + this.shimmerAmount * 0.45) * decayScale);
+    this.shimmerFeedback.gain.setTargetAtTime(targetFeedback, now, 0.025);
   }
 
   setWet(level) {

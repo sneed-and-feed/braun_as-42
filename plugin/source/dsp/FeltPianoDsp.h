@@ -141,7 +141,7 @@ public:
 
     void trigger(float freq, float velocity, float durationSec, const FeltPianoParams& params,
                  bool isPhysicallyHeld, bool isPedalLatched, bool isChord, uint64_t currentSampleCount) noexcept {
-        const float oldFreq = mCurrentFreq;
+        const float oldFreq = mIsStealing ? mStealFreq : mCurrentFreq;
         mCurrentFreq = freq;
         mCurrentVelocity = std::clamp(velocity, 0.01f, 1.0f);
         mDurationSec = durationSec;
@@ -276,8 +276,8 @@ public:
             const float hammerAttackTime = (mCurrentWaveform == WaveformType::Sine)
                 ? 0.0070f
                 : (isBass ? 0.0065f : isTreble ? 0.0045f : 0.0055f);
-            mHammerAttackSamples = static_cast<uint32_t>(hammerAttackTime * mSampleRate);
-            mHammerDecaySamples = static_cast<uint32_t>(thumpDuration * mSampleRate);
+            mHammerAttackSamples = std::max(1u, static_cast<uint32_t>(hammerAttackTime * mSampleRate));
+            mHammerDecaySamples = std::max(mHammerAttackSamples + 1u, static_cast<uint32_t>(thumpDuration * mSampleRate));
             mHammerStep = 0;
             mHammerIndex = 0;
         }
@@ -287,7 +287,7 @@ public:
             mIsStealing = true;
             mStealGain = mEnvGain;
             mStealFreq = oldFreq;
-            mStealSamplesTotal = static_cast<uint32_t>(0.005f * mSampleRate);
+            mStealSamplesTotal = std::max(1u, static_cast<uint32_t>(0.005f * mSampleRate));
             mStealSamplesLeft = mStealSamplesTotal;
             mHammerPlaying = false;
             mHammerPending = willPlayHammer;
@@ -295,6 +295,10 @@ public:
             mIsStealing = false;
             mStealFreq = freq;
             mEnvGain = 0.0f;
+            mFilter1.reset();
+            mFilter2.reset();
+            mBodyFilter.reset();
+            mHammerFilter.reset();
             mHammerPlaying = willPlayHammer;
             mHammerPending = false;
         }
@@ -365,7 +369,15 @@ public:
             mReleaseSamples = newReleaseSamples;
         }
 
-        mFilterDecaySec = (0.18f + (1.0f - mCurrentTone) * 0.25f) * std::clamp(newDecay, 0.2f, 3.5f);
+        if (isCS80) {
+            mFilterDecaySec = 0.50f * newDecay;
+        } else if (mCurrentMidi < 48) {
+            mFilterDecaySec = (0.26f + (1.0f - mCurrentTone) * 0.25f) * std::clamp(newDecay, 0.2f, 3.5f);
+        } else if (mCurrentMidi >= 72) {
+            mFilterDecaySec = (0.12f + (1.0f - mCurrentTone) * 0.25f) * std::clamp(newDecay, 0.2f, 3.5f);
+        } else {
+            mFilterDecaySec = (0.18f + (1.0f - mCurrentTone) * 0.25f) * std::clamp(newDecay, 0.2f, 3.5f);
+        }
     }
 
     inline float processSample(const FeltPianoParams& /*params*/) noexcept {
@@ -380,11 +392,13 @@ public:
                 if (mStealSamplesLeft == 0) {
                     mIsStealing = false;
                     mEnvGain = 0.0f;
+                    mFilter1.reset();
+                    mFilter2.reset();
+                    mBodyFilter.reset();
+                    mHammerFilter.reset();
                     if (mEnvStage == EnvStage::Attack && mIsActive) {
                         mEnvSampleCount = 0;
                         mNoteSampleCount = 0;
-                        mFilter1.reset();
-                        mFilter2.reset();
                         mFilterSubBlockCounter = 0;
                         if (mHammerPending) {
                             mHammerPlaying = true;
@@ -1003,11 +1017,20 @@ public:
 
     // Process a block of samples, summing into left and right
     void process(float* outL, float* outR, int numSamples) noexcept {
-        if (mParams.volume < 1.0e-5f) {
+        if (numSamples <= 0) {
+            return;
+        }
+
+        if (mParams.volume < 1.0e-5f && mHeadroomSmoother.getCurrent() < 1.0e-5f) {
             mHeadroomSmoother.reset(0.0f);
+            if (mSymTailSamples > 0) {
+                mSymDelayBuffer.fill(0.0f);
+                mSympatheticFilter1.reset();
+                mSympatheticFilter2.reset();
+                mSymTailSamples = 0;
+            }
             if (mNumActiveVoices == 0) {
                 mCurrentSampleCount += static_cast<uint64_t>(numSamples);
-                mSymTailSamples = 0;
                 return;
             }
             for (int s = 0; s < numSamples; ++s) {
@@ -1024,7 +1047,6 @@ public:
                 mNumActiveVoices = writeIdx;
                 if (mNumActiveVoices == 0) {
                     mLastActiveCount = 0;
-                    mSymTailSamples = 0;
                     mCurrentSampleCount += static_cast<uint64_t>(numSamples - 1 - s);
                     break;
                 }
@@ -1059,9 +1081,17 @@ public:
                 mSymTailSamples = static_cast<uint32_t>(mSampleRate * 0.25f);
             } else if (mSymTailSamples > 0) {
                 --mSymTailSamples;
+                if (mSymTailSamples == 0) {
+                    mSymDelayBuffer.fill(0.0f);
+                    mSympatheticFilter1.reset();
+                    mSympatheticFilter2.reset();
+                }
             }
 
             if (mNumActiveVoices == 0 && mSymTailSamples == 0) {
+                if (mParams.volume < 1.0e-5f) {
+                    mHeadroomSmoother.reset(0.0f);
+                }
                 continue;
             }
 

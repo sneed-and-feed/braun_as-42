@@ -32,7 +32,7 @@
 
           <div class="braun-select-group">
             <label class="braun-label-inline" for="select-theme">FINISH</label>
-            <select id="select-theme" class="braun-select" title="Braun Industrial Finish">
+            <select id="select-theme" class="braun-select" autocomplete="off" title="Braun Industrial Finish">
               <option value="light">ALUMINUM (LIGHT)</option>
               <option value="dark">ANTHRACITE (DARK)</option>
             </select>
@@ -60,7 +60,7 @@
               <span class="braun-patch-icon">⤒</span>
               <span class="braun-status-text">LOAD</span>
             </button>
-            <input type="file" id="input-load-patch" accept=".json,application/json" style="display: none;">
+            <input type="file" id="input-load-patch" autocomplete="off" accept=".json,application/json" style="display: none;">
           </div>
 
           <!-- Master Power Button -->
@@ -76,17 +76,17 @@
           <!-- Scale / Harmony Settings (Foolproof modal quantizer) -->
           <div class="braun-select-group">
             <label class="braun-label-inline" for="select-root">ROOT</label>
-            <select id="select-root" class="braun-select" title="Root Pitch Class"></select>
+            <select id="select-root" class="braun-select" autocomplete="off" title="Root Pitch Class"></select>
           </div>
 
           <div class="braun-select-group">
             <label class="braun-label-inline" for="select-scale">MODAL HARMONY</label>
-            <select id="select-scale" class="braun-select" title="Curated Modal Space"></select>
+            <select id="select-scale" class="braun-select" autocomplete="off" title="Curated Modal Space"></select>
           </div>
 
           <div class="braun-select-group">
             <label class="braun-label-inline" for="select-tuning">PITCH</label>
-            <select id="select-tuning" class="braun-select" title="Reference Pitch">
+            <select id="select-tuning" class="braun-select" autocomplete="off" title="Reference Pitch">
               <option value="440">440 Hz (STD)</option>
               <option value="432">432 Hz (VERDI)</option>
             </select>
@@ -97,7 +97,7 @@
           <!-- Curated Sound Presets -->
           <div class="braun-select-group">
             <label class="braun-label-inline" for="select-preset">PRESET</label>
-            <select id="select-preset" class="braun-select" title="Curated Braun Sound Presets">
+            <select id="select-preset" class="braun-select" autocomplete="off" title="Curated Braun Sound Presets">
               <option value="DEFAULT">CALIBRATED DEFAULT</option>
               <option value="HAROLD_BUDD">HAROLD BUDD · PAVILION</option>
               <option value="VANGELIS">VANGELIS · CS-80 BRASS</option>
@@ -446,6 +446,6 @@
     </footer>
   </main>
 
-  <script type="module" src="js/app.js?v=1.4.3"></script>
+  <script type="module" src="js/app.js?v=1.5.0"></script>
 </body>
 </html>

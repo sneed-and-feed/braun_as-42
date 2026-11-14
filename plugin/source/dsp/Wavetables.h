@@ -103,6 +103,7 @@ public:
             case WaveformType::Triangle: table = mTriangleTable.data(); break;
             case WaveformType::Warm:     table = mWarmTable.data(); break;
             case WaveformType::Felt:     table = mFeltTable.data(); break;
+            default:                     table = mSineTable.data(); break;
         }
 
         float p = phase01 - std::floor(phase01);

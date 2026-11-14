@@ -3236,6 +3236,216 @@ void test_audit_fixes_freeze_reset_bass_decay_zero_vol_and_mono_downmix() {
 }
 
 // ============================================================================
+// Test 48: v1.5.0 Audit Regressions (Drone Gate Declick, Felt Filter Hygiene,
+//          Mid-Steal Freq Preservation, 0-Sample MIDI, Ultra-High SR FDN)
+// ============================================================================
+void test_v150_drone_declick_gate_felt_filter_hygiene_and_ultra_sr() {
+    // 1. SolarDroneVoice click-free ON/OFF active gate & inactive smoother pre-alignment
+    {
+        braun::WavetableBank wavetables;
+        braun::SolarDroneVoice drone;
+        drone.prepare(48000.0, &wavetables, 1);
+
+        braun::DroneVoiceParams params;
+        params.pitchHz = 130.81f;   // C3 (changed from default 65.41 Hz while inactive)
+        params.cutoffHz = 680.0f;   // Warm lowpass drone register
+        params.resonance = 1.2f;
+        params.volume = 0.75f;
+        params.active = false;
+
+        float l = 0.0f, r = 0.0f;
+        for (int i = 0; i < 256; ++i) {
+            l = 0.0f; r = 0.0f;
+            drone.processSample(params, l, r);
+            TEST_ASSERT(l == 0.0f && r == 0.0f, "Inactive drone must emit bit-exact 0.0f");
+        }
+
+        // Toggle ON: must start near 0 and ramp smoothly without step click
+        params.active = true;
+        float prevL = 0.0f;
+        float maxEarlyOnsetStep = 0.0f;
+        float maxOnsetStep = 0.0f;
+        float peakActive = 0.0f;
+        for (int i = 0; i < 4800; ++i) {
+            l = 0.0f; r = 0.0f;
+            drone.processSample(params, l, r);
+            if (i == 0) {
+                TEST_ASSERT(std::abs(l) < 0.002f, "Drone onset sample 0 must fade in from zero");
+            }
+            if (i < 32) {
+                maxEarlyOnsetStep = std::max(maxEarlyOnsetStep, std::abs(l - prevL));
+            }
+            maxOnsetStep = std::max(maxOnsetStep, std::abs(l - prevL));
+            peakActive = std::max(peakActive, std::abs(l));
+            prevL = l;
+        }
+        TEST_ASSERT(maxEarlyOnsetStep < 0.005f, "Drone ON first-32-sample onset clicked: " + std::to_string(maxEarlyOnsetStep));
+        TEST_ASSERT(maxOnsetStep < 0.06f, "Drone ON transition produced step click: " + std::to_string(maxOnsetStep));
+        TEST_ASSERT(peakActive > 0.15f, "Drone ON failed to reach audible steady state");
+
+        // Advance until |prevL| > 0.12f so toggling OFF happens right at a non-zero waveform peak!
+        for (int i = 0; i < 512 && std::abs(prevL) < 0.12f; ++i) {
+            l = 0.0f; r = 0.0f;
+            drone.processSample(params, l, r);
+            prevL = l;
+        }
+        TEST_ASSERT(std::abs(prevL) >= 0.12f, "Must test Drone OFF mid-waveform away from zero crossing");
+
+        // Toggle OFF mid-wave: must fade smoothly to exact 0.0f without instant drop to 0.0f
+        params.active = false;
+        float maxReleaseStep = 0.0f;
+        for (int i = 0; i < 9600; ++i) { // 200 ms at 48 kHz
+            l = 0.0f; r = 0.0f;
+            drone.processSample(params, l, r);
+            if (i == 0) {
+                TEST_ASSERT(std::abs(l) > 0.05f, "Drone OFF sample 0 must continue smoothly instead of snapping to 0");
+            }
+            maxReleaseStep = std::max(maxReleaseStep, std::abs(l - prevL));
+            prevL = l;
+        }
+        TEST_ASSERT(maxReleaseStep < 0.06f, "Drone OFF transition produced step click: " + std::to_string(maxReleaseStep));
+        TEST_ASSERT(!drone.isGateTailActive(), "Drone gate tail must settle completely within 200 ms");
+
+        l = 0.0f; r = 0.0f;
+        drone.processSample(params, l, r);
+        TEST_ASSERT(l == 0.0f && r == 0.0f, "Settled inactive drone must return to exact 0.0f");
+    }
+
+    // 2. FeltPianoVoice mid-steal retrigger preserves active mStealFreq & CS-80/Treble updateDecay parity
+    {
+        braun::WavetableBank wavetables;
+        std::vector<float> hammerNoise(512, 0.10f);
+        braun::FeltPianoVoice voice;
+        voice.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 0);
+
+        braun::FeltPianoParams params;
+        params.waveform = braun::WaveformType::Felt;
+        params.decay = 1.0f;
+        params.tone = 0.65f;
+
+        voice.trigger(220.0f, 0.85f, 4.0f, params, true, false, false, 0);
+        for (int i = 0; i < 1200; ++i) {
+            (void)voice.processSample(params);
+        }
+
+        // First steal -> target 880 Hz while fading out 220 Hz
+        voice.trigger(880.0f, 0.85f, 4.0f, params, true, false, false, 1200);
+        TEST_ASSERT(voice.isStealing(), "Voice must enter steal ramp");
+        for (int i = 0; i < 40; ++i) {
+            (void)voice.processSample(params);
+        }
+        TEST_ASSERT(voice.isStealing(), "Voice must still be mid-steal at sample 40");
+
+        // Second steal mid-ramp -> target 1760 Hz: mStealFreq MUST remain 220 Hz (not jump to unstarted 880 Hz!)
+        voice.trigger(1760.0f, 0.85f, 4.0f, params, true, false, false, 1240);
+        TEST_ASSERT(std::abs(voice.getStealFreq() - 220.0f) < 0.1f,
+                    "Mid-steal retrigger jumped stealFreq instead of preserving active 220 Hz");
+
+        // Verify CS-80 updateDecay filter envelope parity with trigger()
+        braun::FeltPianoVoice csTrig, csUpd;
+        csTrig.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 0);
+        csUpd.prepare(48000.0f, &wavetables, hammerNoise.data(), hammerNoise.size(), 0);
+        params.waveform = braun::WaveformType::CS80;
+        params.decay = 1.0f;
+        csUpd.trigger(440.0f, 0.8f, 4.0f, params, true, false, false, 0);
+        params.decay = 2.2f;
+        csUpd.updateDecay(2.2f);
+        csTrig.trigger(440.0f, 0.8f, 4.0f, params, true, false, false, 0);
+        for (int i = 0; i < 12000; ++i) {
+            (void)csTrig.processSample(params);
+            (void)csUpd.processSample(params);
+        }
+        TEST_ASSERT(std::abs(csTrig.getCurrentCutoff() - csUpd.getCurrentCutoff()) < 1.0e-3f,
+                    "CS-80 updateDecay() filter cutoff diverged from trigger()");
+    }
+
+    // 3. FeltPianoSynthesizer smooth zero-volume ramp (no hard-mute pop) & sympathetic tail flush
+    {
+        braun::WavetableBank wavetables;
+        braun::FeltPianoSynthesizer piano;
+        piano.prepare(48000.0, &wavetables);
+
+        braun::FeltPianoParams p;
+        p.volume = 0.85f;
+        p.sympathetic = 0.80f;
+        piano.setParams(p);
+        piano.noteOn(60, 0.9f);
+        piano.noteOn(64, 0.9f);
+        piano.noteOn(67, 0.9f);
+
+        std::vector<float> bufL(512, 0.0f), bufR(512, 0.0f);
+        for (int b = 0; b < 4; ++b) {
+            std::fill(bufL.begin(), bufL.end(), 0.0f);
+            std::fill(bufR.begin(), bufR.end(), 0.0f);
+            piano.process(bufL.data(), bufR.data(), 512);
+        }
+        const float lastSampleBeforeMute = bufL[511];
+
+        p.volume = 0.0f;
+        piano.setParams(p);
+        std::fill(bufL.begin(), bufL.end(), 0.0f);
+        std::fill(bufR.begin(), bufR.end(), 0.0f);
+        piano.process(bufL.data(), bufR.data(), 512);
+
+        const float boundaryStep = std::abs(bufL[0] - lastSampleBeforeMute);
+        TEST_ASSERT(boundaryStep < 0.08f,
+                    "Setting felt_volume=0 mid-chord caused hard-mute step pop: " + std::to_string(boundaryStep));
+    }
+
+    // 4. DspEngine 0-sample block MIDI Note-Off delivery & continuous CC1 mod wheel sweep
+    {
+        braun::DspEngine engine;
+        engine.prepare(48000.0, 512);
+        braun::ParameterSnapshot snap;
+
+        std::vector<float> l(128, 0.0f), r(128, 0.0f);
+        braun::MidiEvent evOn { 0, 0x90, 60, 100 };
+        engine.process(l.data(), r.data(), 128, snap, &evOn, 1);
+        TEST_ASSERT(engine.hasActiveMidiNotes(), "Note 60 must be active");
+
+        braun::MidiEvent evOff { 0, 0x80, 60, 0 };
+        engine.process(nullptr, nullptr, 0, snap, &evOff, 1);
+        TEST_ASSERT(!engine.hasActiveMidiNotes(), "Note-Off on 0-sample block must not be dropped");
+
+        // CC 1 Mod Wheel = 1 (0.00787) must transition smoothly from CC 1 = 0 without a 50% tone drop
+        braun::MidiEvent ccZero { 0, 0xB0, 1, 0 };
+        engine.process(l.data(), r.data(), 128, snap, &ccZero, 1);
+        braun::MidiEvent ccOne { 0, 0xB0, 1, 1 };
+        engine.process(l.data(), r.data(), 128, snap, &ccOne, 1);
+        braun::MidiEvent ccReset { 0, 0xB0, 121, 0 };
+        engine.process(l.data(), r.data(), 128, snap, &ccReset, 1);
+    }
+
+    // 5. ShimmerReverbDsp ultra-high sample rate (192 kHz & 384 kHz) FDN capacity & stability
+    for (double sr : { 192000.0, 384000.0 }) {
+        braun::ShimmerReverbDsp reverb;
+        reverb.prepare(sr);
+
+        braun::ShimmerReverbParams rp;
+        rp.decaySec = 12.0f;
+        rp.damping = 0.45f;
+        rp.shimmer = 0.55f;
+        rp.mix = 0.65f;
+        rp.freeze = false;
+
+        float outL = 0.0f, outR = 0.0f;
+        float maxOut = 0.0f;
+        const int numSamples = static_cast<int>(sr * 0.15);
+        for (int i = 0; i < numSamples; ++i) {
+            outL = 0.0f;
+            outR = 0.0f;
+            const float in = (i < static_cast<int>(sr * 0.05))
+                ? (0.35f * std::sin(braun::kTwoPi * 440.0f * static_cast<float>(i) / static_cast<float>(sr)))
+                : 0.0f;
+            reverb.processSample(in, in, rp, outL, outR);
+            TEST_ASSERT(std::isfinite(outL) && std::isfinite(outR), "Non-finite reverb sample at high SR");
+            maxOut = std::max(maxOut, std::max(std::abs(outL), std::abs(outR)));
+        }
+        TEST_ASSERT(maxOut > 0.01f && maxOut <= 1.0f, "Invalid high-SR reverb peak: " + std::to_string(maxOut));
+    }
+}
+
+// ============================================================================
 // Main Test Runner
 // ============================================================================
 int main() {
@@ -3290,6 +3500,7 @@ int main() {
     RUN_TEST(test_felt_piano_reverb_pitch_stability_and_tail_bloom);
     RUN_TEST(test_soft_compressor_knee_ratio_and_timing);
     RUN_TEST(test_audit_fixes_freeze_reset_bass_decay_zero_vol_and_mono_downmix);
+    RUN_TEST(test_v150_drone_declick_gate_felt_filter_hygiene_and_ultra_sr);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

@@ -1,10 +1,17 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <algorithm>
+#include <limits>
 
 BRAUN_AS42AudioProcessor::BRAUN_AS42AudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", braun::Parameters::createParameterLayout())
 {
+    if (wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+    {
+        // Standalone launches cleanly in silent Standby with drones disarmed until user interaction
+        isPoweredOn.store(false, std::memory_order_relaxed);
+    }
     // Cache atomic parameter value pointers
     // 1. Felt Piano
     paramFeltVolume      = apvts.getRawParameterValue("felt_volume");
@@ -87,7 +94,23 @@ bool BRAUN_AS42AudioProcessor::isMidiEffect() const
 
 double BRAUN_AS42AudioProcessor::getTailLengthSeconds() const
 {
-    return 8.0;
+    if (!isPoweredOn.load(std::memory_order_relaxed))
+        return 0.0;
+
+    if (drone1Active.load(std::memory_order_relaxed)
+        || drone2Active.load(std::memory_order_relaxed)
+        || (paramShimmerFreeze != nullptr && paramShimmerFreeze->load(std::memory_order_relaxed) > 0.5f))
+    {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    const double reverbDecay = (paramShimmerDecay != nullptr)
+        ? static_cast<double>(paramShimmerDecay->load(std::memory_order_relaxed))
+        : 8.5;
+    const double delayTail = (paramTapeTime != nullptr)
+        ? static_cast<double>(paramTapeTime->load(std::memory_order_relaxed)) * 4.0
+        : 1.84;
+    return std::max(8.0, reverbDecay + delayTail);
 }
 
 int BRAUN_AS42AudioProcessor::getNumPrograms()
@@ -100,10 +123,17 @@ int BRAUN_AS42AudioProcessor::getCurrentProgram()
     return currentProgram.load(std::memory_order_relaxed);
 }
 
+void BRAUN_AS42AudioProcessor::setCurrentProgramIndexOnly(int index) noexcept
+{
+    const int idx = std::clamp(index, 0, 3);
+    currentProgram.store(idx, std::memory_order_relaxed);
+}
+
 void BRAUN_AS42AudioProcessor::setCurrentProgram(int index)
 {
     const int idx = std::clamp(index, 0, getNumPrograms() - 1);
     currentProgram.store(idx, std::memory_order_relaxed);
+    fullSyncRequested.store(true, std::memory_order_release);
 
     auto setParam = [this](const juce::String& paramId, float plainVal) {
         if (auto* p = apvts.getParameter(paramId))
@@ -367,15 +397,15 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     juce::ScopedNoDenormals noDenormals;
 
     const int numSamples = buffer.getNumSamples();
-    if (numSamples <= 0 || buffer.getNumChannels() <= 0)
-        return;
+    const int numChannels = buffer.getNumChannels();
 
-    // Unconditionally clear the audio buffer before synthesis.
-    // As a synthesizer generator with 0 inputs, all output channels must be cleared
-    // to prevent leaking uninitialized host buffers, garbage memory, or extra channel data.
-    buffer.clear();
+    // Unconditionally clear all output channels before synthesis
+    if (numSamples > 0 && numChannels > 0)
+    {
+        buffer.clear();
+    }
 
-    // Safely execute deferred DSP reset on the audio thread between blocks
+    // Safely execute deferred DSP reset on the audio thread even on 0-sample blocks
     if (resetRequested.exchange(false, std::memory_order_acq_rel))
     {
         dspEngine.reset();
@@ -441,6 +471,18 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         {
             return;
         }
+    }
+
+    if (numSamples <= 0 || numChannels <= 0)
+    {
+        if (eventCount > 0)
+        {
+            braun::ParameterSnapshot dummySnapshot;
+            dummySnapshot.drone_track_midi = droneTrackMidi.load(std::memory_order_relaxed);
+            dspEngine.setDroneTrackMidi(dummySnapshot.drone_track_midi);
+            dspEngine.process(nullptr, nullptr, 0, dummySnapshot, midiEventsStack, eventCount);
+        }
+        return;
     }
 
     // Read atomic parameter values into Plain-Old-Data snapshot
@@ -550,12 +592,20 @@ void BRAUN_AS42AudioProcessor::getScopeSamples(float* destL, float* destR, int n
     }
 }
 
+void BRAUN_AS42AudioProcessor::clearScopeBuffers() noexcept
+{
+    std::fill_n(scopeBufferL, kScopeBufferSize, 0.0f);
+    std::fill_n(scopeBufferR, kScopeBufferSize, 0.0f);
+    scopeWritePos.store(0, std::memory_order_release);
+}
+
 void BRAUN_AS42AudioProcessor::setPoweredOn(bool on) noexcept
 {
     isPoweredOn.store(on, std::memory_order_relaxed);
     powerStateDirty.store(true, std::memory_order_relaxed);
     if (!on)
     {
+        clearScopeBuffers();
         resetRequested.store(true, std::memory_order_release);
     }
 }
@@ -626,6 +676,11 @@ bool BRAUN_AS42AudioProcessor::getDroneTrackMidi() const noexcept
 bool BRAUN_AS42AudioProcessor::consumeDroneTrackMidiDirty() noexcept
 {
     return droneTrackMidiDirty.exchange(false, std::memory_order_relaxed);
+}
+
+bool BRAUN_AS42AudioProcessor::consumeFullSyncRequested() noexcept
+{
+    return fullSyncRequested.exchange(false, std::memory_order_acq_rel);
 }
 
 void BRAUN_AS42AudioProcessor::startRecording()
@@ -717,6 +772,12 @@ bool BRAUN_AS42AudioProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* BRAUN_AS42AudioProcessor::createEditor()
 {
+    if (wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+    {
+        // StandalonePluginHolder::init() always runs reloadPluginState() before createEditor().
+        // Marking startup state consumed here ensures manual user file loads later in the session work normally.
+        standaloneStartupStateConsumed.store(true, std::memory_order_release);
+    }
     return new BRAUN_AS42AudioProcessorEditor(*this);
 }
 
@@ -737,24 +798,56 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
     {
+        const bool isStandaloneStartupReload =
+            (wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+            && !standaloneStartupStateConsumed.exchange(true, std::memory_order_acq_rel);
+
         auto vt = juce::ValueTree::fromXml(*xmlState);
         apvts.replaceState(vt);
-        if (vt.hasProperty("currentProgram"))
-            currentProgram.store(std::clamp(static_cast<int>(vt.getProperty("currentProgram")), 0, getNumPrograms() - 1), std::memory_order_relaxed);
-        if (vt.hasProperty("drone1Active"))
-            setDrone1Active(static_cast<bool>(vt.getProperty("drone1Active")));
-        if (vt.hasProperty("drone2Active"))
-            setDrone2Active(static_cast<bool>(vt.getProperty("drone2Active")));
-        if (vt.hasProperty("droneTrackMidi"))
-            setDroneTrackMidi(static_cast<bool>(vt.getProperty("droneTrackMidi")));
 
-        if (vt.hasProperty("isPoweredOn"))
-            setPoweredOn(static_cast<bool>(vt.getProperty("isPoweredOn")));
+        const int prog = vt.hasProperty("currentProgram")
+            ? std::clamp(static_cast<int>(vt.getProperty("currentProgram")), 0, getNumPrograms() - 1)
+            : 0;
+        currentProgram.store(prog, std::memory_order_relaxed);
+
+        const bool savedTrack = vt.hasProperty("droneTrackMidi")
+            ? static_cast<bool>(vt.getProperty("droneTrackMidi"))
+            : false;
+        setDroneTrackMidi(savedTrack);
+
+        if (isStandaloneStartupReload)
+        {
+            // Standalone cold-boot guard: JUCE StandalonePluginHolder auto-saves state on window close
+            // and reloads it on launch. Disarm continuous sound latches (Drone 1/2, Shimmer Freeze) and
+            // boot into silent Standby so launching BRAUN_AS42.exe never auto-starts drones from a prior exit,
+            // while faithfully preserving user knob settings, waveforms, preset selection, and MIDI tracking.
+            setDrone1Active(false);
+            setDrone2Active(false);
+            if (auto* freezeParam = apvts.getParameter("shimmer_freeze"))
+            {
+                freezeParam->setValueNotifyingHost(0.0f);
+            }
+            setPoweredOn(false);
+        }
         else
-            setPoweredOn(true);
+        {
+            const bool savedD1 = vt.hasProperty("drone1Active")
+                ? static_cast<bool>(vt.getProperty("drone1Active"))
+                : false;
+            const bool savedD2 = vt.hasProperty("drone2Active")
+                ? static_cast<bool>(vt.getProperty("drone2Active"))
+                : false;
 
-        if (drone1Active.load(std::memory_order_relaxed) || drone2Active.load(std::memory_order_relaxed))
-            setPoweredOn(true);
+            setDrone1Active(savedD1);
+            setDrone2Active(savedD2);
+
+            const bool savedPower = vt.hasProperty("isPoweredOn")
+                ? static_cast<bool>(vt.getProperty("isPoweredOn"))
+                : true;
+            setPoweredOn(savedPower || savedD1 || savedD2);
+        }
+
+        fullSyncRequested.store(true, std::memory_order_release);
     }
 }
 

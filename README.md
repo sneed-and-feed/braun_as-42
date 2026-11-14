@@ -1,10 +1,10 @@
 # BRAUN AS 42 · Ambient Generative Synthesizer
 
 [![Web Audio Live Demo](https://img.shields.io/badge/Web%20Audio-Live%20Demo-EE592B?style=for-the-badge&logo=html5&logoColor=white)](https://sneed-and-feed.github.io/)
-[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-macOS-Universal.zip)
-[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-Windows-x64.zip)
+[![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.5.0/BRAUN_AS42-v1.5.0-macOS-Universal.zip)
+[![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.5.0/BRAUN_AS42-v1.5.0-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#native-plugins--downloads)
-[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(580%2F580)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
+[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(589%2F589)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
 
 > **Legal Homage Notice:** Not affiliated with Braun GmbH. Dieter Rams inspired design homage. Published by Sneed's Feed & Seed Ltd.  
@@ -25,8 +25,8 @@
 
 | Platform | Format | Distribution | Quick Action |
 | :--- | :--- | :--- | :--- |
-| **macOS** | AUv2 (`.component`), VST3, Standalone (`.app`) | Universal Binary (Apple Silicon & Intel) | [💾 Download `macOS-Universal.zip`](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-macOS-Universal.zip) |
-| **Windows** | VST3, Standalone (`.exe`) | 64-bit Installer / Portable Archive | [💾 Download `Windows-x64.zip`](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-Windows-x64.zip) or [VST3 Only](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.4.3/BRAUN_AS42-v1.4.3-VST3-Windows-x64.zip) |
+| **macOS** | AUv2 (`.component`), VST3, Standalone (`.app`) | Universal Binary (Apple Silicon & Intel) | [💾 Download `macOS-Universal.zip`](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.5.0/BRAUN_AS42-v1.5.0-macOS-Universal.zip) |
+| **Windows** | VST3, Standalone (`.exe`) | 64-bit Portable Archive | [💾 Download `Windows-x64.zip`](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.5.0/BRAUN_AS42-v1.5.0-Windows-x64.zip) or [VST3 Only](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.5.0/BRAUN_AS42-v1.5.0-VST3-Windows-x64.zip) |
 | **Linux** | VST3, Standalone | Source Build (GCC/Clang) | `cmake -B build -DAS42_USE_WEBVIEW=OFF && cmake --build build` |
 
 *Companion Reverb: Check out the sibling [**BRAUN RB-26 Master Studio Reverberator**](https://github.com/sneed-and-feed/braun_rb-26).*
@@ -38,16 +38,17 @@
 The AS 42 unites three complementary ambient acoustics into a tactile, foolproof instrument:
 
 * **Harold Budd Prepared Felt Piano & Harmonic Chimes:**
-  * Physical modeling of felt-covered wooden hammer strikes, una corda 24dB damping, and resonant wooden soundboard formant (~135 Hz body resonance).
-  * Natural sympathetic string resonance with golden-ratio micro-detuning dispersion ($\pm 1.4\text{ cents}$) across 6 polyphonic voices.
-  * Register-dependent attack punch and dynamic release scaling ($t_{\text{rel}} = 0.14\text{s} - 1.84\text{s}$).
+  * Physical modeling of felt-covered wooden hammer strikes, una corda 24 dB/oct damping, and resonant wooden soundboard formant (~135 Hz body resonance).
+  * Natural sympathetic string resonance with golden-ratio micro-detuning dispersion of $\pm 1.4\text{ cents}$ across 24 polyphonic voices.
+  * Register-dependent attack punch and dynamic release scaling across $t_{\text{rel}} = 0.14\text{ s}\text{ to }1.84\text{ s}$.
 * **Elta Solar 42n Microtonal Twin Drones:**
-  * Dual beatable oscillators (Saw, Square, Sine, Triangle, Warm) with continuous sub-Hertz beating offset ($0.00\text{ to }5.00\text{ Hz}$) and microtonal detuning.
+  * Dual beatable oscillators (Felt, Sine, Saw, Square, CS-80, Triangle, Warm) with continuous sub-Hertz beating offset from $0.00\text{ to }5.00\text{ Hz}$, microtonal detuning across $\pm 35\text{ cents}$, and 15 ms anti-click ON/OFF gating.
   * West-Coast wavefolding transfer curves: **Web Audio runs 4x oversampled wavefolding**, while the **C++ native engine runs at native sample rate (1x)** with trigonometric multiple-angle anti-aliasing optimizations.
   * Dynamic MIDI Pitch Tracking: Drones follow piano chord roots into deep sub-bass with 40 ms portamento slewing and 200 ms anti-pop release gating.
+  * **Silent Standalone Cold-Boot Guard:** Desktop Standalone (`BRAUN_AS42.exe` / `.app`) always initializes in silent Standby with Drone 1, Drone 2, and Shimmer Freeze disarmed on launch while preserving user parameter calibrations; VST3/AU DAW sessions recall active drone and power states faithfully.
 * **Brian Eno Polyrhythmic Tape Delay & Shimmer Reverb:**
-  * Polyrhythmic 3:2 cross-coupled delay lines with normalized loop gain ($\le 0.92$), calibrated dynamic headroom pad (`inputPad: 0.38` / -8.4 dB), and vintage wow & flutter.
-  * Algorithmic 8-line FDN shimmer reverb with dual true-stereo pitch shifters (+12 semitones / 2.0x frequency) and golden-ratio tail modulation.
+  * Polyrhythmic 3:2 cross-coupled delay lines with normalized loop gain bounded by $\le 0.90$ (APVTS) / $\le 0.92$ (internal ceiling), calibrated dynamic headroom pad (`inputPad: 0.38` / -8.4 dB), and vintage wow & flutter.
+  * Algorithmic 8-line FDN shimmer reverb with dynamic ultra-high sample-rate scaling (44.1 kHz – 192 kHz+), dual true-stereo pitch shifters (+12 semitones / 2.0x frequency), and golden-ratio tail modulation.
   * **Spacebar Infinite Freeze:** Suspends reverberant ambient clouds indefinitely with automatic input ducking.
 * **Latency & Pre-Delay Accuracy:**
   * The dry instrument synthesis path has **strictly 0 samples algorithmic latency** (< 5 ms typical buffer latency).
@@ -68,9 +69,9 @@ The AS 42 unites three complementary ambient acoustics into a tactile, foolproof
 +-----------------------------------------------------------------------------------------+
 ```
 
-1. **Power On:** Click the iconic orange **POWER ON** rocker switch (or press any key) to initialize audio.
+1. **Power On:** Click the iconic orange **POWER ON** rocker switch (or press any musical key) to initialize audio.
 2. **Play Chimes (`A` through `'`):** 11 harmonic modal degrees across octaves 3–5. Every note is quantized to the active scale (e.g. *Budd Felt Pentatonic*, *Lydian Ambient*)—**100% consonant with zero discordant notes**.
-3. **Trigger Chords (`1` through `=`):** Voice 12 curated modal voicings (*Pavilion Sus*, *Plateaux Maj9*, *Ethereal 11th*, *Lydian Cascade*). Adjust **STRUM** (Slow, Med, Fast, Instant).
+3. **Trigger Chords (`1` through `=`):** Voice 12 curated modal voicings (*Pavilion Suspended*, *Plateaux Major 9*, *Ethereal 11th*, *Lydian Cascade*, *Blade Runner*, *Tears in Rain*). Adjust **STRUM** (Slow, Med, Fast, Instant).
 4. **Engage Twin Drones:** Toggle **DRONE 1** and **DRONE 2**. Use Rams **Quick-Snap** buttons (*Sub Bass*, *Deep Tonic*, *Perfect 5th*, *Beating Unison*) or enable **MIDI TRACK** to follow piano chord roots.
 5. **Wash in Delay & Reverb:** Dial up **TAPE MIX** and **SHIMMER MIX**. Tap **SPACEBAR** at any time to lock the reverb into **INFINITE FREEZE**.
 
@@ -88,8 +89,8 @@ The AS 42 unites three complementary ambient acoustics into a tactile, foolproof
 ## 📚 Technical Documentation & Verification
 
 * 🏛️ [**ARCHITECTURE.md**](ARCHITECTURE.md) — Comprehensive technical datasheet: physical modeling mechanics, Zavalishin biquad cascades, FDN shimmer matrix, and full 38-parameter APVTS mapping.
-* 📋 [**CHANGELOG.md**](CHANGELOG.md) — Detailed engineering changelog from v1.3.0 through v1.4.3 modernizations.
-* 🔬 [**VERIFICATION_CHECKLIST.md**](VERIFICATION_CHECKLIST.md) — Certified test harness report (580 PASS: 512 Web Audio & MIDI tests + 68 C++ real-time DSP tests, 0 memory leaks, 0 denormals).
+* 📋 [**CHANGELOG.md**](CHANGELOG.md) — Detailed engineering changelog from v1.3.0 through v1.5.0 modernizations.
+* 🔬 [**VERIFICATION_CHECKLIST.md**](VERIFICATION_CHECKLIST.md) — Certified test harness report (589 PASS: 516 Web Audio, UI & MIDI tests + 73 C++ real-time DSP & lifecycle tests, plus 64 asset/checklist probes, 0 memory leaks, 0 denormals).
 
 ---
 

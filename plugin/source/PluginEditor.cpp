@@ -370,7 +370,7 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
             ensureHwndStyles();
         }
 
-        if (!initialSyncDone && webComponent.isVisible())
+        if ((!initialSyncDone || processorRef.consumeFullSyncRequested()) && webComponent.isVisible())
         {
             syncAllParametersToWeb();
             initialSyncDone = true;
@@ -551,6 +551,13 @@ void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
     sendDroneTrackUpdateToWeb(processorRef.getDroneTrackMidi());
     sendRecordingStateUpdateToWeb(processorRef.isRecording());
 
+    {
+        auto* progObj = new juce::DynamicObject();
+        progObj->setProperty("id", "currentProgram");
+        progObj->setProperty("value", static_cast<float>(processorRef.getCurrentProgram()));
+        webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(progObj));
+    }
+
     for (const auto& item : kParamMap)
     {
         if (auto* rawVal = processorRef.getAPVTS().getRawParameterValue(item.apvtsId))
@@ -671,6 +678,11 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
     if (incomingId.equalsIgnoreCase("drone_track_midi") || incomingId.equalsIgnoreCase("droneTrackMidi") || incomingId.equalsIgnoreCase("droneTrack"))
     {
         processorRef.setDroneTrackMidi(incomingVal > 0.5f);
+        return;
+    }
+    if (incomingId.equalsIgnoreCase("currentProgram"))
+    {
+        processorRef.setCurrentProgramIndexOnly(static_cast<int>(std::round(incomingVal)));
         return;
     }
 
@@ -1615,8 +1627,12 @@ void BRAUN_AS42AudioProcessorEditor::drawCrtDisplay(juce::Graphics& g, juce::Rec
     }
 
     constexpr int kSamples = 240;
-    float sL[kSamples], sR[kSamples];
-    processorRef.getScopeSamples(sL, sR, kSamples);
+    float sL[kSamples] {};
+    float sR[kSamples] {};
+    if (processorRef.getPoweredOn())
+    {
+        processorRef.getScopeSamples(sL, sR, kSamples);
+    }
 
     juce::Path wavePath;
     const float midY = static_cast<float>(scopeArea.getCentreY());

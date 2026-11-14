@@ -217,22 +217,20 @@ void DspEngine::process(float* left, float* right, int numSamples,
 
     // 2. Setup DSP subsystem parameters
     FeltPianoParams pianoParams;
-    // Map CC 1 mod wheel onto felt tone if mod wheel is actively engaged
-    const float effectiveTone = (mCurrentModWheel > 0.001f)
-        ? (params.felt_tone * 0.5f + mCurrentModWheel * 0.5f)
-        : params.felt_tone;
+    // Continuous C0/C1-smooth CC 1 mod wheel mapping: opens brightness from felt_tone (CC1=0) to 1.0 (CC1=127)
+    const float effectiveTone = std::clamp(params.felt_tone + mCurrentModWheel * (1.0f - params.felt_tone), 0.0f, 1.0f);
     pianoParams.tone = effectiveTone;
     pianoParams.hammer = params.felt_hammer;
     pianoParams.decay = params.felt_decay;
     pianoParams.release = 1.8f;
     pianoParams.volume = params.felt_volume;
     pianoParams.sympathetic = params.felt_space;
-    pianoParams.waveform = static_cast<WaveformType>(params.felt_waveform);
+    pianoParams.waveform = static_cast<WaveformType>(std::clamp(params.felt_waveform, 0, 4));
     mFeltPiano.setParams(pianoParams);
 
     DroneVoiceParams drone1Params;
-    drone1Params.waveA = static_cast<WaveformType>(params.drone1_waveA);
-    drone1Params.waveB = static_cast<WaveformType>(params.drone1_waveB);
+    drone1Params.waveA = static_cast<WaveformType>(std::clamp(params.drone1_waveA, 0, 6));
+    drone1Params.waveB = static_cast<WaveformType>(std::clamp(params.drone1_waveB, 0, 6));
     drone1Params.pitchHz = params.drone1_pitch;
     drone1Params.beatHz = params.drone1_beat;
     drone1Params.detuneCents = params.drone1_detune;
@@ -246,8 +244,8 @@ void DspEngine::process(float* left, float* right, int numSamples,
     drone1Params.active = params.drone1_active;
 
     DroneVoiceParams drone2Params;
-    drone2Params.waveA = static_cast<WaveformType>(params.drone2_waveA);
-    drone2Params.waveB = static_cast<WaveformType>(params.drone2_waveB);
+    drone2Params.waveA = static_cast<WaveformType>(std::clamp(params.drone2_waveA, 0, 6));
+    drone2Params.waveB = static_cast<WaveformType>(std::clamp(params.drone2_waveB, 0, 6));
     drone2Params.pitchHz = params.drone2_pitch;
     drone2Params.beatHz = params.drone2_beat;
     drone2Params.detuneCents = params.drone2_detune;
@@ -322,10 +320,20 @@ void DspEngine::process(float* left, float* right, int numSamples,
     int currentSample = 0;
     int midiIdx = 0;
 
+    if (numSamples <= 0 || left == nullptr || right == nullptr) {
+        if (midiEvents != nullptr && numMidiEvents > 0) {
+            for (int i = 0; i < numMidiEvents; ++i) {
+                handleMidiEvent(midiEvents[i]);
+            }
+            updatePitches();
+        }
+        return;
+    }
+
     while (currentSample < numSamples) {
         // Dispatch all MIDI events scheduled at or before this sample offset
         bool midiChanged = false;
-        while (midiIdx < numMidiEvents && midiEvents[midiIdx].sampleOffset <= currentSample) {
+        while (midiIdx < numMidiEvents && midiEvents != nullptr && midiEvents[midiIdx].sampleOffset <= currentSample) {
             handleMidiEvent(midiEvents[midiIdx]);
             ++midiIdx;
             midiChanged = true;
@@ -337,7 +345,7 @@ void DspEngine::process(float* left, float* right, int numSamples,
 
         // Determine slice length until next MIDI event
         int nextMidiSample = numSamples;
-        if (midiIdx < numMidiEvents && midiEvents[midiIdx].sampleOffset > currentSample) {
+        if (midiIdx < numMidiEvents && midiEvents != nullptr && midiEvents[midiIdx].sampleOffset > currentSample) {
             nextMidiSample = std::min(numSamples, midiEvents[midiIdx].sampleOffset);
         }
         const int maxChunk = static_cast<int>(mScratchPianoL.size());
@@ -427,7 +435,6 @@ void DspEngine::process(juce::AudioBuffer<float>& buffer,
                         juce::MidiBuffer& midiMessages,
                         const ParameterSnapshot& params) noexcept {
     const int numSamples = buffer.getNumSamples();
-    if (numSamples <= 0) return;
 
     // Convert JUCE MidiBuffer into lightweight MidiEvent array on stack
     constexpr int kMaxMidiStack = 128;
@@ -447,6 +454,11 @@ void DspEngine::process(juce::AudioBuffer<float>& buffer,
         }
     }
     midiMessages.clear();
+
+    if (numSamples <= 0 || buffer.getNumChannels() <= 0) {
+        process(nullptr, nullptr, 0, params, midiEventsStack, eventCount);
+        return;
+    }
 
     float* left = buffer.getWritePointer(0);
     float* right = (buffer.getNumChannels() > 1) ? buffer.getWritePointer(1) : left;

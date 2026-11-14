@@ -328,7 +328,8 @@ export class AudioEngine {
           const p = this.droneParams[id];
           if (drone && drone.voiceGain && drone.voiceGain.gain) {
             const shouldBeActive = (drone.isActive || (p && p.active));
-            const targetGain = shouldBeActive ? ((p && p.vol !== undefined) ? p.vol : (drone.volume ?? 0.55)) : 0.0;
+            const rawVol = (p && p.vol !== undefined) ? p.vol : (drone.volume ?? 0.55);
+            const targetGain = shouldBeActive ? (rawVol * (drone.subBassGainTrim || 1.0)) : 0.0;
             if (targetGain > 0) {
               drone._currentGain = targetGain;
               if (typeof drone.voiceGain.gain.setTargetAtTime === 'function') {

@@ -38,10 +38,11 @@ jobs:
 
       - name: Build C++ Test Executables
         run: |
-          cmake --build build --target dsp_tests challenger_stress_tests adversarial_challenge_suite --config Release -j$(nproc)
+          cmake --build build --target dsp_tests challenger_stress_tests adversarial_challenge_suite plugin_lifecycle_tests --config Release -j$(nproc)
 
       - name: Execute C++ Test Suites
         run: |
           ./build/dsp_tests
           ./build/challenger_stress_tests
           ./build/adversarial_challenge_suite
+          ./build/plugin_lifecycle_tests
