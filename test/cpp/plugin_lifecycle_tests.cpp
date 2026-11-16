@@ -124,7 +124,7 @@ void test_standalone_startup_disarms_drones_and_freeze_on_reload() {
         for (int b = 0; b < 20; ++b) {
             buf.setSample(0, 0, 0.5f); // Dirty host buffer check
             session2.processBlock(buf, emptyMidi);
-            TEST_ASSERT(buf.getMagnitude(0, 512) == 0.0f,
+            TEST_ASSERT(std::abs(buf.getMagnitude(0, 512)) <= 0.0f,
                         "Standalone startup must output bit-exact 0.0f silence");
         }
 
@@ -132,7 +132,7 @@ void test_standalone_startup_disarms_drones_and_freeze_on_reload() {
         session2.setPoweredOn(true);
         for (int b = 0; b < 20; ++b) {
             session2.processBlock(buf, emptyMidi);
-            TEST_ASSERT(buf.getMagnitude(0, 512) == 0.0f,
+            TEST_ASSERT(std::abs(buf.getMagnitude(0, 512)) <= 0.0f,
                         "Powering ON Standalone without engaging drones must still output bit-exact 0.0f");
         }
 
@@ -244,11 +244,12 @@ void test_lifecycle_reentry_tail_length_scope_and_zero_sample_midi() {
 
     // Power off -> tail length 0.0 and scope buffers flushed
     proc.setPoweredOn(false);
-    TEST_ASSERT(proc.getTailLengthSeconds() == 0.0, "Standby tail length must be 0.0s");
+    TEST_ASSERT(std::abs(proc.getTailLengthSeconds()) <= 0.0, "Standby tail length must be 0.0s");
     std::vector<float> scopeL(256, 1.0f), scopeR(256, 1.0f);
     proc.getScopeSamples(scopeL.data(), scopeR.data(), 256);
-    for (int i = 0; i < 256; ++i) {
-        TEST_ASSERT(scopeL[i] == 0.0f && scopeR[i] == 0.0f, "Standby must flush oscilloscope ring buffers");
+    for (size_t i = 0; i < 256; ++i) {
+        TEST_ASSERT(std::abs(scopeL[i]) <= 0.0f && std::abs(scopeR[i]) <= 0.0f,
+                    "Standby must flush oscilloscope ring buffers");
     }
 
     // Lifecycle re-entry: releaseResources -> prepareToPlay at 96 kHz with >2048 block size

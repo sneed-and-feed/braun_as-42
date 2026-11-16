@@ -209,6 +209,7 @@ else()
     target_compile_definitions(BRAUN_AS42
         PUBLIC
             JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
             JUCE_VST3_CAN_REPLACE_VST2=0
     )
 endif()
@@ -285,7 +286,6 @@ if(AS42_BUILD_TESTS)
     )
     target_link_libraries(plugin_lifecycle_tests PRIVATE
         BRAUN_AS42
-        $<TARGET_PROPERTY:BRAUN_AS42_Standalone,LINK_LIBRARIES>
     )
     add_test(NAME plugin_lifecycle_tests COMMAND plugin_lifecycle_tests)
 endif()
