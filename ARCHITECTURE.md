@@ -182,7 +182,7 @@ The synthesizer exposes **38 automatable parameters** synchronized bidirectional
 | 5 | `felt_space` | `feltSymp` | 0.00 – 1.00 | 0.45 | Linear (0–100% Web) | Sympathetic string & soundboard resonance |
 | 6 | `felt_waveform` | `feltWaveform` | 0 – 4 | 0 (Felt) | Int Enum | Core timbre: 0 Felt, 1 Sine, 2 Saw, 3 Sqr, 4 CS80 |
 | 7 | `drone1_volume` | `drone1Vol` | 0.00 – 1.00 | 0.55 | Linear (0–100% Web) | Drone Voice 1 output level |
-| 8 | `drone1_pitch` | `drone1Pitch` | 20.0 – 400.0 | 65.41 | Hz | Drone Voice 1 fundamental frequency (C2) |
+| 8 | `drone1_pitch` | `drone1Pitch` | 20.0 – 1000.0 | 65.41 | Hz | Drone Voice 1 fundamental frequency (C2) |
 | 9 | `drone1_fold` | `drone1Fold` | 0.0 – 100.0 | 45.0 | Percent (%) | Drone 1 wavefolder drive & fold depth |
 | 10 | `drone1_cutoff` | `drone1Cutoff` | 50.0 – 8000.0 | 650.0 | Hz (Skew 0.35) | Drone 1 4-pole ladder lowpass cutoff |
 | 11 | `drone1_resonance` | `drone1Res` | 0.5 – 10.0 | 3.5 | Linear | Drone 1 ladder filter resonance |
@@ -193,7 +193,7 @@ The synthesizer exposes **38 automatable parameters** synchronized bidirectional
 | 16 | `drone1_waveB` | `drone1WaveB` | 0 – 6 | 6 (Warm) | Int Enum | Drone 1 Oscillator B waveform (`WaveformType`) |
 | 17 | `drone1_isSubBass` | `drone1SubBass` | 0.0 – 1.0 | 0.0 (Off) | Bool / Step 1.0 | Drone 1 6-pillar stabilized sub-bass toggle |
 | 18 | `drone2_volume` | `drone2Vol` | 0.00 – 1.00 | 0.55 | Linear (0–100% Web) | Drone Voice 2 output level |
-| 19 | `drone2_pitch` | `drone2Pitch` | 20.0 – 400.0 | 98.00 | Hz | Drone Voice 2 companion frequency (G2) |
+| 19 | `drone2_pitch` | `drone2Pitch` | 20.0 – 1000.0 | 98.00 | Hz | Drone Voice 2 companion frequency (G2) |
 | 20 | `drone2_fold` | `drone2Fold` | 0.0 – 100.0 | 45.0 | Percent (%) | Drone 2 wavefolder drive & fold depth |
 | 21 | `drone2_cutoff` | `drone2Cutoff` | 50.0 – 8000.0 | 850.0 | Hz (Skew 0.35) | Drone 2 4-pole ladder lowpass cutoff |
 | 22 | `drone2_resonance` | `drone2Res` | 0.5 – 10.0 | 3.5 | Linear | Drone 2 ladder filter resonance |

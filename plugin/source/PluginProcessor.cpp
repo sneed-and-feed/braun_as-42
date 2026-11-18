@@ -128,13 +128,35 @@ int BRAUN_AS42AudioProcessor::getCurrentProgram()
     return currentProgram.load(std::memory_order_relaxed);
 }
 
+void BRAUN_AS42AudioProcessor::notifyHostStateChanged(bool programChanged, bool nonParamChanged) noexcept
+{
+    if (!programChanged && !nonParamChanged)
+        return;
+
+    if (auto* mm = juce::MessageManager::getInstanceWithoutCreating(); mm != nullptr && mm->isThisTheMessageThread())
+    {
+        try
+        {
+            updateHostDisplay(ChangeDetails()
+                .withProgramChanged(programChanged)
+                .withNonParameterStateChanged(nonParamChanged));
+        }
+        catch (...)
+        {
+        }
+    }
+}
+
 void BRAUN_AS42AudioProcessor::setCurrentProgramIndexOnly(int index) noexcept
 {
     const int idx = std::clamp(index, 0, 3);
     currentProgram.store(idx, std::memory_order_relaxed);
-    const juce::SpinLock::ScopedLockType sl(uiStateLock);
-    uiExtendedState.isCustomPatch = false;
-    uiExtendedState.customPatchJson.clear();
+    {
+        const juce::SpinLock::ScopedLockType sl(uiStateLock);
+        uiExtendedState.isCustomPatch = false;
+        uiExtendedState.customPatchJson.clear();
+    }
+    notifyHostStateChanged(true, true);
 }
 
 void BRAUN_AS42AudioProcessor::setCurrentProgram(int index)
@@ -373,6 +395,8 @@ void BRAUN_AS42AudioProcessor::setCurrentProgram(int index)
         }
         masterDriveNorm.store(uiExtendedState.masterDrive * 0.01f, std::memory_order_relaxed);
     }
+
+    notifyHostStateChanged(true, true);
 }
 
 const juce::String BRAUN_AS42AudioProcessor::getProgramName(int index)
@@ -522,27 +546,24 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // IMPORTANT: Never auto-wake from steady-state drone1Active/drone2Active flags here;
     // rising-edge drone activation already wakes power in setDrone1Active/setDrone2Active,
     // whereas checking drone1Active/drone2Active here prevented powering off when drones were running!
-    bool powered = isPoweredOn.load(std::memory_order_acquire);
-    if (!powered)
+    bool hasNoteOn = false;
+    for (int i = 0; i < eventCount; ++i)
     {
-        bool hasNoteOn = false;
-        for (int i = 0; i < eventCount; ++i)
+        if ((midiEventsStack[i].status & 0xF0) == 0x90 && midiEventsStack[i].data2 > 0)
         {
-            if ((midiEventsStack[i].status & 0xF0) == 0x90 && midiEventsStack[i].data2 > 0)
-            {
-                hasNoteOn = true;
-                break;
-            }
+            hasNoteOn = true;
+            break;
         }
+    }
 
-        if (hasNoteOn)
-        {
-            powered = true;
-            isPoweredOn.store(true, std::memory_order_release);
-            powerStateDirty.store(true, std::memory_order_release);
-            resetRequested.store(false, std::memory_order_release);
-            pendingSilentPowerSnap.store(-1, std::memory_order_release);
-        }
+    bool powered = isPoweredOn.load(std::memory_order_acquire);
+    if (!powered && hasNoteOn)
+    {
+        powered = true;
+        isPoweredOn.store(true, std::memory_order_release);
+        powerStateDirty.store(true, std::memory_order_release);
+        resetRequested.store(false, std::memory_order_release);
+        pendingSilentPowerSnap.store(-1, std::memory_order_release);
     }
 
     const int snapReq = pendingSilentPowerSnap.exchange(-1, std::memory_order_acq_rel);
@@ -553,8 +574,9 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     if (numSamples <= 0 || numChannels <= 0)
     {
-        if (!powered && powerLinear <= 0.0f)
+        if (!powered && (powerLinear <= 0.0f || dspSilent.load(std::memory_order_relaxed)))
         {
+            powerLinear = 0.0f;
             if (resetRequested.exchange(false, std::memory_order_acq_rel) || !dspSilent.load(std::memory_order_relaxed))
             {
                 dspEngine.reset();
@@ -567,14 +589,18 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             braun::ParameterSnapshot dummySnapshot;
             dummySnapshot.drone_track_midi = droneTrackMidi.load(std::memory_order_relaxed);
             dspEngine.setDroneTrackMidi(dummySnapshot.drone_track_midi);
+            if (powered && hasNoteOn)
+                dspSilent.store(false, std::memory_order_release);
             dspEngine.process(nullptr, nullptr, 0, dummySnapshot, midiEventsStack, eventCount);
         }
         return;
     }
 
     // Fast Standby path once 45ms C1 Hermite power-off fade has reached exact 0.0f silence
-    if (!powered && powerLinear <= 0.0f)
+    // (or immediately if the DSP engine was already completely silent prior to power-off)
+    if (!powered && (powerLinear <= 0.0f || dspSilent.load(std::memory_order_relaxed)))
     {
+        powerLinear = 0.0f;
         if (resetRequested.exchange(false, std::memory_order_acq_rel) || !dspSilent.load(std::memory_order_relaxed))
         {
             dspEngine.reset();
@@ -604,7 +630,10 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (paramFeltSpace)       snapshot.felt_space = paramFeltSpace->load(std::memory_order_relaxed);
     if (paramFeltWaveform)    snapshot.felt_waveform = static_cast<int>(paramFeltWaveform->load(std::memory_order_relaxed));
 
-    snapshot.drone1_active = drone1Active.load(std::memory_order_relaxed);
+    // Only engage drone oscillators when powered ON, or when already sounding during an active power-off fade;
+    // never ignite cold armed drones while !powered (e.g. recalling a Standby preset while piano tails fade).
+    snapshot.drone1_active = drone1Active.load(std::memory_order_relaxed)
+        && (powered || dspEngine.getDrone1().isGateTailActive());
     if (paramDrone1Volume)    snapshot.drone1_volume = paramDrone1Volume->load(std::memory_order_relaxed);
     if (paramDrone1Pitch)     snapshot.drone1_pitch = paramDrone1Pitch->load(std::memory_order_relaxed);
     if (paramDrone1Fold)      snapshot.drone1_fold = paramDrone1Fold->load(std::memory_order_relaxed);
@@ -617,7 +646,8 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (paramDrone1WaveB)     snapshot.drone1_waveB = static_cast<int>(paramDrone1WaveB->load(std::memory_order_relaxed));
     if (paramDrone1IsSubBass) snapshot.drone1_isSubBass = (paramDrone1IsSubBass->load(std::memory_order_relaxed) > 0.5f);
 
-    snapshot.drone2_active = drone2Active.load(std::memory_order_relaxed);
+    snapshot.drone2_active = drone2Active.load(std::memory_order_relaxed)
+        && (powered || dspEngine.getDrone2().isGateTailActive());
     if (paramDrone2Volume)    snapshot.drone2_volume = paramDrone2Volume->load(std::memory_order_relaxed);
     if (paramDrone2Pitch)     snapshot.drone2_pitch = paramDrone2Pitch->load(std::memory_order_relaxed);
     if (paramDrone2Fold)      snapshot.drone2_fold = paramDrone2Fold->load(std::memory_order_relaxed);
@@ -647,21 +677,34 @@ void BRAUN_AS42AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (paramMasterVolume)    snapshot.master_volume = paramMasterVolume->load(std::memory_order_relaxed);
     snapshot.master_drive = masterDriveNorm.load(std::memory_order_relaxed);
 
+    const bool wasSilent = dspSilent.load(std::memory_order_relaxed);
+    const bool blockActivatesAudio = hasNoteOn || snapshot.drone1_active || snapshot.drone2_active || snapshot.shimmer_freeze;
     if (powered)
     {
         resetRequested.store(false, std::memory_order_relaxed);
-        if (dspSilent.load(std::memory_order_relaxed) && powerLinear <= 0.0f && !snapshot.drone1_active && !snapshot.drone2_active)
+        if (wasSilent && powerLinear <= 0.0f && !snapshot.drone1_active && !snapshot.drone2_active)
         {
             // Waking from already-zeroed Standby with piano Note-On only: preserve full hammer transient
             powerLinear = 1.0f;
         }
-        dspSilent.store(false, std::memory_order_release);
+        if (!wasSilent || blockActivatesAudio)
+        {
+            dspSilent.store(false, std::memory_order_release);
+        }
     }
 
     float* left = buffer.getWritePointer(0);
     float* right = (buffer.getNumChannels() > 1) ? buffer.getWritePointer(1) : left;
 
     dspEngine.process(left, right, numSamples, snapshot, midiEventsStack, eventCount);
+
+    if (powered && wasSilent && !blockActivatesAudio)
+    {
+        if (buffer.getMagnitude(0, numSamples) > 0.0f)
+        {
+            dspSilent.store(false, std::memory_order_release);
+        }
+    }
 
     // Apply C1-smooth Hermite master power ramp (g = p^2 * (3 - 2p)) during power-off or power-on transitions
     if (!powered)
@@ -731,8 +774,8 @@ void BRAUN_AS42AudioProcessor::pushScopeSamples(const float* left, const float* 
     int pos = scopeWritePos.load(std::memory_order_relaxed);
     for (int i = 0; i < numSamples; ++i)
     {
-        scopeBufferL[pos] = left[i];
-        scopeBufferR[pos] = (right != nullptr) ? right[i] : left[i];
+        scopeBufferL[pos].store(left[i], std::memory_order_relaxed);
+        scopeBufferR[pos].store((right != nullptr) ? right[i] : left[i], std::memory_order_relaxed);
         pos = (pos + 1);
         if (pos >= kScopeBufferSize)
             pos = 0;
@@ -751,9 +794,9 @@ void BRAUN_AS42AudioProcessor::getScopeSamples(float* destL, float* destR, int n
     int readPos = ((writePos - numSamplesToRead) % kScopeBufferSize + kScopeBufferSize) % kScopeBufferSize;
     for (int i = 0; i < numSamplesToRead; ++i)
     {
-        destL[i] = scopeBufferL[readPos];
+        destL[i] = scopeBufferL[readPos].load(std::memory_order_relaxed);
         if (destR != nullptr)
-            destR[i] = scopeBufferR[readPos];
+            destR[i] = scopeBufferR[readPos].load(std::memory_order_relaxed);
         readPos = (readPos + 1);
         if (readPos >= kScopeBufferSize)
             readPos = 0;
@@ -762,12 +805,15 @@ void BRAUN_AS42AudioProcessor::getScopeSamples(float* destL, float* destR, int n
 
 void BRAUN_AS42AudioProcessor::clearScopeBuffers() noexcept
 {
-    std::fill_n(scopeBufferL, kScopeBufferSize, 0.0f);
-    std::fill_n(scopeBufferR, kScopeBufferSize, 0.0f);
+    for (int i = 0; i < kScopeBufferSize; ++i)
+    {
+        scopeBufferL[i].store(0.0f, std::memory_order_relaxed);
+        scopeBufferR[i].store(0.0f, std::memory_order_relaxed);
+    }
     scopeWritePos.store(0, std::memory_order_release);
 }
 
-void BRAUN_AS42AudioProcessor::setPoweredOn(bool on) noexcept
+void BRAUN_AS42AudioProcessor::setPoweredOn(bool on, bool notifyHost) noexcept
 {
     pendingSilentPowerSnap.store(-1, std::memory_order_release);
     isPoweredOn.store(on, std::memory_order_release);
@@ -781,6 +827,8 @@ void BRAUN_AS42AudioProcessor::setPoweredOn(bool on) noexcept
     {
         resetRequested.store(false, std::memory_order_release);
     }
+    if (notifyHost)
+        notifyHostStateChanged(false, true);
 }
 
 bool BRAUN_AS42AudioProcessor::getPoweredOn() const noexcept
@@ -793,7 +841,7 @@ bool BRAUN_AS42AudioProcessor::consumePowerStateDirty() noexcept
     return powerStateDirty.exchange(false, std::memory_order_acq_rel);
 }
 
-void BRAUN_AS42AudioProcessor::setDrone1Active(bool active) noexcept
+void BRAUN_AS42AudioProcessor::setDrone1Active(bool active, bool notifyHost) noexcept
 {
     drone1Active.store(active, std::memory_order_release);
     drone1StateDirty.store(true, std::memory_order_release);
@@ -804,6 +852,8 @@ void BRAUN_AS42AudioProcessor::setDrone1Active(bool active) noexcept
         powerStateDirty.store(true, std::memory_order_release);
         resetRequested.store(false, std::memory_order_release);
     }
+    if (notifyHost)
+        notifyHostStateChanged(false, true);
 }
 
 bool BRAUN_AS42AudioProcessor::getDrone1Active() const noexcept
@@ -816,7 +866,7 @@ bool BRAUN_AS42AudioProcessor::consumeDrone1StateDirty() noexcept
     return drone1StateDirty.exchange(false, std::memory_order_acq_rel);
 }
 
-void BRAUN_AS42AudioProcessor::setDrone2Active(bool active) noexcept
+void BRAUN_AS42AudioProcessor::setDrone2Active(bool active, bool notifyHost) noexcept
 {
     drone2Active.store(active, std::memory_order_release);
     drone2StateDirty.store(true, std::memory_order_release);
@@ -827,6 +877,8 @@ void BRAUN_AS42AudioProcessor::setDrone2Active(bool active) noexcept
         powerStateDirty.store(true, std::memory_order_release);
         resetRequested.store(false, std::memory_order_release);
     }
+    if (notifyHost)
+        notifyHostStateChanged(false, true);
 }
 
 bool BRAUN_AS42AudioProcessor::getDrone2Active() const noexcept
@@ -839,10 +891,12 @@ bool BRAUN_AS42AudioProcessor::consumeDrone2StateDirty() noexcept
     return drone2StateDirty.exchange(false, std::memory_order_acq_rel);
 }
 
-void BRAUN_AS42AudioProcessor::setDroneTrackMidi(bool track) noexcept
+void BRAUN_AS42AudioProcessor::setDroneTrackMidi(bool track, bool notifyHost) noexcept
 {
     droneTrackMidi.store(track, std::memory_order_relaxed);
     droneTrackMidiDirty.store(true, std::memory_order_relaxed);
+    if (notifyHost)
+        notifyHostStateChanged(false, true);
 }
 
 bool BRAUN_AS42AudioProcessor::getDroneTrackMidi() const noexcept
@@ -964,96 +1018,101 @@ BRAUN_AS42AudioProcessor::UIExtendedState BRAUN_AS42AudioProcessor::getUIExtende
     return uiExtendedState;
 }
 
-void BRAUN_AS42AudioProcessor::setUIExtendedProperty(const juce::String& key, const juce::var& value)
+void BRAUN_AS42AudioProcessor::setUIExtendedProperty(const juce::String& key, const juce::var& value, bool notifyHost)
 {
-    const juce::SpinLock::ScopedLockType sl(uiStateLock);
-    if (key.equalsIgnoreCase("uiTheme") || key.equalsIgnoreCase("theme"))
     {
-        const juce::String t = value.toString().trim().toLowerCase();
-        if (t == "dark" || t == "light")
-            uiExtendedState.uiTheme = t;
-    }
-    else if (key.equalsIgnoreCase("rootPitchClass"))
-    {
-        uiExtendedState.rootPitchClass = std::clamp(static_cast<int>(value), 0, 11);
-    }
-    else if (key.equalsIgnoreCase("scaleKey") || key.equalsIgnoreCase("currentScaleKey"))
-    {
-        const juce::String s = value.toString().trim();
-        if (s.isNotEmpty())
-            uiExtendedState.scaleKey = s;
-    }
-    else if (key.equalsIgnoreCase("tuningA4") || key.equalsIgnoreCase("a4"))
-    {
-        const float a4 = static_cast<float>(value);
-        if (a4 >= 400.0f && a4 <= 480.0f)
-            uiExtendedState.tuningA4 = a4;
-    }
-    else if (key.equalsIgnoreCase("masterDrive") || key.equalsIgnoreCase("tapeDrive") || key.equalsIgnoreCase("master_drive"))
-    {
-        uiExtendedState.masterDrive = std::clamp(static_cast<float>(value), 0.0f, 100.0f);
-        masterDriveNorm.store(uiExtendedState.masterDrive * 0.01f, std::memory_order_relaxed);
-    }
-    else if (key.equalsIgnoreCase("poissonDensity") || key.equalsIgnoreCase("poisson_density"))
-    {
-        uiExtendedState.poissonDensity = std::clamp(static_cast<float>(value), 4.0f, 30.0f);
-    }
-    else if (key.equalsIgnoreCase("poissonHumanize") || key.equalsIgnoreCase("poisson_humanize"))
-    {
-        uiExtendedState.poissonHumanize = std::clamp(static_cast<float>(value), 0.0f, 100.0f);
-    }
-    else if (key.equalsIgnoreCase("chordSpeed"))
-    {
-        const juce::String cs = value.toString().trim().toLowerCase();
-        if (cs == "slow" || cs == "med" || cs == "fast" || cs == "instant")
-            uiExtendedState.chordSpeed = cs;
-    }
-    else if (key.equalsIgnoreCase("scopeMode"))
-    {
-        const juce::String sm = value.toString().trim().toLowerCase();
-        if (sm.isNotEmpty())
-            uiExtendedState.scopeMode = sm;
-    }
-    else if (key.equalsIgnoreCase("drone1Snap"))
-    {
-        const juce::String ds = value.toString().trim();
-        if (ds.isNotEmpty())
-            uiExtendedState.drone1Snap = ds;
-    }
-    else if (key.equalsIgnoreCase("drone2Snap"))
-    {
-        const juce::String ds = value.toString().trim();
-        if (ds.isNotEmpty())
-            uiExtendedState.drone2Snap = ds;
-    }
-    else if (key.equalsIgnoreCase("vectorMode"))
-    {
-        const juce::String vm = value.toString().trim().toLowerCase();
-        if (vm == "momentary" || vm == "latch")
-            uiExtendedState.vectorMode = vm;
-    }
-    else if (key.equalsIgnoreCase("vectorX"))
-    {
-        uiExtendedState.vectorX = std::clamp(static_cast<float>(value), 0.0f, 1.0f);
-    }
-    else if (key.equalsIgnoreCase("vectorY"))
-    {
-        uiExtendedState.vectorY = std::clamp(static_cast<float>(value), 0.0f, 1.0f);
-    }
-    else if (key.equalsIgnoreCase("customPatchJson"))
-    {
-        const juce::String s = value.toString().trim();
-        if (s.isNotEmpty() && s.length() <= 65536)
+        const juce::SpinLock::ScopedLockType sl(uiStateLock);
+        if (key.equalsIgnoreCase("uiTheme") || key.equalsIgnoreCase("theme"))
         {
-            uiExtendedState.customPatchJson = s;
-            uiExtendedState.isCustomPatch = true;
+            const juce::String t = value.toString().trim().toLowerCase();
+            if (t == "dark" || t == "light")
+                uiExtendedState.uiTheme = t;
         }
-        else
+        else if (key.equalsIgnoreCase("rootPitchClass"))
         {
-            uiExtendedState.customPatchJson.clear();
-            uiExtendedState.isCustomPatch = false;
+            uiExtendedState.rootPitchClass = std::clamp(static_cast<int>(value), 0, 11);
+        }
+        else if (key.equalsIgnoreCase("scaleKey") || key.equalsIgnoreCase("currentScaleKey"))
+        {
+            const juce::String s = value.toString().trim();
+            if (s.isNotEmpty())
+                uiExtendedState.scaleKey = s;
+        }
+        else if (key.equalsIgnoreCase("tuningA4") || key.equalsIgnoreCase("a4"))
+        {
+            const float a4 = static_cast<float>(value);
+            if (a4 >= 400.0f && a4 <= 480.0f)
+                uiExtendedState.tuningA4 = a4;
+        }
+        else if (key.equalsIgnoreCase("masterDrive") || key.equalsIgnoreCase("tapeDrive") || key.equalsIgnoreCase("master_drive"))
+        {
+            uiExtendedState.masterDrive = std::clamp(static_cast<float>(value), 0.0f, 100.0f);
+            masterDriveNorm.store(uiExtendedState.masterDrive * 0.01f, std::memory_order_relaxed);
+        }
+        else if (key.equalsIgnoreCase("poissonDensity") || key.equalsIgnoreCase("poisson_density"))
+        {
+            uiExtendedState.poissonDensity = std::clamp(static_cast<float>(value), 4.0f, 30.0f);
+        }
+        else if (key.equalsIgnoreCase("poissonHumanize") || key.equalsIgnoreCase("poisson_humanize"))
+        {
+            uiExtendedState.poissonHumanize = std::clamp(static_cast<float>(value), 0.0f, 100.0f);
+        }
+        else if (key.equalsIgnoreCase("chordSpeed"))
+        {
+            const juce::String cs = value.toString().trim().toLowerCase();
+            if (cs == "slow" || cs == "med" || cs == "fast" || cs == "instant")
+                uiExtendedState.chordSpeed = cs;
+        }
+        else if (key.equalsIgnoreCase("scopeMode"))
+        {
+            const juce::String sm = value.toString().trim().toLowerCase();
+            if (sm.isNotEmpty())
+                uiExtendedState.scopeMode = sm;
+        }
+        else if (key.equalsIgnoreCase("drone1Snap"))
+        {
+            const juce::String ds = value.toString().trim();
+            if (ds.isNotEmpty())
+                uiExtendedState.drone1Snap = ds;
+        }
+        else if (key.equalsIgnoreCase("drone2Snap"))
+        {
+            const juce::String ds = value.toString().trim();
+            if (ds.isNotEmpty())
+                uiExtendedState.drone2Snap = ds;
+        }
+        else if (key.equalsIgnoreCase("vectorMode"))
+        {
+            const juce::String vm = value.toString().trim().toLowerCase();
+            if (vm == "momentary" || vm == "latch")
+                uiExtendedState.vectorMode = vm;
+        }
+        else if (key.equalsIgnoreCase("vectorX"))
+        {
+            uiExtendedState.vectorX = std::clamp(static_cast<float>(value), 0.0f, 1.0f);
+        }
+        else if (key.equalsIgnoreCase("vectorY"))
+        {
+            uiExtendedState.vectorY = std::clamp(static_cast<float>(value), 0.0f, 1.0f);
+        }
+        else if (key.equalsIgnoreCase("customPatchJson"))
+        {
+            const juce::String s = value.toString().trim();
+            if (s.isNotEmpty() && s.length() <= 65536)
+            {
+                uiExtendedState.customPatchJson = s;
+                uiExtendedState.isCustomPatch = true;
+            }
+            else
+            {
+                uiExtendedState.customPatchJson.clear();
+                uiExtendedState.isCustomPatch = false;
+            }
         }
     }
+
+    if (notifyHost)
+        notifyHostStateChanged(false, true);
 }
 
 void BRAUN_AS42AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
@@ -1107,7 +1166,7 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
         const bool savedTrack = vt.hasProperty("droneTrackMidi")
             ? static_cast<bool>(vt.getProperty("droneTrackMidi"))
             : false;
-        setDroneTrackMidi(savedTrack);
+        setDroneTrackMidi(savedTrack, false);
 
         {
             {
@@ -1126,11 +1185,11 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
             for (const char* prop : kUIProps)
             {
                 if (vt.hasProperty(prop))
-                    setUIExtendedProperty(prop, vt.getProperty(prop));
+                    setUIExtendedProperty(prop, vt.getProperty(prop), false);
             }
             if (vt.hasProperty("isCustomPatch") && static_cast<bool>(vt.getProperty("isCustomPatch")) && vt.hasProperty("customPatchJson"))
             {
-                setUIExtendedProperty("customPatchJson", vt.getProperty("customPatchJson"));
+                setUIExtendedProperty("customPatchJson", vt.getProperty("customPatchJson"), false);
             }
         }
 
@@ -1140,13 +1199,15 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
             // and reloads it on launch. Disarm continuous sound latches (Drone 1/2, Shimmer Freeze) and
             // boot into silent Standby so launching BRAUN_AS42.exe never auto-starts drones from a prior exit,
             // while faithfully preserving user knob settings, waveforms, preset selection, and MIDI tracking.
-            setDrone1Active(false);
-            setDrone2Active(false);
+            drone1Active.store(false, std::memory_order_release);
+            drone1StateDirty.store(true, std::memory_order_release);
+            drone2Active.store(false, std::memory_order_release);
+            drone2StateDirty.store(true, std::memory_order_release);
             if (auto* freezeParam = apvts.getParameter("shimmer_freeze"))
             {
                 freezeParam->setValueNotifyingHost(0.0f);
             }
-            setPoweredOn(false);
+            setPoweredOn(false, false);
             pendingSilentPowerSnap.store(0, std::memory_order_release);
         }
         else
@@ -1157,18 +1218,22 @@ void BRAUN_AS42AudioProcessor::setStateInformation(const void* data, int sizeInB
             const bool savedD2 = vt.hasProperty("drone2Active")
                 ? static_cast<bool>(vt.getProperty("drone2Active"))
                 : false;
-
-            setDrone1Active(savedD1);
-            setDrone2Active(savedD2);
-
             const bool savedPower = vt.hasProperty("isPoweredOn")
                 ? static_cast<bool>(vt.getProperty("isPoweredOn"))
                 : true;
-            setPoweredOn(savedPower);
+
+            // Store drone states directly without transiently waking isPoweredOn when savedPower is false!
+            drone1Active.store(savedD1, std::memory_order_release);
+            drone1StateDirty.store(true, std::memory_order_release);
+            drone2Active.store(savedD2, std::memory_order_release);
+            drone2StateDirty.store(true, std::memory_order_release);
+
+            setPoweredOn(savedPower, false);
             pendingSilentPowerSnap.store(savedPower ? 1 : 0, std::memory_order_release);
         }
 
         fullSyncRequested.store(true, std::memory_order_release);
+        notifyHostStateChanged(true, false);
     }
 }
 

@@ -124,6 +124,11 @@ export class AudioEngine {
    * Power down synthesizer with clickless bus ramping before AudioContext suspend
    */
   async powerOff() {
+    if (this._initPromise) {
+      try {
+        await this._initPromise;
+      } catch (e) {}
+    }
     if (!this.ctx || this.ctx.state === 'suspended') return;
     if (this._powerOffPromise) return this._powerOffPromise;
 

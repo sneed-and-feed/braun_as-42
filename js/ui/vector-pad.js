@@ -309,6 +309,7 @@ export class BraunVectorPad {
     if (notify && typeof this.onModeChange === 'function') {
       this.onModeChange(this.mode);
     }
+    this.draw();
   }
 
   toggleMode() {

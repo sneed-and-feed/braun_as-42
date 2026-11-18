@@ -948,6 +948,8 @@ void test_concurrent_state_recall_tail_guard_and_legacy_preset_isolation() {
 
         std::thread messageThread([&]() {
             juce::MemoryBlock scratch;
+            float scopeL[256] {};
+            float scopeR[256] {};
             for (int iter = 0; iter < 120 && audioValid.load(std::memory_order_relaxed); ++iter) {
                 if ((iter % 2) == 0) {
                     proc.setStateInformation(snapshotStandby.getData(), static_cast<int>(snapshotStandby.getSize()));
@@ -957,6 +959,7 @@ void test_concurrent_state_recall_tail_guard_and_legacy_preset_isolation() {
                 proc.setPoweredOn((iter % 3) != 0);
                 proc.setDrone2Active((iter % 4) == 0);
                 proc.setUIExtendedProperty("masterDrive", static_cast<float>((iter * 7) % 100));
+                proc.getScopeSamples(scopeL, scopeR, 256);
                 proc.getStateInformation(scratch);
             }
             stopThreads.store(true, std::memory_order_release);
@@ -968,6 +971,224 @@ void test_concurrent_state_recall_tail_guard_and_legacy_preset_isolation() {
         TEST_ASSERT(audioValid.load(),
                     "Concurrent audio/message thread state recall and power toggling must produce finite bounded audio");
     }
+}
+
+// ============================================================================
+// Test 10: Host Program Sync, Idle->Standby Drone Guard, Octave-Up Pitch & Child-HWND Visibility
+// ============================================================================
+void test_vst3_host_program_sync_idle_standby_drone_guard_and_child_hwnd_visibility() {
+    // 1. Verify updateHostDisplay notifications keep VST3 ProgramChangeParameter in sync
+    //    without marking freshly loaded DAW projects dirty!
+    struct HostDisplaySpy : public juce::AudioProcessorListener {
+        int programChangedCount { 0 };
+        int nonParamStateChangedCount { 0 };
+        void audioProcessorParameterChanged(juce::AudioProcessor*, int, float) override {}
+        void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails& details) override {
+            if (details.programChanged) ++programChangedCount;
+            if (details.nonParameterStateChanged) ++nonParamStateChangedCount;
+        }
+    };
+
+    {
+        juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_VST3);
+        BRAUN_AS42AudioProcessor proc;
+        juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+
+        HostDisplaySpy spy;
+        proc.addListener(&spy);
+
+        proc.setCurrentProgramIndexOnly(2); // Web UI selects VANGELIS
+        TEST_ASSERT(spy.programChangedCount == 1 && spy.nonParamStateChangedCount == 1,
+                    "setCurrentProgramIndexOnly must notify VST3 host of program & non-param state change");
+
+        proc.setCurrentProgram(1); // Native UI / Host selects HAROLD BUDD
+        TEST_ASSERT(spy.programChangedCount == 2 && spy.nonParamStateChangedCount == 2,
+                    "setCurrentProgram must notify VST3 host of program & non-param state change");
+
+        juce::MemoryBlock savedBlob;
+        proc.getStateInformation(savedBlob);
+
+        spy.programChangedCount = 0;
+        spy.nonParamStateChangedCount = 0;
+        proc.setStateInformation(savedBlob.getData(), static_cast<int>(savedBlob.getSize()));
+        TEST_ASSERT(spy.programChangedCount == 1 && spy.nonParamStateChangedCount == 0,
+                    "setStateInformation must sync VST3 program index without marking a freshly opened DAW session dirty");
+
+        proc.removeListener(&spy);
+    }
+
+    // 2. Idle VST3 blocks followed by Standby state recall with armed Drone 1 MUST NOT emit a 45ms drone burst!
+    {
+        juce::MemoryBlock standbyWithArmedDrone;
+        {
+            juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_VST3);
+            BRAUN_AS42AudioProcessor saver;
+            juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+            saver.prepareToPlay(48000.0, 512);
+            setPlainParam(saver, "drone1_volume", 1.0f);
+            setPlainParam(saver, "master_volume", 0.95f);
+            saver.setDrone1Active(true);
+            saver.setPoweredOn(false);
+            saver.getStateInformation(standbyWithArmedDrone);
+        }
+
+        // Case A: Host runs 5 silent idle blocks on a fresh powered VST3, then recalls Standby+ArmedDrone
+        {
+            juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_VST3);
+            BRAUN_AS42AudioProcessor vstIdle;
+            juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+            vstIdle.prepareToPlay(48000.0, 512);
+
+            juce::AudioBuffer<float> buf(2, 512);
+            juce::MidiBuffer emptyMidi;
+            for (int b = 0; b < 5; ++b) {
+                vstIdle.processBlock(buf, emptyMidi);
+                TEST_ASSERT(buf.getMagnitude(0, 512) == 0.0f, "Idle VST3 block must be silent");
+            }
+
+            vstIdle.setStateInformation(standbyWithArmedDrone.getData(),
+                                        static_cast<int>(standbyWithArmedDrone.getSize()));
+            TEST_ASSERT(!vstIdle.getPoweredOn() && vstIdle.getDrone1Active(),
+                        "Recalled state must be Standby with Drone 1 armed");
+            TEST_ASSERT(std::abs(vstIdle.getTailLengthSeconds()) <= 0.0,
+                        "Idle VST3 recalling Standby state must report 0.0s tail immediately");
+
+            for (int b = 0; b < 6; ++b) {
+                vstIdle.processBlock(buf, emptyMidi);
+                TEST_ASSERT(buf.getMagnitude(0, 512) == 0.0f,
+                            "Recalling Standby with armed Drone 1 after idle blocks MUST output 0.0f (zero drone burst)");
+            }
+        }
+
+        // Case B: Piano note is actively ringing while Drone 1 is OFF, then host recalls Standby+ArmedDrone:
+        // Piano must fade out over 45ms WITHOUT igniting cold Drone 1!
+        {
+            juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_VST3);
+            BRAUN_AS42AudioProcessor vstRinging;
+            juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+            vstRinging.prepareToPlay(48000.0, 512);
+
+            juce::AudioBuffer<float> buf(2, 512);
+            juce::MidiBuffer noteOnMidi;
+            noteOnMidi.addEvent(juce::MidiMessage::noteOn(1, 72, static_cast<juce::uint8>(100)), 0);
+            vstRinging.processBlock(buf, noteOnMidi);
+            TEST_ASSERT(!vstRinging.getDspEngine().getDrone1().isGateTailActive(), "Drone 1 must be cold");
+
+            vstRinging.setStateInformation(standbyWithArmedDrone.getData(),
+                                           static_cast<int>(standbyWithArmedDrone.getSize()));
+            TEST_ASSERT(vstRinging.getTailLengthSeconds() > 0.0,
+                        "Ringing piano recalling Standby must hold 50ms tail for fade-out");
+
+            juce::MidiBuffer emptyMidi;
+            vstRinging.processBlock(buf, emptyMidi);
+            TEST_ASSERT(!vstRinging.getDspEngine().getDrone1().isGateTailActive(),
+                        "Cold armed Drone 1 MUST NOT ignite during ringing piano's power-off fade");
+        }
+    }
+
+    // 3. Verify OCTAVE UP + PERFECT 5TH on Root B (B4 = 493.88 Hz, F#5 = 740.82 Hz) never clamps at 400 Hz!
+    {
+        juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_VST3);
+        BRAUN_AS42AudioProcessor proc;
+        juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+
+        setPlainParam(proc, "drone1_pitch", 493.88f);
+        setPlainParam(proc, "drone2_pitch", 740.82f);
+        TEST_ASSERT(std::abs(getPlainParam(proc, "drone1_pitch") - 493.88f) < 0.02f,
+                    "drone1_pitch must support Octave-Up B4 (493.88 Hz) without clamping at 400 Hz");
+        TEST_ASSERT(std::abs(getPlainParam(proc, "drone2_pitch") - 740.82f) < 0.02f,
+                    "drone2_pitch must support Perfect-5th F#5 (740.82 Hz) without clamping at 400 Hz");
+    }
+
+#if JUCE_WINDOWS && JUCE_WEB_BROWSER
+    // 4. Verify VST3 child-HWND embedded inside a DAW wrapper parent HWND detects both
+    //    wrapper SW_HIDE (FL Studio / Reaper plugin window close) and root SW_MINIMIZE!
+    {
+        juce::PropertiesFile::Options propOpts;
+        propOpts.applicationName = "AS42_settings";
+        propOpts.filenameSuffix = ".xml";
+        propOpts.folderName = "Braun";
+        propOpts.osxLibrarySubFolder = "Application Support";
+        const juce::File settingsFile = juce::PropertiesFile(propOpts).getFile();
+        const bool hadSettingsFile = settingsFile.existsAsFile();
+        const juce::String originalSettingsXml = hadSettingsFile ? settingsFile.loadFileAsString() : juce::String();
+        struct RestoreGuard {
+            juce::File file; bool existed; juce::String content;
+            ~RestoreGuard() { if (existed) file.replaceWithText(content); else if (file.existsAsFile()) file.deleteFile(); }
+        } guard { settingsFile, hadSettingsFile, originalSettingsXml };
+
+        auto pumpWin32 = [](int ms) {
+            const DWORD t0 = GetTickCount();
+            while (static_cast<int>(GetTickCount() - t0) < ms) {
+                MSG msg {};
+                while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                Sleep(5);
+            }
+        };
+
+        juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_VST3);
+        BRAUN_AS42AudioProcessor proc;
+        juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+        proc.prepareToPlay(48000.0, 512);
+        setPlainParam(proc, "felt_tone", 0.81f);
+
+        // Simulate VST3 host window hierarchy: top-level DAW window -> native child wrapper HWND -> PluginEditor WS_CHILD HWND
+        juce::DocumentWindow dawRootWin("Mock DAW Root", juce::Colours::black, juce::DocumentWindow::allButtons, true);
+        dawRootWin.setUsingNativeTitleBar(true);
+        dawRootWin.setBounds(80, 80, 1260, 800);
+        dawRootWin.setVisible(true);
+
+        HWND rootHwnd = static_cast<HWND>(dawRootWin.getWindowHandle());
+        HWND wrapperHwnd = ::CreateWindowExW(
+            0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+            0, 0, 1240, 780, rootHwnd, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+        TEST_ASSERT(wrapperHwnd != nullptr, "Mock VST3 wrapper child HWND must be created");
+
+        std::unique_ptr<juce::AudioProcessorEditor> edOwner(proc.createEditor());
+        auto* ed = dynamic_cast<BRAUN_AS42AudioProcessorEditor*>(edOwner.get());
+        TEST_ASSERT(ed != nullptr, "Editor must construct");
+        ed->setNativeMode(false);
+        ed->setOpaque(true);
+        ed->setVisible(true);
+        ed->addToDesktop(0, wrapperHwnd); // Creates real WS_CHILD HWND inside wrapperHwnd (exact VST3 IPlugView::attached path!)
+
+        pumpWin32(120);
+        TEST_ASSERT(ed->isWebViewActuallyShowing(),
+                    "Embedded VST3 WS_CHILD editor must report isWebViewActuallyShowing() == true when visible");
+
+        // Hide intermediate DAW wrapper HWND via SW_HIDE (exact FL Studio / Reaper close behavior)
+        ::ShowWindow(wrapperHwnd, SW_HIDE);
+        pumpWin32(60);
+        TEST_ASSERT(!ed->isWebViewActuallyShowing(),
+                    "SW_HIDE on VST3 parent wrapper HWND MUST flip isWebViewActuallyShowing() to false");
+
+        ::ShowWindow(wrapperHwnd, SW_SHOW);
+        pumpWin32(60);
+        TEST_ASSERT(ed->isWebViewActuallyShowing(),
+                    "SW_SHOW on VST3 parent wrapper HWND MUST restore isWebViewActuallyShowing() to true");
+
+        // Minimize top-level DAW root window while child HWNDs remain SW_SHOWNORMAL
+        ::ShowWindow(rootHwnd, SW_MINIMIZE);
+        pumpWin32(80);
+        TEST_ASSERT(!ed->isWebViewActuallyShowing(),
+                    "Minimizing top-level DAW root HWND MUST flip child VST3 isWebViewActuallyShowing() to false");
+
+        ::ShowWindow(rootHwnd, SW_RESTORE);
+        pumpWin32(80);
+        TEST_ASSERT(ed->isWebViewActuallyShowing(),
+                    "Restoring top-level DAW root HWND MUST restore child VST3 isWebViewActuallyShowing() to true");
+        TEST_ASSERT(std::abs(getPlainParam(proc, "felt_tone") - 0.81f) < 0.015f,
+                    "VST3 child-HWND hide/minimize/restore cycle must preserve felt_tone");
+
+        ed->removeFromDesktop();
+        edOwner.reset();
+        ::DestroyWindow(wrapperHwnd);
+        dawRootWin.setVisible(false);
+    }
+#endif
 }
 
 } // namespace
@@ -990,6 +1211,7 @@ int main() {
     RUN_TEST(test_extreme_blocks_midi_noise_and_master_drive_dsp);
     RUN_TEST(test_vector_latch_custom_patch_native_theme_and_live_window_minimize);
     RUN_TEST(test_concurrent_state_recall_tail_guard_and_legacy_preset_isolation);
+    RUN_TEST(test_vst3_host_program_sync_idle_standby_drone_guard_and_child_hwnd_visibility);
 
     std::cout << "========================================================\n";
     std::cout << "Summary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";

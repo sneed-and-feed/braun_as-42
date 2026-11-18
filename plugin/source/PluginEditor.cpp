@@ -98,14 +98,24 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
     // - Disable background Chromium features that create unneeded threads / network queries
     // - Disable CalculateNativeWinOcclusion to eliminate global SetWinEventHook desktop dragging lag
     // - Allow natural background timer throttling, occluded window idling, and renderer backgrounding
-    _wputenv_s(
-        L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+    const wchar_t* const kBrowserArgs =
         L"--mute-audio "
         L"--disable-audio-output "
         L"--disable-web-midi "
         L"--disable-http-cache "
-        L"--disable-features=Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions,CalculateNativeWinOcclusion"
-    );
+        L"--disable-features=Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions,CalculateNativeWinOcclusion";
+    _wputenv_s(L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", kBrowserArgs);
+
+    // Scope UserDataFolder per host executable + browser-flag signature:
+    // - All instances inside the SAME DAW executable share a single WebView2 browser process.
+    // - Separate executables (e.g. BRAUN_AS42.exe Standalone running alongside a DAW) never collide
+    //   with ERROR_INVALID_STATE / legacy Win32WebView fallback.
+    const auto exeFile = juce::File::getSpecialLocation(juce::File::SpecialLocationType::currentExecutableFile);
+    const juce::String scopeSeed = exeFile.getFullPathName().toLowerCase() + "|" + juce::String(kBrowserArgs);
+    const juce::String hostFolderName = "host_" + juce::String::toHexString(scopeSeed.hashCode64());
+    const auto webViewDataDir = juce::File::getSpecialLocation(juce::File::SpecialLocationType::tempDirectory)
+        .getChildFile("BraunAS42_WebView2")
+        .getChildFile(hostFolderName);
 #endif
 
     auto options = juce::WebBrowserComponent::Options{}
@@ -113,7 +123,7 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
         .withBackend(juce::WebBrowserComponent::Options::Backend::webview2)
         .withWinWebView2Options(
             juce::WebBrowserComponent::Options::WinWebView2{}
-                .withUserDataFolder(juce::File::getSpecialLocation(juce::File::SpecialLocationType::tempDirectory).getChildFile("BraunAS42_WebView2"))
+                .withUserDataFolder(webViewDataDir)
                 .withBackgroundColour(juce::Colour(0xff121414)))
 #endif
         .withKeepPageLoadedWhenBrowserIsHidden()
@@ -215,6 +225,7 @@ BRAUN_AS42AudioProcessorEditor::BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioPr
 
 BRAUN_AS42AudioProcessorEditor::~BRAUN_AS42AudioProcessorEditor()
 {
+    flushPendingSubBassSnap();
     setLookAndFeel(nullptr);
     stopTimer();
     removeMouseListener(this);
@@ -312,28 +323,68 @@ void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
 #endif
 }
 
+bool BRAUN_AS42AudioProcessorEditor::isWebViewActuallyShowing() const noexcept
+{
+#if JUCE_WEB_BROWSER
+    if (useNativeUI || !webComponent.isVisible() || !webComponent.isShowing())
+        return false;
+
+    const auto* peer = webComponent.getPeer();
+    if (peer == nullptr || !peer->isShowing())
+        return false;
+
+#if JUCE_WINDOWS
+    const HWND hwnd = static_cast<HWND>(peer->getNativeHandle());
+    if (hwnd == nullptr || !::IsWindow(hwnd) || !::IsWindowVisible(hwnd) || ::IsIconic(hwnd))
+        return false;
+
+    // JUCE Component::isShowing() only checks GetWindowPlacement(childHwnd), which stays SW_SHOWNORMAL
+    // on a VST3 WS_CHILD window even when the host DAW wrapper frame is hidden (SW_HIDE) or the
+    // top-level DAW / floating frame (GA_ROOT) is minimized (IsIconic).
+    if (const HWND root = ::GetAncestor(hwnd, GA_ROOT))
+    {
+        if (!::IsWindowVisible(root) || ::IsIconic(root))
+            return false;
+    }
+#endif
+
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool BRAUN_AS42AudioProcessorEditor::flushPendingSubBassSnap()
+{
+    const int subReq = pendingSubBassSnap.exchange(-1, std::memory_order_relaxed);
+    if (subReq < 0)
+        return false;
+
+    if (subReq > 0)
+    {
+        processorRef.setUIExtendedProperty("drone1Snap", "sub-bass");
+        return true;
+    }
+    if (processorRef.getUIExtendedState().drone1Snap.equalsIgnoreCase("sub-bass"))
+    {
+        processorRef.setUIExtendedProperty("drone1Snap", "deep-tonic");
+        return true;
+    }
+    return false;
+}
+
 void BRAUN_AS42AudioProcessorEditor::parameterChanged(const juce::String& parameterID, float newValue)
 {
-    if (parameterID == "drone1_isSubBass")
-    {
-        if (newValue > 0.5f)
-        {
-            processorRef.setUIExtendedProperty("drone1Snap", "sub-bass");
-        }
-        else if (processorRef.getUIExtendedState().drone1Snap.equalsIgnoreCase("sub-bass"))
-        {
-            processorRef.setUIExtendedProperty("drone1Snap", "deep-tonic");
-        }
-    }
-
-    // Coalesce parameter changes into atomic array without calling MessageManager::callAsync
-    // to prevent flooding the Win32 message loop during rapid host automation.
+    // Strictly lock-free and allocation-free: parameterChanged() may be invoked directly on the
+    // real-time audio thread during VST3/AU host automation.
     for (size_t i = 0; i < std::size(kParamMap); ++i)
     {
         if (parameterID == kParamMap[i].apvtsId)
         {
             pendingParamValues[i].store(newValue, std::memory_order_relaxed);
             paramDirty[i].store(true, std::memory_order_relaxed);
+            if (parameterID == "drone1_isSubBass")
+                pendingSubBassSnap.store(newValue > 0.5f ? 1 : 0, std::memory_order_relaxed);
             break;
         }
     }
@@ -379,10 +430,14 @@ void BRAUN_AS42AudioProcessorEditor::sendParameterUpdateToWeb(const juce::String
 
 void BRAUN_AS42AudioProcessorEditor::timerCallback()
 {
+    [[maybe_unused]] const bool subBassSnapChanged = flushPendingSubBassSnap();
+    if (!processorRef.getPoweredOn())
+        ++nativeAuditionEpoch;
+
 #if JUCE_WEB_BROWSER
     if (!useNativeUI && webComponent.isVisible())
     {
-        const bool currentlyShowing = webComponent.isShowing();
+        const bool currentlyShowing = isWebViewActuallyShowing();
         if (!currentlyShowing)
         {
             wasWebShowing = false;
@@ -395,11 +450,11 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
             ensureHwndStyles();
         }
 
-        const bool justRestored = !wasWebShowing;
-        wasWebShowing = true;
-
         if (!webBridgeReady)
             return;
+
+        const bool justRestored = !wasWebShowing;
+        wasWebShowing = true;
 
         if (!initialSyncDone || justRestored || processorRef.consumeFullSyncRequested())
         {
@@ -407,6 +462,13 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
             initialSyncDone = true;
             for (size_t i = 0; i < std::size(kParamMap); ++i)
                 paramDirty[i].store(false, std::memory_order_relaxed);
+        }
+        else if (subBassSnapChanged)
+        {
+            auto* snapObj = new juce::DynamicObject();
+            snapObj->setProperty("id", "drone1Snap");
+            snapObj->setProperty("value", processorRef.getUIExtendedState().drone1Snap);
+            webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(snapObj));
         }
 
         if (processorRef.consumePowerStateDirty())
@@ -489,7 +551,7 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
 void BRAUN_AS42AudioProcessorEditor::sendScopeDataToWeb()
 {
 #if JUCE_WEB_BROWSER
-    if (!processorRef.getPoweredOn() || !webComponent.isShowing())
+    if (!processorRef.getPoweredOn() || !isWebViewActuallyShowing())
         return;
 
     constexpr int kSamples = 512;
@@ -751,13 +813,10 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
     // Handle state sync request from WebView2
     if (incomingId.equalsIgnoreCase("requestSync") || incomingId.equalsIgnoreCase("requestState"))
     {
+        flushPendingSubBassSnap();
         webBridgeReady = true;
         initialSyncDone = true;
-#if JUCE_WEB_BROWSER
-        wasWebShowing = webComponent.isShowing();
-#else
-        wasWebShowing = false;
-#endif
+        wasWebShowing = isWebViewActuallyShowing();
         processorRef.consumeFullSyncRequested();
         syncAllParametersToWeb();
         return;
@@ -1195,8 +1254,9 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
         obj->setProperty("nativeMode", false);
         webComponent.emitEventIfBrowserIsVisible("nativeModeChange", juce::var(obj));
 
+        flushPendingSubBassSnap();
         wasWebShowing = false;
-        if (webBridgeReady && webComponent.isShowing())
+        if (webBridgeReady && isWebViewActuallyShowing())
         {
             processorRef.consumeFullSyncRequested();
             syncAllParametersToWeb();
@@ -1226,6 +1286,7 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
         const bool nextPwr = !processorRef.getPoweredOn();
         if (!nextPwr)
         {
+            ++nativeAuditionEpoch;
             if (processorRef.isRecording())
             {
                 processorRef.stopRecording();
@@ -1329,13 +1390,14 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
     chordTriggerBtn.setButtonText("AMBIENT CHORD");
     chordTriggerBtn.onClick = [this] {
         if (!processorRef.getPoweredOn()) processorRef.setPoweredOn(true);
+        const uint32_t epoch = nativeAuditionEpoch;
         processorRef.pushUINoteOn(60, 0.70f);
         processorRef.pushUINoteOn(64, 0.65f);
         processorRef.pushUINoteOn(67, 0.65f);
         processorRef.pushUINoteOn(71, 0.60f);
         juce::Component::SafePointer<BRAUN_AS42AudioProcessorEditor> safeThis(this);
-        juce::Timer::callAfterDelay(650, [safeThis] {
-            if (safeThis != nullptr)
+        juce::Timer::callAfterDelay(650, [safeThis, epoch] {
+            if (safeThis != nullptr && safeThis->nativeAuditionEpoch == epoch && safeThis->processorRef.getPoweredOn())
             {
                 safeThis->processorRef.pushUINoteOff(60);
                 safeThis->processorRef.pushUINoteOff(64);
@@ -1349,10 +1411,11 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
     impulseTriggerBtn.setButtonText("DIRAC IMPULSE");
     impulseTriggerBtn.onClick = [this] {
         if (!processorRef.getPoweredOn()) processorRef.setPoweredOn(true);
+        const uint32_t epoch = nativeAuditionEpoch;
         processorRef.pushUINoteOn(60, 1.0f);
         juce::Component::SafePointer<BRAUN_AS42AudioProcessorEditor> safeThis(this);
-        juce::Timer::callAfterDelay(150, [safeThis] {
-            if (safeThis != nullptr)
+        juce::Timer::callAfterDelay(150, [safeThis, epoch] {
+            if (safeThis != nullptr && safeThis->nativeAuditionEpoch == epoch && safeThis->processorRef.getPoweredOn())
                 safeThis->processorRef.pushUINoteOff(60);
         });
     };

@@ -40,19 +40,19 @@ public:
     juce::AudioProcessorValueTreeState& getAPVTS() noexcept { return apvts; }
     braun::DspEngine& getDspEngine() noexcept { return dspEngine; }
 
-    void setPoweredOn(bool on) noexcept;
+    void setPoweredOn(bool on, bool notifyHost = true) noexcept;
     bool getPoweredOn() const noexcept;
     bool consumePowerStateDirty() noexcept;
 
-    void setDrone1Active(bool active) noexcept;
+    void setDrone1Active(bool active, bool notifyHost = true) noexcept;
     bool getDrone1Active() const noexcept;
     bool consumeDrone1StateDirty() noexcept;
 
-    void setDrone2Active(bool active) noexcept;
+    void setDrone2Active(bool active, bool notifyHost = true) noexcept;
     bool getDrone2Active() const noexcept;
     bool consumeDrone2StateDirty() noexcept;
 
-    void setDroneTrackMidi(bool track) noexcept;
+    void setDroneTrackMidi(bool track, bool notifyHost = true) noexcept;
     bool getDroneTrackMidi() const noexcept;
     bool consumeDroneTrackMidiDirty() noexcept;
 
@@ -81,7 +81,7 @@ public:
     };
 
     UIExtendedState getUIExtendedState() const;
-    void setUIExtendedProperty(const juce::String& key, const juce::var& value);
+    void setUIExtendedProperty(const juce::String& key, const juce::var& value, bool notifyHost = true);
 
     // Lock-free UI MIDI Event injection (for onscreen play surface, macros, chords, and keyboard shortcuts)
     void pushUINoteOn(int noteNumber, float velocity) noexcept;
@@ -194,9 +194,11 @@ private:
     // 6. Master Bus
     std::atomic<float>* paramMasterVolume { nullptr };
 
+    void notifyHostStateChanged(bool programChanged, bool nonParamChanged) noexcept;
+
     std::atomic<int> scopeWritePos { 0 };
-    float scopeBufferL[kScopeBufferSize] {};
-    float scopeBufferR[kScopeBufferSize] {};
+    std::atomic<float> scopeBufferL[kScopeBufferSize] {};
+    std::atomic<float> scopeBufferR[kScopeBufferSize] {};
 
     // Lock-free background WAV recorder
     juce::TimeSliceThread recorderThread { "Braun AS-42 WAV Recorder Thread" };

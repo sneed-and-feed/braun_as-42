@@ -4,7 +4,7 @@
 [![macOS AU & VST3](https://img.shields.io/badge/macOS-AU%20%7C%20VST3%20%7C%20Standalone-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.5.1/BRAUN_AS42-v1.5.1-macOS-Universal.zip)
 [![Windows VST3](https://img.shields.io/badge/Windows-VST3%20%7C%20Standalone-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sneed-and-feed/braun_as-42/releases/download/v1.5.1/BRAUN_AS42-v1.5.1-Windows-x64.zip)
 [![Linux VST3](https://img.shields.io/badge/Linux-VST3%20%7C%20Standalone-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#native-plugins--downloads)
-[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(600%2F600)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
+[![Verification Checklist](https://img.shields.io/badge/Verification-100%25%20PASS%20(602%2F602)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](VERIFICATION_CHECKLIST.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
 
 > **Legal Homage Notice:** Not affiliated with Braun GmbH. Dieter Rams inspired design homage. Published by Sneed's Feed & Seed Ltd.  
@@ -90,7 +90,7 @@ The AS 42 unites three complementary ambient acoustics into a tactile, foolproof
 
 * 🏛️ [**ARCHITECTURE.md**](ARCHITECTURE.md) — Comprehensive technical datasheet: physical modeling mechanics, Zavalishin biquad cascades, FDN shimmer matrix, and full 38-parameter APVTS mapping.
 * 📋 [**CHANGELOG.md**](CHANGELOG.md) — Detailed engineering changelog from v1.3.0 through v1.5.1 modernizations.
-* 🔬 [**VERIFICATION_CHECKLIST.md**](VERIFICATION_CHECKLIST.md) — Certified test harness report (600 PASS: 522 Web Audio, UI & MIDI tests + 78 C++ real-time DSP & lifecycle tests, plus 64 asset/checklist probes, 0 memory leaks, 0 denormals).
+* 🔬 [**VERIFICATION_CHECKLIST.md**](VERIFICATION_CHECKLIST.md) — Certified test harness report (602 PASS: 523 Web Audio, UI & MIDI tests + 79 C++ real-time DSP & lifecycle tests, plus 64 asset/checklist probes, 0 memory leaks, 0 denormals).
 
 ---
 

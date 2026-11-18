@@ -21,6 +21,7 @@ function setupMockJuceDom({ storageEntries = {} } = {}) {
   const makeEl = (id, tag = 'div') => {
     const classes = new Set();
     const children = [];
+    const elListeners = new Map();
     const el = {
       id,
       tagName: tag.toUpperCase(),
@@ -29,6 +30,7 @@ function setupMockJuceDom({ storageEntries = {} } = {}) {
       style: {},
       dataset: {},
       children,
+      _listeners: elListeners,
       classList: {
         add: (...c) => c.forEach(x => classes.add(x)),
         remove: (...c) => c.forEach(x => classes.delete(x)),
@@ -40,7 +42,10 @@ function setupMockJuceDom({ storageEntries = {} } = {}) {
         },
         contains: (c) => classes.has(c)
       },
-      addEventListener: () => {},
+      addEventListener: (evt, cb) => {
+        if (!elListeners.has(evt)) elListeners.set(evt, []);
+        elListeners.get(evt).push(cb);
+      },
       removeEventListener: () => {},
       appendChild: (child) => { children.push(child); return child; },
       querySelector: (sel) => {
@@ -653,5 +658,114 @@ describe('Standalone WebView2 Startup Drone Disarm, Minimize/Reopen & Power-Off 
     resolveInit();
     await startP;
     assert.strictEqual(app.isPowerOn, false, 'Cancelled in-flight startAudio() must not flip isPowerOn back to true');
+  });
+
+  it('suspends cold-boot AudioContext on mid-resume powerOff, guards window.blur DAW notes, and drops stale generative noteOff timers', async () => {
+    const windowListeners = new Map();
+    const { elementsById, emittedToNative } = setupMockJuceDom();
+    const origAddWinListener = globalThis.window.addEventListener;
+    globalThis.window.addEventListener = (evt, cb) => {
+      if (!windowListeners.has(evt)) windowListeners.set(evt, []);
+      windowListeners.get(evt).push(cb);
+      if (typeof origAddWinListener === 'function') origAddWinListener(evt, cb);
+    };
+
+    const { AmbientApp } = await import('../js/app.js');
+    const { AudioEngine } = await import('../js/audio/engine.js');
+
+    // 1. Real AudioEngine.powerOff() called while _initPromise (ctx.resume) is pending MUST await _initPromise and suspend ctx!
+    const rawEngine = new AudioEngine();
+    let suspendCount = 0;
+    let resolveResume;
+    const mockGainNode = () => ({
+      gain: {
+        value: 0.8,
+        setValueAtTime(v) { this.value = v; },
+        setTargetAtTime(v) { this.value = v; },
+        linearRampToValueAtTime(v) { this.value = v; },
+        cancelScheduledValues() {},
+        cancelAndHoldAtTime() {}
+      }
+    });
+    rawEngine.ctx = {
+      state: 'suspended',
+      currentTime: 0,
+      suspend: async () => {
+        suspendCount += 1;
+        rawEngine.ctx.state = 'suspended';
+      }
+    };
+    rawEngine.masterGain = mockGainNode();
+    rawEngine.droneBus = mockGainNode();
+    rawEngine._initPromise = new Promise(resolve => {
+      resolveResume = () => {
+        rawEngine.ctx.state = 'running';
+        rawEngine.masterGain.gain.value = 0.8;
+        rawEngine.droneBus.gain.value = 0.75;
+        resolve();
+      };
+    });
+
+    const powerOffTask = rawEngine.powerOff();
+    // Complete pending ctx.resume() AFTER powerOff() was invoked
+    resolveResume();
+    await powerOffTask;
+    rawEngine._initPromise = null;
+
+    assert.strictEqual(suspendCount, 1, 'powerOff() invoked during pending _initPromise MUST suspend AudioContext once resume resolves');
+    assert.strictEqual(rawEngine.ctx.state, 'suspended', 'AudioContext must end in suspended Standby');
+    assert.strictEqual(rawEngine.masterGain.gain.value, 0.0, 'masterGain must be ramped to 0.0');
+
+    // 2. window.blur with ZERO active UI keys/chords/touches MUST NOT emit allNotesOff (protects DAW MIDI clips),
+    //    whereas window.blur / cancelAllActive() with an active held UI key MUST release engine._heldNotes & emit noteOff!
+    const app = new AmbientApp();
+    emittedToNative.length = 0;
+    for (const cb of (windowListeners.get('blur') || [])) {
+      cb();
+    }
+    assert.strictEqual(emittedToNative.some(e => e.eventName === 'allNotesOff'), false,
+      'window.blur with no held UI keys must NOT kill DAW MIDI notes via allNotesOff');
+
+    const mockKeyEl = {
+      _isHeld: true,
+      classList: { remove() {} },
+      getAttribute: (attr) => (attr === 'data-midi' ? '60' : null)
+    };
+    app.engine._heldNotes.add(60);
+    app.playSurface.activeHeldKeys.set('KeyA', { keyEl: mockKeyEl, voiceOrPromise: null });
+    app.playSurface.cancelAllActive();
+    assert.strictEqual(app.engine._heldNotes.has(60), false,
+      'cancelAllActive() must call engine.noteOff(midi) so MIDI-tracked drones never stick');
+    assert.ok(emittedToNative.some(e => e.eventName === 'noteOff' && e.payload.note === 60),
+      'cancelAllActive() must emit noteOff for held keyboard shortcut keys');
+
+    // 3. Stale Poisson noteOff timer scheduled before Power Off MUST NOT fire after re-powering!
+    await app.startAudio({ emitToNative: false });
+    let capturedPoissonCb = null;
+    app.engine.poisson.isRunning = false;
+    app.engine.poisson.start = (cb) => {
+      app.engine.poisson.isRunning = true;
+      capturedPoissonCb = cb;
+    };
+    app.engine.poisson.stop = () => {
+      app.engine.poisson.isRunning = false;
+    };
+
+    const autoEvolveBtn = elementsById.get('toggle-auto-evolve');
+    for (const fn of (autoEvolveBtn._listeners.get('click') || [])) {
+      await fn();
+    }
+    assert.strictEqual(typeof capturedPoissonCb, 'function');
+
+    // Trigger a short 0.04s generative note, then immediately Power Off and Power back On!
+    capturedPoissonCb({ midi: 64, velocity: 0.7, duration: 0.04 });
+    await app.togglePower({ emitToNative: false });
+    await app.togglePower({ emitToNative: false });
+    assert.strictEqual(app.isPowerOn, true);
+
+    emittedToNative.length = 0;
+    await new Promise(r => setTimeout(r, 75));
+    assert.strictEqual(emittedToNative.some(e => e.eventName === 'noteOff' && e.payload.note === 64), false,
+      'Stale pre-power-off Poisson noteOff timer must be ignored after power cycle');
   });
 });

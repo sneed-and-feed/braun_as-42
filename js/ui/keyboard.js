@@ -1084,6 +1084,18 @@ export class BraunPlaySurface {
         if (keyEl) {
           keyEl._isHeld = false;
           keyEl.classList.remove('is-active', 'is-pressed');
+          const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
+          if (!isNaN(midi)) {
+            if (this.engine && typeof this.engine.noteOff === 'function') {
+              this.engine.noteOff(midi);
+            }
+            try {
+              const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+              if (backend && typeof backend.emitEvent === 'function') {
+                backend.emitEvent('noteOff', { note: midi, velocity: 0 });
+              }
+            } catch (err) {}
+          }
         }
         if (voiceOrPromise) {
           if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
@@ -1303,11 +1315,32 @@ export class BraunPlaySurface {
     });
 
     window.addEventListener('blur', () => {
+      const hadActiveUIInput =
+        this.activeHeldKeys.size > 0 ||
+        this.activeHeldChords.size > 0 ||
+        this.activeTouches.size > 0 ||
+        this.activeChordTouches.size > 0 ||
+        this.activePointerVoices.size > 0 ||
+        this.activePointerChordSessions.size > 0 ||
+        Boolean(this._isPointerGlissandoActive);
+
       this.activeHeldKeys.forEach(({ keyEl, voiceOrPromise }) => {
         if (keyEl) {
           keyEl._isHeld = false;
           keyEl.classList.remove('is-active');
           keyEl.classList.remove('is-pressed');
+          const midi = parseInt(keyEl.getAttribute('data-midi'), 10);
+          if (!isNaN(midi)) {
+            if (this.engine && typeof this.engine.noteOff === 'function') {
+              this.engine.noteOff(midi);
+            }
+            try {
+              const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+              if (backend && typeof backend.emitEvent === 'function') {
+                backend.emitEvent('noteOff', { note: midi, velocity: 0 });
+              }
+            } catch (err) {}
+          }
         }
         if (voiceOrPromise) {
           if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
@@ -1315,6 +1348,20 @@ export class BraunPlaySurface {
         }
       });
       this.activeHeldKeys.clear();
+
+      this.activeTouches.forEach(({ midi }) => {
+        if (typeof midi === 'number' && !isNaN(midi)) {
+          if (this.engine && typeof this.engine.noteOff === 'function') {
+            this.engine.noteOff(midi);
+          }
+          try {
+            const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+            if (backend && typeof backend.emitEvent === 'function') {
+              backend.emitEvent('noteOff', { note: midi, velocity: 0 });
+            }
+          } catch (err) {}
+        }
+      });
 
       this.activeHeldChords.forEach(({ btn, session }) => {
         if (btn) {
@@ -1325,12 +1372,14 @@ export class BraunPlaySurface {
       });
       this.activeHeldChords.clear();
 
-      try {
-        const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
-        if (backend && typeof backend.emitEvent === 'function') {
-          backend.emitEvent('allNotesOff', {});
-        }
-      } catch (err) {}
+      if (hadActiveUIInput) {
+        try {
+          const backend = (typeof window !== 'undefined') ? window.__JUCE__?.backend : null;
+          if (backend && typeof backend.emitEvent === 'function') {
+            backend.emitEvent('allNotesOff', {});
+          }
+        } catch (err) {}
+      }
 
       this.keyElements.forEach(keyEl => {
         keyEl._isHeld = false;

@@ -675,12 +675,15 @@ export class AmbientApp {
 
         if (!this.engine.poisson.isRunning) {
           this.engine.poisson.start((ev) => {
+            if (!this.isPowerOn) return;
+            const triggerEpoch = this._powerEpoch || 0;
             if (this.engine) {
               this.engine.noteOn(ev.midi, ev.velocity, ev.duration);
             }
             this._emitJuceNoteOn(ev.midi, ev.velocity);
             const noteDuration = (ev.duration || 3.5) * 1000;
             setTimeout(() => {
+              if ((this._powerEpoch || 0) !== triggerEpoch || !this.isPowerOn) return;
               if (this.engine) {
                 this.engine.noteOff(ev.midi);
               }
@@ -713,12 +716,15 @@ export class AmbientApp {
         if (!this.engine.phaseLoops.isRunning) {
           this.engine.phaseLoops.start(
             (loop, ev) => {
+              if (!this.isPowerOn) return;
+              const triggerEpoch = this._powerEpoch || 0;
               if (this.engine) {
                 this.engine.noteOn(ev.midi, ev.velocity, ev.duration);
               }
               this._emitJuceNoteOn(ev.midi, ev.velocity);
               const noteDuration = (ev.duration || 3.5) * 1000;
               setTimeout(() => {
+                if ((this._powerEpoch || 0) !== triggerEpoch || !this.isPowerOn) return;
                 if (this.engine) {
                   this.engine.noteOff(ev.midi);
                 }
@@ -1891,6 +1897,9 @@ export class AmbientApp {
           await this.engine.init();
         }
         if (this._powerEpoch !== startEpoch) {
+          if (!this.isJuce && this.engine && typeof this.engine.powerOff === 'function') {
+            await this.engine.powerOff();
+          }
           return;
         }
         this.isPowerOn = true;
@@ -1966,6 +1975,7 @@ export class AmbientApp {
       // Immediately update power button UI
       if (powerBtn) {
         powerBtn.classList.remove('is-active');
+        powerBtn.querySelector?.('.braun-led')?.classList?.remove('is-active');
         const textEl = powerBtn.querySelector('.braun-status-text');
         if (textEl) textEl.textContent = 'POWER ON';
       }
@@ -2015,16 +2025,18 @@ export class AmbientApp {
         this.engine.poisson.stop();
         if (autoEvolveBtn) {
           autoEvolveBtn.classList.remove('is-active');
+          autoEvolveBtn.querySelector?.('.braun-led')?.classList?.remove('is-active');
           const textEl = autoEvolveBtn.querySelector('.braun-status-text');
-          if (textEl) textEl.textContent = 'EVOLVE OFF';
+          if (textEl) textEl.textContent = 'AUTO EVOLVE OFF';
         }
       }
       if (this.engine && this.engine.phaseLoops && this.engine.phaseLoops.isRunning) {
         this.engine.phaseLoops.stop();
         if (loopsBtn) {
           loopsBtn.classList.remove('is-active');
+          loopsBtn.querySelector?.('.braun-led')?.classList?.remove('is-active');
           const textEl = loopsBtn.querySelector('.braun-status-text');
-          if (textEl) textEl.textContent = 'LOOPS OFF';
+          if (textEl) textEl.textContent = 'AIRPORTS LOOPS OFF';
         }
         // Reset loop progress meters to zero via cached DOM references
         this.engine.phaseLoops.loops.forEach(l => {
@@ -2056,7 +2068,7 @@ export class AmbientApp {
       }
       this._emitJuceAllNotesOff();
 
-      if (!this.isJuce && this.engine.ctx) {
+      if (!this.isJuce && this.engine && (this.engine.ctx || this.engine._initPromise)) {
         try {
           if (typeof this.engine.powerOff === 'function') {
             await this.engine.powerOff();

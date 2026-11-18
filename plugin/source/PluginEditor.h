@@ -31,6 +31,7 @@ public:
     // Native vs WebView GUI switching
     bool isNativeModeActive() const noexcept { return useNativeUI; }
     bool isWebBridgeReady() const noexcept { return webBridgeReady; }
+    bool isWebViewActuallyShowing() const noexcept;
     bool isDarkThemeActive() const noexcept { return braunLookAndFeel.isDarkTheme(); }
     void setNativeMode(bool native);
 
@@ -77,6 +78,9 @@ private:
     // Lock-free parameter change coalescing to avoid flooding Win32 message loop
     std::atomic<float> pendingParamValues[kNumTrackedParams] {};
     std::atomic<bool> paramDirty[kNumTrackedParams] {};
+    std::atomic<int> pendingSubBassSnap { -1 };
+    uint32_t nativeAuditionEpoch { 0 };
+    bool flushPendingSubBassSnap();
 
     bool hwndStylesConfigured { false };
     int hwndCheckCounter { 0 };

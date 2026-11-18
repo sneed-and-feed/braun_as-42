@@ -92,7 +92,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         drone1_pitch, "Drone 1 Pitch",
-        juce::NormalisableRange<float>(20.0f, 400.0f, 0.1f), 65.41f));
+        juce::NormalisableRange<float>(20.0f, 1000.0f, 0.01f), 65.41f));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         drone1_fold, "Drone 1 Wavefold",
@@ -137,7 +137,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         drone2_pitch, "Drone 2 Pitch",
-        juce::NormalisableRange<float>(20.0f, 400.0f, 0.1f), 98.00f));
+        juce::NormalisableRange<float>(20.0f, 1000.0f, 0.01f), 98.00f));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         drone2_fold, "Drone 2 Wavefold",
