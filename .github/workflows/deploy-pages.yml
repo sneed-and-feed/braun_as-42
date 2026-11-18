@@ -10,7 +10,6 @@ on:
       - 'manifest.json'
       - 'css/**'
       - 'js/**'
-      - 'images/**'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
@@ -41,7 +40,7 @@ jobs:
       - name: Prepare Web Site Artifacts
         run: |
           mkdir -p _site
-          cp -r index.html manifest.json css js images _site/
+          cp -r index.html manifest.json css js _site/
           touch _site/.nojekyll
 
       - name: Upload Pages Artifact
@@ -61,7 +60,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git clone "https://x-access-token:${DEPLOY_TOKEN}@github.com/sneed-and-feed/sneed-and-feed.github.io.git" sneed-io
-          cp -r index.html manifest.json css js images sneed-io/
+          cp -r index.html manifest.json css js sneed-io/
           touch sneed-io/.nojekyll
           cd sneed-io
           git add -A
