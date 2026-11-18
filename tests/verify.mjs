@@ -1,6 +1,6 @@
 /**
  * @file tests/verify.mjs
- * @brief Master verification suite for BRAUN AS-42 (v1.5.0)
+ * @brief Master verification suite for BRAUN AS-42 (v1.5.1)
  */
 
 import { spawnSync } from 'node:child_process';
@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 console.log('================================================================');
-console.log('  BRAUN AS-42 · MASTER VERIFICATION RUNNER (v1.5.0)             ');
+console.log('  BRAUN AS-42 · MASTER VERIFICATION RUNNER (v1.5.1)             ');
 console.log('================================================================\n');
 
 let totalTests = 0;

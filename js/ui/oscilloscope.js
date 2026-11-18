@@ -125,7 +125,9 @@ export class BraunOscilloscope {
     const h = rect.height || this.canvas.clientHeight || 180;
     this.canvas.width = Math.floor(w * dpr);
     this.canvas.height = Math.floor(h * dpr);
-    if (this.ctx.scale) {
+    if (typeof this.ctx.setTransform === 'function') {
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    } else if (this.ctx.scale) {
       this.ctx.scale(dpr, dpr);
     }
     this.width = w;

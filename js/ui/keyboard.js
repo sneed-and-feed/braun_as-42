@@ -121,6 +121,8 @@ export class BraunPlaySurface {
     this.activeChordTouches = new Map(); // pointerId/touchId -> { pointerId, btn, session, voicingId, releaseFn }
     this.activePointerVoices = new Set();
     this.activePointerChordSessions = new Set();
+    this.allChordSessions = new Set();
+    this.onChordSpeedChange = null;
     this._isPointerGlissandoActive = false;
     this._currentGlissandoKey = null;
     this._currentGlissandoVoice = null;
@@ -356,7 +358,7 @@ export class BraunPlaySurface {
         if (e && e.preventDefault) e.preventDefault();
         const speed = btn.getAttribute('data-speed');
         if (speed) {
-          this.setChordSpeed(speed);
+          this.setChordSpeed(speed, true);
         }
         if (typeof btn.blur === 'function') btn.blur();
       });
@@ -369,10 +371,13 @@ export class BraunPlaySurface {
    * Set chord cluster trigger speed: 'slow', 'med', 'fast', or 'instant'
    * @param {string} speed
    */
-  setChordSpeed(speed) {
+  setChordSpeed(speed, notify = false) {
     const valid = CHORD_SPEEDS[speed] ? speed : 'med';
     this.chordSpeed = valid;
     this._updateSpeedButtonsUI();
+    if (notify && typeof this.onChordSpeedChange === 'function') {
+      this.onChordSpeedChange(valid);
+    }
   }
 
   _updateSpeedButtonsUI() {
@@ -951,6 +956,7 @@ export class BraunPlaySurface {
       timers: [],
       midiNotes: []
     };
+    this.allChordSessions.add(session);
 
     const triggerChordVoice = (freq, vel, midi) => {
       this.flashKey(midi);
@@ -1008,7 +1014,7 @@ export class BraunPlaySurface {
       const delayMs = isInstant ? 0 : (baseDelay + jitter);
 
       const timerId = setTimeout(() => {
-        if (session.isReleased && isHold) {
+        if (session.isReleased) {
           return;
         }
         // For slow strum, slightly soften the initial attack velocity so it blooms gently over drone beds
@@ -1026,6 +1032,9 @@ export class BraunPlaySurface {
   stopChordSession(session) {
     if (!session || session.isReleased) return;
     session.isReleased = true;
+    if (this.allChordSessions) {
+      this.allChordSessions.delete(session);
+    }
     session.timers.forEach(t => clearTimeout(t));
     session.timers = [];
     session.voices.forEach(voice => {
@@ -1055,6 +1064,44 @@ export class BraunPlaySurface {
    */
   async playChord(voicingId) {
     return this.startChord(voicingId, false);
+  }
+
+  cancelAllActive() {
+    if (this.allChordSessions) {
+      Array.from(this.allChordSessions).forEach(s => this.stopChordSession(s));
+      this.allChordSessions.clear();
+    }
+    if (this.activeTouches) {
+      Array.from(this.activeTouches.keys()).forEach(pid => this._releasePointerKey(pid));
+      this.activeTouches.clear();
+    }
+    if (this.activeChordTouches) {
+      Array.from(this.activeChordTouches.keys()).forEach(pid => this._releasePointerChord(pid));
+      this.activeChordTouches.clear();
+    }
+    if (this.activeHeldKeys) {
+      this.activeHeldKeys.forEach(({ keyEl, voiceOrPromise }) => {
+        if (keyEl) {
+          keyEl._isHeld = false;
+          keyEl.classList.remove('is-active', 'is-pressed');
+        }
+        if (voiceOrPromise) {
+          if (typeof voiceOrPromise.release === 'function') voiceOrPromise.release();
+          else if (typeof voiceOrPromise.then === 'function') voiceOrPromise.then(v => v?.release?.());
+        }
+      });
+      this.activeHeldKeys.clear();
+    }
+    if (this.activeHeldChords) {
+      this.activeHeldChords.forEach(({ btn, session }) => {
+        if (btn) {
+          btn._isHeld = false;
+          btn.classList.remove('is-active');
+        }
+        if (session) this.stopChordSession(session);
+      });
+      this.activeHeldChords.clear();
+    }
   }
 
   _attachKeyboardShortcuts() {

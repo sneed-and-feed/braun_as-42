@@ -1,6 +1,6 @@
 # BRAUN AS 42 · DSP Architecture & Engineering Specification
 
-> **Document Version:** 1.5.0  
+> **Document Version:** 1.5.1  
 > **Engineering Reference Manual:** Physical modeling synthesis, continuous tape flutter, Zavalishin filter topologies, modernized shimmer reverb matrix, Standalone/DAW lifecycle state machine, and complete 38-parameter APVTS reference.  
 > **Homage Notice:** Not affiliated with Braun GmbH. Dieter Rams inspired design homage. Published by Sneed's Feed & Seed Ltd.
 
@@ -51,14 +51,15 @@ The BRAUN AS 42 ambient generative synthesizer integrates physical modeling felt
 ### Latency Profile, Dynamic Tail Reporting & Pre-Delay Calibration
 * **Dry Instrument Path (0 Samples Latency):** The direct synthesis path (felt piano, chimes, and microtonal twin drones) operates with **strictly 0 samples algorithmic latency**. Instantaneous keypress and MIDI response occurs within standard soundcard hardware buffer boundaries (< 5 ms typical at 128/256 sample buffer sizes).
 * **Wet Reverb Pre-Delays:** The auxiliary shimmer reverberation path incorporates **intentional acoustic pre-delays (5.3 ms, 7.9 ms, and 11 ms)** across FDN input injection taps. These pre-delays model natural acoustic wavefront propagation from soundboard boundary walls before early reflections and diffuse reverberant bloom develop, maintaining crystalline attack clarity on felt piano hammer strikes without transient masking.
-* **Dynamic Host Tail Length (`getTailLengthSeconds`):** Reports `0.0 s` in Standby, `infinity` whenever Drone 1, Drone 2, or Shimmer Freeze is engaged (preventing aggressive VST3/AU hosts from auto-suspending `processBlock` on idle MIDI tracks), and the combined `shimmer_decay + tape_delay` acoustic ring-out horizon otherwise.
+* **Dynamic Host Tail Length (`getTailLengthSeconds`):** Reports `0.05 s` while the 45 ms $C^1$ Hermite power-off fade is actively ramping down and `0.0 s` once `dspSilent` reaches silence in Standby, `infinity` whenever Drone 1, Drone 2, or Shimmer Freeze is engaged while powered on (preventing aggressive VST3/AU hosts from auto-suspending `processBlock` on idle MIDI tracks), and the combined `shimmer_decay + tape_delay` acoustic ring-out horizon otherwise.
 
 ### Oversampling & Ultra-High Sample Rate Architecture
 * **Web Audio Implementation (4x Polyphase Oversampling):** In client-side Web Audio (`js/audio/wavefolder.js`), wavefolding and nonlinear soft-knee saturation utilize a 4x oversampled polyphase FIR half-band filter bank to eliminate Nyquist foldover distortion within the browser's dynamic audio graph.
 * **Native C++ Engine (1x Native Sample Rate, 44.1 kHz – 384 kHz+):** In the native C++20 engine (`plugin/source/dsp/`), the wavefolder is mathematically optimized via the triple-angle identity $\sin(3\theta) = \sin\theta(3 - 4\sin^2\theta)$, providing bit-exact $C^1$ smoothness running at native sample rate without oversampling latency or phase ringing. The 8-line FDN tank dynamically scales its power-of-two buffer capacity (`mFdnCapacity`, `mFdnMask`) to prevent delay-line wraparound at 192 kHz and 384 kHz+.
 
-### Wrapper-Aware Startup State Machine (`Standalone` vs `VST3`/`AU`)
-* **Standalone Desktop Guard (`wrapperType_Standalone`):** JUCE's `StandalonePluginHolder` automatically serializes plugin state on window close and reloads it on the next cold launch prior to `createEditor()`. In `v1.5.0`, `BRAUN_AS42AudioProcessor` detects this initial Standalone reload, restoring all 38 user parameter calibrations, waveform choices, `currentProgram`, and `droneTrackMidi` while explicitly disarming `drone1Active = false`, `drone2Active = false`, `shimmer_freeze = false`, and `isPoweredOn = false` (Standby).
+### Wrapper-Aware Startup, Minimize/Reopen & Power State Machine (`Standalone` vs `VST3`/`AU`)
+* **Standalone Desktop Guard (`wrapperType_Standalone`):** JUCE's `StandalonePluginHolder` automatically serializes plugin state on window close and reloads it on the next cold launch prior to `createEditor()`. In `v1.5.1`, `BRAUN_AS42AudioProcessor` detects this initial Standalone reload, restoring all 38 user parameter calibrations, waveform choices, `currentProgram`, `UIExtendedState`, and `droneTrackMidi` while explicitly disarming `drone1Active = false`, `drone2Active = false`, `shimmer_freeze = false`, and `isPoweredOn = false` (Standby).
+* **Click-Free Hermite Power Ramp & Minimize/Reopen Persistence:** `WebBrowserComponent` keeps the page loaded when hidden (`withKeepPageLoadedWhenBrowserIsHidden`), cold-DOM boot applies `PRESETS.DEFAULT` with `{ emitToNative: false }`, and all 16 non-APVTS extended UI settings persist in `UIExtendedState`. Power transitions use a 45 ms $C^1$ Hermite fade-out $(g(p) = p^2(3 - 2p))$ and 15 ms fade-in with deferred `dspEngine.reset()` at zero silence and rising-edge-only drone auto-wake.
 * **DAW Project Recall (`wrapperType_VST3` / `wrapperType_AudioUnit`):** Host project chunks restore active drones, freeze latch, and power states transparently so automated ambient stems render identically on session reload and offline bounce.
 
 ---

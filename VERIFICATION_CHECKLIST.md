@@ -1,12 +1,12 @@
 # BRAUN AS 42 · Reproducible Verification Checklist & DSP Benchmark Report
 
-[![Verification Status](https://img.shields.io/badge/Verification-100%25%20PASS%20(592%2F592)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#verification-summary)
-[![Tests Passing](https://img.shields.io/badge/Tests-519%2F519%20PASS-success?style=for-the-badge&logo=node.js&logoColor=white)](#1-test-suite-coverage--verification-matrix)
+[![Verification Status](https://img.shields.io/badge/Verification-100%25%20PASS%20(600%2F600)-brightgreen?style=for-the-badge&logo=checkmarx&logoColor=white)](#verification-summary)
+[![Tests Passing](https://img.shields.io/badge/Tests-522%2F522%20PASS-success?style=for-the-badge&logo=node.js&logoColor=white)](#1-test-suite-coverage--verification-matrix)
 [![Sample Rates](https://img.shields.io/badge/Sample%20Rates-44.1k%20--%20384k%20Hz-blue?style=for-the-badge)](#2-audio-engineering--dsp-specifications)
 [![Latency](https://img.shields.io/badge/Algorithmic%20Latency-0%20Samples-orange?style=for-the-badge)](#latency-profile)
 [![License](https://img.shields.io/badge/License-MIT-4A4A4A?style=for-the-badge)](LICENSE)
 
-> **Document Version:** 1.5.0  
+> **Document Version:** 1.5.1  
 > **Status:** Verified & Certified  
 > **Engine:** Dual Web Audio API & Native C++20 DSP (AUv2 / VST3 / Standalone)  
 > **Aesthetic & Engineering Standard:** Dieter Rams Functionalist Audio Architecture (*"Weniger, aber besser"*)
@@ -17,8 +17,8 @@
 
 | Metric | Certified Result | Target Threshold | Status |
 | :--- | :--- | :--- | :--- |
-| **Node.js Automated Test Harness (`npm test`)** | **519 / 519 Passed** (111 suites) | 100% Pass, 0 Failures | **PASS** |
-| **Native C++ DSP & Lifecycle Suites (`ctest`)** | **73 / 73 Passed** (4 suites) | 100% Pass, 0 Failures | **PASS** |
+| **Node.js Automated Test Harness (`npm test`)** | **522 / 522 Passed** (111 suites) | 100% Pass, 0 Failures | **PASS** |
+| **Native C++ DSP & Lifecycle Suites (`ctest`)** | **78 / 78 Passed** (4 suites) | 100% Pass, 0 Failures | **PASS** |
 | **Fast Verification Checklist (`verify:checklist`)** | **16 / 16 Passed** | 0 Errors | **PASS** |
 | **Embedded Web Assets & APVTS Roundtrip** | **48 / 48 Passed** | 0 Integrity / Sync Errors | **PASS** |
 | **Real-Time Memory Safety** | **0 leaks, 0 heap allocations in `processBlock()`** | 0 bytes allocated | **PASS** |
@@ -37,13 +37,13 @@ To reproduce all verification tests and DSP benchmarks on any local installation
 # 1. Run the standalone verification checklist harness (16 criteria, < 250ms)
 npm run verify:checklist
 
-# 2. Run the complete Node.js Web Audio, UI & MIDI automated test suite (519 tests)
+# 2. Run the complete Node.js Web Audio, UI & MIDI automated test suite (522 tests)
 npm test
 
-# 3. Run the unified JS master runner (16 checklist + 48 asset/APVTS + 519 unit = 583 checks)
+# 3. Run the unified JS master runner (16 checklist + 48 asset/APVTS + 522 unit = 586 checks)
 node tests/verify.mjs
 
-# 4. Run all 4 compiled C++20 Release test suites via CTest (73 tests)
+# 4. Run all 4 compiled C++20 Release test suites via CTest (78 tests)
 ctest --test-dir build -C Release --output-on-failure
 ```
 
@@ -51,10 +51,10 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## 1. Test Suite Coverage & Verification Matrix
 
-The AS-42 v1.5.0 verification framework spans **592 core automated tests** (519 Node.js + 73 C++20) plus **64 standalone checklist and asset/APVTS roundtrip probes** (656 total automated checks):
+The AS-42 v1.5.1 verification framework spans **600 core automated tests** (522 Node.js + 78 C++20) plus **64 standalone checklist and asset/APVTS roundtrip probes** (664 total automated checks):
 
 ### 1.1 Node.js Automated Test Suite (`npm test`)
-* **Total Tests:** 519 passed, 0 failed, 0 skipped, 0 canceled across 111 test suites.
+* **Total Tests:** 522 passed, 0 failed, 0 skipped, 0 canceled across 111 test suites.
 * **Coverage Scope:**
   * Standalone WebView2 cold-boot drone/freeze storage purge, silent Standby initialization, echo-free `currentProgram` sync, and Standby `scopeFrame` suppression (`standalone-startup-drone-guard.test.js`).
   * Voice de-duplication, 24-voice lifecycle management, and note-off tracking (`web-audio-audit-regressions.test.js`, `audio-enhancements.test.js`).
@@ -71,7 +71,7 @@ The AS-42 v1.5.0 verification framework spans **592 core automated tests** (519 
 * **DSP Unit Tests (`dsp_tests`, 48 passed / 0 failed):** Verifies biquad state preservation across zero-crossings, voice stealing pitch locks (including mid-steal retrigger preservation), 15 ms click-free drone ON/OFF gating, Hermite limiter bounds, tape saturation feedback stability, 24-voice allocation, MIDI pitch tracking, soft compressor knee ratio/timing, and 192 kHz / 384 kHz dynamic FDN stability.
 * **Adversarial Stress Tests (`challenger_stress_tests`, 10 passed / 0 failed):** Verifies block sizes from 32 to 2048, multiple sample rates (44.1 kHz to 192 kHz), rapid parameter sweeps, and strictly **0 heap allocations / 0 bytes allocated** during real-time `processBlock()`.
 * **Adversarial Challenge Suite (`adversarial_challenge_suite`, 11 passed / 0 failed):** Confirms zero NaNs, Infinities, or denormals; DC offset bounded below `0.00025`; and continuous voice stealing fades.
-* **JUCE AudioProcessor Lifecycle Suite (`plugin_lifecycle_tests`, 4 passed / 0 failed):** Verifies `wrapperType_Standalone` cold-boot drone/freeze/power disarm across both `setStateInformation -> prepareToPlay` and `prepareToPlay -> setStateInformation` call orders, `wrapperType_VST3` DAW recall preservation, 96 kHz / 4096-sample `prepareToPlay -> releaseResources -> prepareToPlay` re-entry, 0-sample MIDI Note-Off delivery, dynamic `getTailLengthSeconds()`, Standby scope clearing, and `WebResourceManager` path-traversal rejection.
+* **JUCE AudioProcessor Lifecycle Suite (`plugin_lifecycle_tests`, 9 passed / 0 failed):** Verifies `wrapperType_Standalone` cold-boot drone/freeze/power disarm across both `setStateInformation -> prepareToPlay` and `prepareToPlay -> setStateInformation` call orders, `wrapperType_VST3` DAW recall preservation, click-free 45 ms $C^1$ Hermite power-off with active twin drones & Sub-Bass across extreme block sizes (1 to 8192 samples, 44.1 kHz to 192 kHz), full 16-property `UIExtendedState` persistence + live Win32 / Edge WebView2 window minimize -> restore, `masterDrive` DSP saturation wiring, concurrent audio/message thread state-recall stress, legacy preset isolation, 50 ms power-off tail guard -> 0.0 s Standby tail, and `WebResourceManager` binary-first path-traversal rejection.
 * **Embedded Asset & MIME Audit (`node test/web-assets-and-mime-stress.mjs`, 48 passed / 0 failed):** Verifies all embedded web assets against SHA-256 hashes, zero MIME type resolution errors, and bidirectional APVTS roundtrip suppression of feedback echo loops.
 
 ---
@@ -180,7 +180,7 @@ $$y = \tanh\left(\sin(0.5\pi D x) - F \sin(1.5\pi D x)\right)$$
    * Modern web browsers (Chromium, WebKit, Gecko) require a direct user interaction gesture before the `AudioContext` transitions from `suspended` to `running`. The AS-42 UI incorporates an automatic first-strike auto-wake listener.
 2. **Web MIDI API Security & Permission Prompts:**
    * Hardware MIDI controller access in browsers requires a secure origin (`https://` or `http://localhost`) and explicit user permission, falling back gracefully to mouse, touch, and keyboard control if unavailable.
-3. **Standalone Desktop Cold-Boot Safety (`v1.5.0`):**
+3. **Standalone Desktop Cold-Boot Safety (`v1.5.1`):**
    * By design, launching the desktop Standalone application (`BRAUN_AS42.exe` / `BRAUN_AS42.app`) always boots in silent **Standby** with Drone 1, Drone 2, and Shimmer Freeze disarmed so studio monitors never unexpectedly sound on application launch, while preserving all saved knob positions and preset calibrations.
 
 ---
@@ -188,5 +188,5 @@ $$y = \tanh\left(\sin(0.5\pi D x) - F \sin(1.5\pi D x)\right)$$
 ## 8. Verification Sign-Off
 
 * **Lead Verification Engineer:** Antigravity Audio Engineering Team
-* **Target Release:** BRAUN AS-42 v1.5.0 / sneed-and-feed.github.io
-* **Verification Outcome:** **100% PASS** — All 592 core automated tests + 64 checklist/asset roundtrip probes passed with zero defects.
+* **Target Release:** BRAUN AS-42 v1.5.1 / sneed-and-feed.github.io
+* **Verification Outcome:** **100% PASS** — All 600 core automated tests + 64 checklist/asset roundtrip probes passed with zero defects.

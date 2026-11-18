@@ -153,10 +153,15 @@ export class AudioEngine {
             }
           }
           if (!held) {
+            let cur = (typeof bus.gain.value === 'number' && isFinite(bus.gain.value)) ? bus.gain.value : 1.0;
+            if (this.drone1 && bus === this.drone1.voiceGain && typeof this.drone1._getInstantGain === 'function') {
+              cur = this.drone1._getInstantGain(now);
+            } else if (this.drone2 && bus === this.drone2.voiceGain && typeof this.drone2._getInstantGain === 'function') {
+              cur = this.drone2._getInstantGain(now);
+            }
             if (typeof bus.gain.cancelScheduledValues === 'function') {
               bus.gain.cancelScheduledValues(now);
             }
-            const cur = (typeof bus.gain.value === 'number' && isFinite(bus.gain.value)) ? bus.gain.value : 1.0;
             if (typeof bus.gain.setValueAtTime === 'function') {
               bus.gain.setValueAtTime(cur, now);
             }
@@ -172,6 +177,11 @@ export class AudioEngine {
 
         // Wait 80ms to ensure 50ms ramp and 15Hz master DC blocker settle into complete silence before suspend
         await new Promise(r => setTimeout(r, 80));
+        if (this.ctx && this.ctx.state === 'running' && typeof this.ctx.currentTime === 'number' && this.ctx.currentTime > now) {
+          for (let guard = 0; guard < 3 && this.ctx.currentTime < now + rampDuration; guard++) {
+            await new Promise(r => setTimeout(r, 20));
+          }
+        }
 
         const endT = Math.max(this.ctx.currentTime, now + rampDuration);
         busses.forEach(bus => {
@@ -322,14 +332,15 @@ export class AudioEngine {
           }
         }
 
-        // Smoothly ramp active drone voices up with setTargetAtTime
+        // Smoothly ramp active drone voices up with setTargetAtTime (preserving Sub-Bass 1.70x trim)
         [1, 2].forEach(id => {
           const drone = id === 1 ? this.drone1 : this.drone2;
           const p = this.droneParams[id];
           if (drone && drone.voiceGain && drone.voiceGain.gain) {
-            const shouldBeActive = (drone.isActive || (p && p.active));
-            const rawVol = (p && p.vol !== undefined) ? p.vol : (drone.volume ?? 0.55);
-            const targetGain = shouldBeActive ? (rawVol * (drone.subBassGainTrim || 1.0)) : 0.0;
+            const shouldBeActive = Boolean(drone.isActive || (p && p.active));
+            const baseVol = (p && Number.isFinite(p.vol)) ? p.vol : (drone.volume ?? 0.55);
+            const gainTrim = Number.isFinite(drone.subBassGainTrim) ? drone.subBassGainTrim : 1.0;
+            const targetGain = shouldBeActive ? (baseVol * gainTrim) : 0.0;
             if (targetGain > 0) {
               drone._currentGain = targetGain;
               if (typeof drone.voiceGain.gain.setTargetAtTime === 'function') {

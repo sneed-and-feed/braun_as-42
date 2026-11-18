@@ -78,6 +78,7 @@ struct ParameterSnapshot {
 
     // Master Bus parameters
     float master_volume { 0.80f };
+    float master_drive { 0.18f };
 };
 
 // ============================================================================

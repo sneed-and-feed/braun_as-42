@@ -103,6 +103,7 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
         L"--mute-audio "
         L"--disable-audio-output "
         L"--disable-web-midi "
+        L"--disable-http-cache "
         L"--disable-features=Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions,CalculateNativeWinOcclusion"
     );
 #endif
@@ -115,6 +116,7 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
                 .withUserDataFolder(juce::File::getSpecialLocation(juce::File::SpecialLocationType::tempDirectory).getChildFile("BraunAS42_WebView2"))
                 .withBackgroundColour(juce::Colour(0xff121414)))
 #endif
+        .withKeepPageLoadedWhenBrowserIsHidden()
         .withUserScript("window.__IS_JUCE__ = true;")
         .withNativeIntegrationEnabled()
         .withResourceProvider([&editor](const juce::String& url) {
@@ -122,6 +124,9 @@ juce::WebBrowserComponent::Options BRAUN_AS42AudioProcessorEditor::createWebOpti
         })
         .withEventListener("paramChange", [&editor](const juce::var& data) {
             editor.handleParamChangeFromWeb(data);
+        })
+        .withEventListener("vectorState", [&editor](const juce::var& data) {
+            editor.handleVectorStateFromWeb(data);
         })
         .withEventListener("noteOn", [&editor](const juce::var& data) {
             editor.handleNoteOnFromWeb(data);
@@ -165,6 +170,7 @@ BRAUN_AS42AudioProcessorEditor::BRAUN_AS42AudioProcessorEditor(BRAUN_AS42AudioPr
       , webComponent(createWebOptions(*this))
 #endif
 {
+    braunLookAndFeel.setDarkTheme(processorRef.getUIExtendedState().uiTheme.equalsIgnoreCase("dark"));
     setLookAndFeel(&braunLookAndFeel);
     setOpaque(true);
 #if JUCE_WEB_BROWSER
@@ -308,6 +314,18 @@ void BRAUN_AS42AudioProcessorEditor::ensureHwndStyles()
 
 void BRAUN_AS42AudioProcessorEditor::parameterChanged(const juce::String& parameterID, float newValue)
 {
+    if (parameterID == "drone1_isSubBass")
+    {
+        if (newValue > 0.5f)
+        {
+            processorRef.setUIExtendedProperty("drone1Snap", "sub-bass");
+        }
+        else if (processorRef.getUIExtendedState().drone1Snap.equalsIgnoreCase("sub-bass"))
+        {
+            processorRef.setUIExtendedProperty("drone1Snap", "deep-tonic");
+        }
+    }
+
     // Coalesce parameter changes into atomic array without calling MessageManager::callAsync
     // to prevent flooding the Win32 message loop during rapid host automation.
     for (size_t i = 0; i < std::size(kParamMap); ++i)
@@ -364,16 +382,31 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
 #if JUCE_WEB_BROWSER
     if (!useNativeUI && webComponent.isVisible())
     {
+        const bool currentlyShowing = webComponent.isShowing();
+        if (!currentlyShowing)
+        {
+            wasWebShowing = false;
+            return;
+        }
+
         if (!hwndStylesConfigured || ++hwndCheckCounter >= 25)
         {
             hwndCheckCounter = 0;
             ensureHwndStyles();
         }
 
-        if ((!initialSyncDone || processorRef.consumeFullSyncRequested()) && webComponent.isVisible())
+        const bool justRestored = !wasWebShowing;
+        wasWebShowing = true;
+
+        if (!webBridgeReady)
+            return;
+
+        if (!initialSyncDone || justRestored || processorRef.consumeFullSyncRequested())
         {
             syncAllParametersToWeb();
             initialSyncDone = true;
+            for (size_t i = 0; i < std::size(kParamMap); ++i)
+                paramDirty[i].store(false, std::memory_order_relaxed);
         }
 
         if (processorRef.consumePowerStateDirty())
@@ -414,6 +447,8 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
     else
 #endif
     {
+        wasWebShowing = false;
+
         // Native UI: update status button texts and states
         powerButton.setButtonText(processorRef.getPoweredOn() ? "POWER ON" : "STANDBY");
         powerButton.setToggleState(processorRef.getPoweredOn(), juce::dontSendNotification);
@@ -436,6 +471,15 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
             presetComboBox.setSelectedId(currentProg + 1, juce::dontSendNotification);
         }
 
+        const bool wantDark = processorRef.getUIExtendedState().uiTheme.equalsIgnoreCase("dark");
+        if (braunLookAndFeel.isDarkTheme() != wantDark)
+        {
+            braunLookAndFeel.setDarkTheme(wantDark);
+            themeButton.setButtonText(wantDark ? "THEME: DARK" : "THEME: LIGHT");
+            sendLookAndFeelChange();
+            repaint();
+        }
+
         // Repaint CRT scope display area
         auto crtArea = getLocalBounds().withTrimmedTop(54).removeFromTop(120).reduced(16, 4);
         repaint(crtArea);
@@ -445,7 +489,7 @@ void BRAUN_AS42AudioProcessorEditor::timerCallback()
 void BRAUN_AS42AudioProcessorEditor::sendScopeDataToWeb()
 {
 #if JUCE_WEB_BROWSER
-    if (!processorRef.getPoweredOn() || !webComponent.isVisible())
+    if (!processorRef.getPoweredOn() || !webComponent.isShowing())
         return;
 
     constexpr int kSamples = 512;
@@ -497,10 +541,21 @@ void BRAUN_AS42AudioProcessorEditor::sendScopeDataToWeb()
 void BRAUN_AS42AudioProcessorEditor::sendPowerUpdateToWeb(bool on)
 {
 #if JUCE_WEB_BROWSER
-    auto* obj = new juce::DynamicObject();
-    obj->setProperty("id", "power");
-    obj->setProperty("value", on ? 1.0f : 0.0f);
-    webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+    if (webComponent.isVisible())
+    {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("id", "power");
+        obj->setProperty("value", on ? 1.0f : 0.0f);
+        webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+    }
+    else if (webBridgeReady)
+    {
+        // Ensure hidden WebView2 (e.g. while in Native UI mode) still receives power transitions
+        // so background generative timers (Poisson / Phase Loops) halt immediately on Standby.
+        const juce::String payload = on ? "{\"id\":\"power\",\"value\":1}" : "{\"id\":\"power\",\"value\":0}";
+        webComponent.evaluateJavascript(
+            "if (window.__JUCE__ && window.__JUCE__.backend) window.__JUCE__.backend.emitByBackend(\"paramUpdate\", '" + payload + "');");
+    }
 #else
     juce::ignoreUnused(on);
 #endif
@@ -545,17 +600,37 @@ void BRAUN_AS42AudioProcessorEditor::sendRecordingStateUpdateToWeb(bool isRecord
 void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
 {
 #if JUCE_WEB_BROWSER
+    auto emitProp = [this](const char* id, const juce::var& val) {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("id", id);
+        obj->setProperty("value", val);
+        webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(obj));
+    };
+
+    emitProp("syncBegin", 1.0f);
+
+    const auto ui = processorRef.getUIExtendedState();
+    emitProp("uiTheme", ui.uiTheme);
+    emitProp("rootPitchClass", ui.rootPitchClass);
+    emitProp("scaleKey", ui.scaleKey);
+    emitProp("tuningA4", ui.tuningA4);
+    emitProp("drone1Snap", ui.drone1Snap);
+    emitProp("drone2Snap", ui.drone2Snap);
+    emitProp("masterDrive", ui.masterDrive);
+    emitProp("poissonDensity", ui.poissonDensity);
+    emitProp("poissonHumanize", ui.poissonHumanize);
+    emitProp("chordSpeed", ui.chordSpeed);
+    emitProp("scopeMode", ui.scopeMode);
+
     sendPowerUpdateToWeb(processorRef.getPoweredOn());
     sendDroneActiveUpdateToWeb(1, processorRef.getDrone1Active());
     sendDroneActiveUpdateToWeb(2, processorRef.getDrone2Active());
     sendDroneTrackUpdateToWeb(processorRef.getDroneTrackMidi());
     sendRecordingStateUpdateToWeb(processorRef.isRecording());
-
+    emitProp("currentProgram", static_cast<float>(processorRef.getCurrentProgram()));
+    if (ui.isCustomPatch && ui.customPatchJson.isNotEmpty())
     {
-        auto* progObj = new juce::DynamicObject();
-        progObj->setProperty("id", "currentProgram");
-        progObj->setProperty("value", static_cast<float>(processorRef.getCurrentProgram()));
-        webComponent.emitEventIfBrowserIsVisible("paramUpdate", juce::var(progObj));
+        emitProp("customPatchJson", ui.customPatchJson);
     }
 
     for (const auto& item : kParamMap)
@@ -565,6 +640,12 @@ void BRAUN_AS42AudioProcessorEditor::syncAllParametersToWeb()
             sendParameterUpdateToWeb(item.apvtsId, rawVal->load(std::memory_order_relaxed));
         }
     }
+
+    // Emit Vector Pad mode and coordinates AFTER kParamMap so feltTone/reverbShimmer never clobber reticle coordinates
+    emitProp("vectorMode", ui.vectorMode);
+    emitProp("vectorX", ui.vectorX);
+    emitProp("vectorY", ui.vectorY);
+    emitProp("syncEnd", 1.0f);
 #endif
 }
 
@@ -618,6 +699,21 @@ void BRAUN_AS42AudioProcessorEditor::handleStopRecordingFromWeb()
     processorRef.stopRecording();
 }
 
+void BRAUN_AS42AudioProcessorEditor::handleVectorStateFromWeb(const juce::var& data)
+{
+    if (!data.isObject())
+        return;
+    auto* obj = data.getDynamicObject();
+    if (obj == nullptr)
+        return;
+    if (obj->hasProperty("mode"))
+        processorRef.setUIExtendedProperty("vectorMode", obj->getProperty("mode"));
+    if (obj->hasProperty("x"))
+        processorRef.setUIExtendedProperty("vectorX", obj->getProperty("x"));
+    if (obj->hasProperty("y"))
+        processorRef.setUIExtendedProperty("vectorY", obj->getProperty("y"));
+}
+
 void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& data)
 {
     if (!data.isObject())
@@ -655,7 +751,42 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
     // Handle state sync request from WebView2
     if (incomingId.equalsIgnoreCase("requestSync") || incomingId.equalsIgnoreCase("requestState"))
     {
+        webBridgeReady = true;
+        initialSyncDone = true;
+#if JUCE_WEB_BROWSER
+        wasWebShowing = webComponent.isShowing();
+#else
+        wasWebShowing = false;
+#endif
+        processorRef.consumeFullSyncRequested();
         syncAllParametersToWeb();
+        return;
+    }
+
+    // Persist non-APVTS Web UI extended settings across editor close/minimize & DAW sessions
+    if (incomingId.equalsIgnoreCase("uiTheme") || incomingId.equalsIgnoreCase("theme") ||
+        incomingId.equalsIgnoreCase("rootPitchClass") ||
+        incomingId.equalsIgnoreCase("scaleKey") || incomingId.equalsIgnoreCase("currentScaleKey") ||
+        incomingId.equalsIgnoreCase("tuningA4") || incomingId.equalsIgnoreCase("a4") ||
+        incomingId.equalsIgnoreCase("masterDrive") || incomingId.equalsIgnoreCase("tapeDrive") || incomingId.equalsIgnoreCase("master_drive") ||
+        incomingId.equalsIgnoreCase("poissonDensity") || incomingId.equalsIgnoreCase("poisson_density") ||
+        incomingId.equalsIgnoreCase("poissonHumanize") || incomingId.equalsIgnoreCase("poisson_humanize") ||
+        incomingId.equalsIgnoreCase("chordSpeed") ||
+        incomingId.equalsIgnoreCase("scopeMode") ||
+        incomingId.equalsIgnoreCase("drone1Snap") ||
+        incomingId.equalsIgnoreCase("drone2Snap") ||
+        incomingId.equalsIgnoreCase("vectorMode") ||
+        incomingId.equalsIgnoreCase("vectorX") ||
+        incomingId.equalsIgnoreCase("vectorY") ||
+        incomingId.equalsIgnoreCase("customPatchJson"))
+    {
+        processorRef.setUIExtendedProperty(incomingId, rawVal);
+        if (incomingId.equalsIgnoreCase("uiTheme") || incomingId.equalsIgnoreCase("theme"))
+        {
+            const bool dark = rawVal.toString().trim().equalsIgnoreCase("dark");
+            braunLookAndFeel.setDarkTheme(dark);
+            themeButton.setButtonText(dark ? "THEME: DARK" : "THEME: LIGHT");
+        }
         return;
     }
 
@@ -864,8 +995,18 @@ void BRAUN_AS42AudioProcessorEditor::handleParamChangeFromWeb(const juce::var& d
     {
         if (auto* param = processorRef.getAPVTS().getParameter(targetApvtsId))
         {
-            const float norm = param->convertTo0to1(targetApvtsVal);
-            param->setValueNotifyingHost(std::clamp(norm, 0.0f, 1.0f));
+            const float norm = std::clamp(param->convertTo0to1(targetApvtsVal), 0.0f, 1.0f);
+            param->setValueNotifyingHost(norm);
+
+            // Keep Vector Pad reticle coordinates aligned with manual Web UI Felt Tone / Shimmer tweaks
+            if (targetApvtsId == "felt_tone")
+            {
+                processorRef.setUIExtendedProperty("vectorX", std::clamp((targetApvtsVal - 0.15f) / 0.80f, 0.0f, 1.0f));
+            }
+            else if (targetApvtsId == "shimmer_amount")
+            {
+                processorRef.setUIExtendedProperty("vectorY", std::clamp(targetApvtsVal / 0.80f, 0.0f, 1.0f));
+            }
         }
     }
 }
@@ -1053,6 +1194,16 @@ void BRAUN_AS42AudioProcessorEditor::setNativeMode(bool native)
         auto* obj = new juce::DynamicObject();
         obj->setProperty("nativeMode", false);
         webComponent.emitEventIfBrowserIsVisible("nativeModeChange", juce::var(obj));
+
+        wasWebShowing = false;
+        if (webBridgeReady && webComponent.isShowing())
+        {
+            processorRef.consumeFullSyncRequested();
+            syncAllParametersToWeb();
+            wasWebShowing = true;
+            for (size_t i = 0; i < std::size(kParamMap); ++i)
+                paramDirty[i].store(false, std::memory_order_relaxed);
+        }
     }
 #else
     juce::ignoreUnused(native);
@@ -1073,6 +1224,22 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
     powerButton.setClickingTogglesState(false);
     powerButton.onClick = [this] {
         const bool nextPwr = !processorRef.getPoweredOn();
+        if (!nextPwr)
+        {
+            if (processorRef.isRecording())
+            {
+                processorRef.stopRecording();
+                recordButton.setButtonText("REC WAV");
+                recordButton.setToggleState(false, juce::dontSendNotification);
+                sendRecordingStateUpdateToWeb(false);
+            }
+            processorRef.pushUIAllNotesOff();
+            if (auto* freezeParam = processorRef.getAPVTS().getParameter("shimmer_freeze"))
+            {
+                if (freezeParam->getValue() > 0.5f)
+                    freezeParam->setValueNotifyingHost(0.0f);
+            }
+        }
         processorRef.setPoweredOn(nextPwr);
         powerButton.setButtonText(nextPwr ? "POWER ON" : "STANDBY");
         powerButton.setToggleState(nextPwr, juce::dontSendNotification);
@@ -1084,6 +1251,7 @@ void BRAUN_AS42AudioProcessorEditor::setupNativeControls()
     themeButton.setButtonText(braunLookAndFeel.isDarkTheme() ? "THEME: DARK" : "THEME: LIGHT");
     themeButton.onClick = [this] {
         braunLookAndFeel.setDarkTheme(!braunLookAndFeel.isDarkTheme());
+        processorRef.setUIExtendedProperty("uiTheme", braunLookAndFeel.isDarkTheme() ? "dark" : "light");
         themeButton.setButtonText(braunLookAndFeel.isDarkTheme() ? "THEME: DARK" : "THEME: LIGHT");
         sendLookAndFeelChange();
         repaint();

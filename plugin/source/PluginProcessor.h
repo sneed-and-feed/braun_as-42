@@ -60,6 +60,29 @@ public:
     void setCurrentProgramIndexOnly(int index) noexcept;
     void clearScopeBuffers() noexcept;
 
+    struct UIExtendedState
+    {
+        juce::String uiTheme { "light" };
+        int rootPitchClass { 0 };
+        juce::String scaleKey { "BUDD_PENTATONIC" };
+        float tuningA4 { 440.0f };
+        float masterDrive { 18.0f };
+        float poissonDensity { 12.0f };
+        float poissonHumanize { 50.0f };
+        juce::String chordSpeed { "med" };
+        juce::String scopeMode { "waveform" };
+        juce::String drone1Snap { "deep-tonic" };
+        juce::String drone2Snap { "perfect-5th" };
+        juce::String vectorMode { "momentary" };
+        float vectorX { 0.50f };
+        float vectorY { 0.50f };
+        bool isCustomPatch { false };
+        juce::String customPatchJson;
+    };
+
+    UIExtendedState getUIExtendedState() const;
+    void setUIExtendedProperty(const juce::String& key, const juce::var& value);
+
     // Lock-free UI MIDI Event injection (for onscreen play surface, macros, chords, and keyboard shortcuts)
     void pushUINoteOn(int noteNumber, float velocity) noexcept;
     void pushUINoteOff(int noteNumber, float velocity = 0.0f) noexcept;
@@ -96,6 +119,18 @@ private:
     std::atomic<int> currentProgram { 0 };
     std::atomic<bool> fullSyncRequested { false };
     std::atomic<bool> standaloneStartupStateConsumed { false };
+
+    // Audio-thread C1 Hermite power envelope for click-free power-off / power-on transitions
+    float powerLinear { 1.0f };
+    float powerFadeDownStep { 1.0f / (48000.0f * 0.045f) };
+    float powerFadeUpStep { 1.0f / (48000.0f * 0.015f) };
+    std::atomic<bool> dspSilent { true };
+    std::atomic<int> pendingSilentPowerSnap { -1 };
+
+    // Message-thread / state-serialization extended UI settings (persisted across editor reopen & DAW sessions)
+    mutable juce::SpinLock uiStateLock;
+    UIExtendedState uiExtendedState;
+    std::atomic<float> masterDriveNorm { 0.18f };
 
     // Lock-free FIFO queue for UI MIDI events
     struct UIMidiEvent {

@@ -161,7 +161,7 @@ afterEach(() => {
   delete globalThis.document;
 });
 
-describe('Standalone WebView2 Startup Drone Disarm & Sync Guard (v1.5.0)', () => {
+describe('Standalone WebView2 Startup Drone Disarm, Minimize/Reopen & Power-Off Guard (v1.5.1)', () => {
   it('purges residual WebView2 drone/freeze storage keys and boots with both drones OFF', async () => {
     const { elementsById, emittedToNative, emitFromNative, localStorage, sessionStorage } = setupMockJuceDom({
       storageEntries: {
@@ -473,5 +473,185 @@ describe('Standalone WebView2 Startup Drone Disarm & Sync Guard (v1.5.0)', () =>
     delete globalThis.window;
     await new Promise(r => setTimeout(r, 130));
     assert.strictEqual(app._juceBridgePoll, null);
+  });
+
+  it('never overwrites C++ APVTS with PRESETS.DEFAULT on WebView boot/reopen and restores extended UI state', async () => {
+    const windowListeners = new Map();
+    const { elementsById, emittedToNative, emitFromNative } = setupMockJuceDom();
+    let bodyTheme = 'light';
+    globalThis.document.body.getAttribute = (k) => (k === 'data-theme' ? bodyTheme : null);
+    globalThis.document.body.setAttribute = (k, v) => { if (k === 'data-theme') bodyTheme = v; };
+    globalThis.window.addEventListener = (evt, cb) => {
+      if (!windowListeners.has(evt)) windowListeners.set(evt, []);
+      windowListeners.get(evt).push(cb);
+    };
+
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    // CRITICAL REGRESSION GUARD:
+    // Constructing AmbientApp inside JUCE WebView MUST ONLY emit requestSync,
+    // and MUST NEVER emit PRESETS.DEFAULT knob/program/waveform values that clobber C++ APVTS!
+    assert.strictEqual(emittedToNative.length, 1,
+      `Expected only requestSync on JUCE boot, got: ${JSON.stringify(emittedToNative)}`);
+    assert.strictEqual(emittedToNative[0].eventName, 'paramChange');
+    assert.strictEqual(emittedToNative[0].payload.id, 'requestSync');
+
+    // Simulate C++ syncAllParametersToWeb() restoring custom user session after minimize/reopen
+    emitFromNative('paramUpdate', { id: 'uiTheme', value: 'dark' });
+    emitFromNative('paramUpdate', { id: 'rootPitchClass', value: 6 });
+    emitFromNative('paramUpdate', { id: 'scaleKey', value: 'AVALON_SPIRITED' });
+    emitFromNative('paramUpdate', { id: 'tuningA4', value: 432 });
+    emitFromNative('paramUpdate', { id: 'masterDrive', value: 44 });
+    emitFromNative('paramUpdate', { id: 'poissonDensity', value: 22 });
+    emitFromNative('paramUpdate', { id: 'poissonHumanize', value: 81 });
+    emitFromNative('paramUpdate', { id: 'chordSpeed', value: 'slow' });
+    emitFromNative('paramUpdate', { id: 'vectorX', value: 0.77 });
+    emitFromNative('paramUpdate', { id: 'vectorY', value: 0.33 });
+    emitFromNative('paramUpdate', { id: 'currentProgram', value: 2 });
+    emitFromNative('paramUpdate', { id: 'feltTone', value: 84 });
+    emitFromNative('paramUpdate', { id: 'drone1Cutoff', value: 1950 });
+    emitFromNative('paramUpdate', { id: 'drone1_active', value: 1.0 });
+    emitFromNative('paramUpdate', { id: 'power', value: 1.0 });
+
+    assert.strictEqual(bodyTheme, 'dark');
+    assert.strictEqual(app.engine.rootPitchClass, 6);
+    assert.strictEqual(app.engine.currentScaleKey, 'AVALON_SPIRITED');
+    assert.strictEqual(app.engine.a4, 432);
+    assert.strictEqual(app.knobs.masterDrive.value, 44);
+    assert.strictEqual(app.knobs.poissonDensity.value, 22);
+    assert.strictEqual(app.knobs.poissonHumanize.value, 81);
+    assert.strictEqual(app.knobs.feltTone.value, 84);
+    assert.strictEqual(app.knobs.drone1Cutoff.value, 1950);
+    assert.strictEqual(app.vectorPad.x, 0.77, 'vectorPad.x must NOT be clobbered by feltTone during host sync');
+    assert.strictEqual(app.vectorPad.y, 0.33, 'vectorPad.y must NOT be clobbered by reverbShimmer during host sync');
+    assert.strictEqual(app.currentPresetKey, 'VANGELIS');
+    assert.strictEqual(app.isPowerOn, true);
+    assert.strictEqual(app.engine.droneParams[1].active, true);
+    assert.strictEqual(emittedToNative.length, 1, 'Restoring state from C++ must produce zero feedback emissions');
+
+    // Even if WebView fires a BFCache pageshow(persisted=true) inside JUCE, it must requestSync instead of resetting!
+    for (const cb of (windowListeners.get('pageshow') || [])) {
+      await cb({ type: 'pageshow', persisted: true });
+    }
+    assert.strictEqual(app.isPowerOn, true, 'JUCE WebView pageshow must not unilaterally disarm power');
+    assert.strictEqual(app.knobs.feltTone.value, 84, 'JUCE WebView pageshow must not reset knobs');
+    assert.strictEqual(emittedToNative.at(-1).payload.id, 'requestSync');
+  });
+
+  it('cancels in-flight slow chord strum timers on togglePower() OFF so delayed notes never re-wake power', async () => {
+    const { emittedToNative } = setupMockJuceDom();
+    const { AmbientApp } = await import('../js/app.js');
+    const { BraunPlaySurface } = await import('../js/ui/keyboard.js');
+    const app = new AmbientApp();
+
+    const strip = globalThis.document.getElementById('chime-strip');
+    const chords = globalThis.document.getElementById('chord-macros');
+    app.playSurface = new BraunPlaySurface(strip, chords, app.engine);
+    app.playSurface.setChordSpeed('slow'); // 120ms between chord tones
+
+    await app.startAudio();
+    app.engine.setDroneActive(1, true);
+    assert.strictEqual(app.isPowerOn, true);
+
+    // Start a slow multi-note chord strum, then immediately turn Power OFF 20ms later
+    app.playSurface.playChord('BUDD_FIFTHS');
+    await new Promise(r => setTimeout(r, 20));
+    await app.togglePower({ emitToNative: true });
+    assert.strictEqual(app.isPowerOn, false);
+
+    const emittedCountAtPowerOff = emittedToNative.length;
+
+    // Wait 350ms past all scheduled strum delays (120ms, 240ms, 360ms...)
+    await new Promise(r => setTimeout(r, 380));
+
+    const lateNoteOns = emittedToNative.slice(emittedCountAtPowerOff).filter(e => e.eventName === 'noteOn');
+    assert.strictEqual(lateNoteOns.length, 0, 'Zero delayed strum noteOn events may fire after Power OFF');
+    assert.strictEqual(app.isPowerOn, false, 'Power must remain strictly OFF');
+  });
+
+  it('preserves latched Vector Pad, CUSTOM patch, engine knob cache, Freeze disarm, and async startAudio cancellation', async () => {
+    const { elementsById, emittedToNative, emitFromNative } = setupMockJuceDom();
+    const { AmbientApp } = await import('../js/app.js');
+    const app = new AmbientApp();
+
+    const customPatch = {
+      format: 'BRAUN_AS42_PATCH',
+      version: 1,
+      name: 'Minimize Restore Custom',
+      knobs: { feltTone: 79, drone2Beat: 2.4 }
+    };
+
+    // 1. Simulate full C++ syncAllParametersToWeb() sequence (syncBegin -> params -> vectorMode/X/Y -> syncEnd)
+    emitFromNative('paramUpdate', { id: 'syncBegin', value: 1.0 });
+    emitFromNative('paramUpdate', { id: 'currentProgram', value: 0 });
+    emitFromNative('paramUpdate', { id: 'customPatchJson', value: JSON.stringify(customPatch) });
+    emitFromNative('paramUpdate', { id: 'felt_tone', value: 0.79 });
+    emitFromNative('paramUpdate', { id: 'shimmer_amount', value: 0.64 });
+    emitFromNative('paramUpdate', { id: 'drone2_beat', value: 2.40 });
+    emitFromNative('paramUpdate', { id: 'vectorMode', value: 'latch' });
+    emitFromNative('paramUpdate', { id: 'vectorX', value: 0.82 });
+    emitFromNative('paramUpdate', { id: 'vectorY', value: 0.22 });
+    emitFromNative('paramUpdate', { id: 'syncEnd', value: 1.0 });
+
+    assert.strictEqual(app.currentPresetKey, 'CUSTOM');
+    assert.strictEqual(elementsById.get('select-preset').value, 'CUSTOM');
+    assert.strictEqual(app.vectorPad.mode, 'latch');
+    assert.strictEqual(app.vectorPad.x, 0.82);
+    assert.strictEqual(app.vectorPad.y, 0.22);
+
+    // Verify knob._localOnChange updated JS AudioEngine internal cache (droneParams[2].beat === 2.40, NOT 0.65!)
+    assert.strictEqual(app.engine.droneParams[2].beat, 2.40,
+      'Host paramUpdate must update engine.droneParams[2].beat via _localOnChange');
+
+    // Moving vector pad in latch mode emits vectorState + exact 5 paramChanges
+    emittedToNative.length = 0;
+    app.vectorPad.setCoordinates(0.68, 0.41, true);
+    const paramChanges = emittedToNative.filter(e => e.eventName === 'paramChange');
+    const vecStates = emittedToNative.filter(e => e.eventName === 'vectorState');
+    assert.strictEqual(paramChanges.length, 5, 'Vector modulation must emit exact 5 knob paramChanges');
+    assert.strictEqual(vecStates.length, 1, 'Vector modulation must emit vectorState to C++');
+    assert.strictEqual(vecStates[0].payload.mode, 'latch');
+    assert.strictEqual(vecStates[0].payload.x, 0.68);
+    assert.strictEqual(vecStates[0].payload.y, 0.41);
+
+    // 2. Engage Freeze + Power ON, then press Power OFF -> Freeze UI and shimmer_freeze MUST disarm!
+    await app.startAudio();
+    app.engine.setReverbFreeze(true);
+    app._syncFreezeUI(true);
+    assert.strictEqual(elementsById.get('toggle-freeze').classList.contains('is-active'), true);
+
+    emittedToNative.length = 0;
+    await app.togglePower({ emitToNative: true });
+    assert.strictEqual(app.isPowerOn, false);
+    assert.strictEqual(app.engine.reverbParams.freeze, false);
+    assert.strictEqual(elementsById.get('toggle-freeze').classList.contains('is-active'), false,
+      'togglePower() OFF must disarm #toggle-freeze button UI');
+    assert.ok(emittedToNative.some(e => e.eventName === 'paramChange' && e.payload.id === 'shimmer_freeze' && e.payload.value === 0.0),
+      'togglePower() OFF must emit shimmer_freeze: 0.0 to C++');
+    assert.strictEqual(app._startingAudioPromise, null,
+      'Synchronous JUCE startAudio() IIFE must not leave _startingAudioPromise stuck non-null');
+
+    // Verify repeated Power ON -> OFF -> ON cycles in JUCE mode never Wedge _startingAudioPromise!
+    emittedToNative.length = 0;
+    await app.togglePower({ emitToNative: true });
+    assert.strictEqual(app.isPowerOn, true, 'Second Power ON in JUCE mode must succeed');
+    assert.ok(emittedToNative.some(e => e.eventName === 'paramChange' && e.payload.id === 'power' && e.payload.value === 1.0));
+    await app.togglePower({ emitToNative: true });
+    assert.strictEqual(app.isPowerOn, false);
+
+    // 3. Cancel an in-flight async startAudio() via togglePower() OFF -> power must NOT flip back ON!
+    globalThis.window.__IS_JUCE__ = false;
+    delete globalThis.window.__JUCE__;
+    globalThis.window.location.hostname = 'localhost';
+    app.isJuce = false;
+    let resolveInit;
+    app.engine.init = () => new Promise(r => { resolveInit = r; });
+    const startP = app.startAudio({ emitToNative: false });
+    assert.strictEqual(app._startingAudio, true);
+    await app.togglePower({ emitToNative: false });
+    resolveInit();
+    await startP;
+    assert.strictEqual(app.isPowerOn, false, 'Cancelled in-flight startAudio() must not flip isPowerOn back to true');
   });
 });

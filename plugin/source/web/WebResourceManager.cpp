@@ -82,39 +82,9 @@ std::optional<juce::WebBrowserComponent::Resource> WebResourceManager::getResour
 
     const juce::String mimeType = getMimeTypeForPath(cleanPath);
 
-    // 1. Check local file system fallback (strictly confined within candidate root directory)
-    auto checkDiskFile = [&](const juce::File& rootDir) -> std::optional<juce::WebBrowserComponent::Resource>
-    {
-        if (!rootDir.isDirectory())
-            return std::nullopt;
-        const juce::File file = rootDir.getChildFile(cleanPath);
-        if (file.isAChildOf(rootDir) && file.existsAsFile())
-        {
-            juce::MemoryBlock mb;
-            if (file.loadFileAsData(mb))
-            {
-                std::vector<std::byte> data(mb.getSize());
-                std::memcpy(data.data(), mb.getData(), mb.getSize());
-                return juce::WebBrowserComponent::Resource { std::move(data), mimeType };
-            }
-        }
-        return std::nullopt;
-    };
-
-    // Check current working directory
-    if (auto res = checkDiskFile(juce::File::getCurrentWorkingDirectory()))
-        return res;
-
-    // Check ancestor directories of executable for local project layout
-    auto dir = juce::File::getSpecialLocation(juce::File::SpecialLocationType::currentExecutableFile).getParentDirectory();
-    for (int depth = 0; depth < 5; ++depth)
-    {
-        if (auto res = checkDiskFile(dir))
-            return res;
-        dir = dir.getParentDirectory();
-    }
-
-    // 2. Unpack from embedded binary zip archive (BraunWebAssets)
+    // 1. Primary authoritative source: unpack from embedded binary zip archive (BraunWebAssets)
+    //    Checking embedded BinaryData first ensures a Standalone .exe or DAW .vst3 never
+    //    accidentally loads an unrelated index.html from the user's Desktop or DAW working directory.
     if (BinaryData::web_assets_zipSize > 0 && BinaryData::web_assets_zip != nullptr)
     {
         juce::MemoryInputStream memStream(BinaryData::web_assets_zip, static_cast<size_t>(BinaryData::web_assets_zipSize), false);
@@ -159,6 +129,36 @@ std::optional<juce::WebBrowserComponent::Resource> WebResourceManager::getResour
                 }
             }
         }
+    }
+
+    // 2. Fallback to local file system (strictly confined within candidate root directory)
+    auto checkDiskFile = [&](const juce::File& rootDir) -> std::optional<juce::WebBrowserComponent::Resource>
+    {
+        if (!rootDir.isDirectory())
+            return std::nullopt;
+        const juce::File file = rootDir.getChildFile(cleanPath);
+        if (file.isAChildOf(rootDir) && file.existsAsFile())
+        {
+            juce::MemoryBlock mb;
+            if (file.loadFileAsData(mb))
+            {
+                std::vector<std::byte> data(mb.getSize());
+                std::memcpy(data.data(), mb.getData(), mb.getSize());
+                return juce::WebBrowserComponent::Resource { std::move(data), mimeType };
+            }
+        }
+        return std::nullopt;
+    };
+
+    if (auto res = checkDiskFile(juce::File::getCurrentWorkingDirectory()))
+        return res;
+
+    auto dir = juce::File::getSpecialLocation(juce::File::SpecialLocationType::currentExecutableFile).getParentDirectory();
+    for (int depth = 0; depth < 5; ++depth)
+    {
+        if (auto res = checkDiskFile(dir))
+            return res;
+        dir = dir.getParentDirectory();
     }
 
     return std::nullopt;

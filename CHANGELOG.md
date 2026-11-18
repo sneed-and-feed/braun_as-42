@@ -2,6 +2,21 @@
 
 All notable changes, architectural modernizations, DSP optimizations, and bug remediations for the BRAUN AS 42 ambient synthesizer are documented in this file.
 
+## What's New in v1.5.1
+
+* **Minimize / Reopen & Editor Reopen State Preservation (`PluginEditor.h/.cpp`, `PluginProcessor.h/.cpp`, `WebResourceManager.cpp`, `js/app.js`, `js/ui/*`):**
+  * **Root-Cause Remediation:** Fixed JUCE 8 `WebBrowserComponent` default hidden-page unloading (`unloadPageWhenHidden`), which navigated WebView2 to `about:blank` when minimizing or hiding the Standalone/VST3 window and reloaded `index.html` on restore—causing cold-DOM `applyPreset('DEFAULT')` to emit `PRESETS.DEFAULT` over IPC and overwrite all 38 C++ APVTS parameters.
+  * **Persistent Hidden WebView2 & Echo-Free Boot Calibration:** Enabled `.withKeepPageLoadedWhenBrowserIsHidden()` and `--disable-http-cache` in `createWebOptions()`, passed `{ emitToNative: false }` during initial DOM `applyPreset('DEFAULT')` calibration, and triggered `syncAllParametersToWeb()` automatically on window un-minimize / visibility restore (`justRestored`).
+  * **Complete `UIExtendedState` Serialization & `masterDrive` DSP Wiring:** Persisted all 16 non-APVTS Web UI settings (`uiTheme`, `rootPitchClass`, `scaleKey`, `tuningA4`, `masterDrive`, `poissonDensity`, `poissonHumanize`, `chordSpeed`, `scopeMode`, `drone1Snap`, `drone2Snap`, `vectorMode`, `vectorX`, `vectorY`, `isCustomPatch`, `customPatchJson`) across editor close/reopen and DAW session recall, wired `masterDrive` (`TAPE DRIVE`) into C++ `MasterLimiterDsp.tapeWarmth`, reset stale extended UI fields cleanly when recalling legacy presets, synchronized `_localOnChange` engine caches on host `paramUpdate`, and prioritized embedded `BinaryData::web_assets_zip` ahead of working-directory disk lookups in `WebResourceManager::getResource()`.
+* **Click-Free Power-Off With Active Drones & Race-Free Host Tail Guard (`PluginProcessor.h/.cpp`, `PluginEditor.cpp`, `js/app.js`, `js/audio/engine.js`):**
+  * **Unconditional Power-Off With Armed Drones:** Removed steady-state `drone1Active` / `drone2Active` auto-wake checks from `PluginProcessor::processBlock()` while retaining rising-edge auto-wake in `setDrone1Active(true)` / `setDrone2Active(true)` and genuine `Note-On` (`velocity > 0`). Pressing Power Off while Drone 1, Drone 2, or Sub-Bass is running now powers down reliably and stays in Standby until explicitly woken.
+  * **45 ms C1 Hermite Anti-Pop Power Ramp & Deferred DSP Reset:** Replaced the immediate mid-waveform `dspEngine.reset()` cut on power-off with a sample-accurate 45 ms $C^1$-continuous Hermite fade-out $(g(p) = p^2(3 - 2p))$ and 15 ms Hermite fade-in, deferring `dspEngine.reset()` and scope flushing until `powerLinear <= 0.0f` reaches exact silence.
+  * **Lock-Free Cross-Thread Hygiene, VST3 Tail Guard & Headless Linux Parity:** Converted `dspSilent` to `std::atomic<bool>` paired with lock-free `pendingSilentPowerSnap` handoff so `setStateInformation()` never races `processBlock()` on `powerLinear`, reported a `0.05 s` tail in `getTailLengthSeconds()` until the 45 ms fade completes so VST3/AU hosts never auto-suspend `processBlock()` mid-fade, cancelled in-flight chord-strum timers / Freeze latches / WAV recording on power-off across both Web and Native UIs, fixed async `_startingAudioPromise` epoch cancellation in `js/app.js`, and guarded `webComponent.isShowing()` under `#if JUCE_WEB_BROWSER` for `AS42_USE_WEBVIEW=OFF` builds.
+* **Certified 600-Test Pass Benchmark (+ 64 Asset/Checklist Probes):**
+  * 100% pass rate across **600 core automated tests**: **522** Node.js Web Audio, UI & MIDI assertions (`111` suites) and **78** real-time native C++20 assertions across **4** suites (`dsp_tests` 48, `challenger_stress_tests` 10, `adversarial_challenge_suite` 11, and expanded `plugin_lifecycle_tests` 9 including live Win32 + Edge WebView2 minimize/restore and concurrent audio/message thread state-recall stress), plus 16 fast checklist criteria and 48 embedded web-asset/APVTS roundtrip probes.
+
+---
+
 ## What's New in v1.5.0
 
 * **Critical Standalone Silent Cold-Boot Guard (`BRAUN_AS42.exe` / `wrapperType_Standalone`):**
@@ -30,7 +45,7 @@ All notable changes, architectural modernizations, DSP optimizations, and bug re
   * **Sympathetic Filter Coefficient Caching:** Cached `mLastSymTone` in `FeltPianoSynthesizer::updateSympatheticFilters()` so the dual sympathetic bandpass resonators only recompute coefficients when `tone` changes.
 * **DSP Stability, Envelope & Bus Routing Fixes:**
   * **Freeze Smoother Reset Integrity:** Explicitly reset `mFreezeFeedbackSmoother` (`0.0f`), `mFreezeWetSmoother` (`0.0f`), and `mFreezeInputSmoother` (`1.0f`) inside `ShimmerReverbDsp::reset()` so resetting while frozen never leaves reverb input ducked at `0.08f`.
-  * **Bass Register Decay Knob Consistency:** Updated `FeltPianoVoice::updateDecay()` in `FeltPianoDsp.h` to apply the exact bass register multiplier (`mCurrentMidi < 48` $\rightarrow 1.45 + (48 - \text{midi}) \times 0.04$) matching `FeltPianoVoice::trigger()`, preventing sudden decay drops when turning the Decay knob while holding a bass note.
+  * **Bass Register Decay Knob Consistency:** Updated `FeltPianoVoice::updateDecay()` in `FeltPianoDsp.h` to apply the exact bass register multiplier (for `mCurrentMidi < 48`, scale $(1.45 + (48 - \text{midi}) \times 0.04)$) matching `FeltPianoVoice::trigger()`, preventing sudden decay drops when turning the Decay knob while holding a bass note.
   * **Zero-Volume Voice Envelope Advancement:** Fixed `FeltPianoSynthesizer::process()` when `volume < 1e-5` so active/releasing voices advance naturally to completion rather than freezing in time while muted.
   * **True Mono Bus Downmixing:** Fixed `DspEngine::process()` when `left == right` (mono bus layout) to output a balanced mono sum `0.5f * (finalL + finalR)` instead of overwriting the left channel with the right channel.
   * **MIDI Sample Offset Clamping:** Clamped `juce::MidiBuffer` event sample positions to `[0, numSamples - 1]` in `PluginProcessor::processBlock` and `DspEngine::process`.

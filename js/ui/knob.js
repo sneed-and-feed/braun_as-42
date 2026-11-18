@@ -440,6 +440,7 @@ export class BraunKnob {
   }
 
   setValue(val, triggerCallback = true) {
+    if (this.min === undefined || this.max === undefined) return;
     let clamped = Math.max(this.min, Math.min(this.max, val));
     if (this.step && !this.isLog) {
       clamped = Math.round((clamped - this.min) / this.step) * this.step + this.min;
@@ -451,7 +452,9 @@ export class BraunKnob {
     }
 
     this.value = clamped;
-    this.element.setAttribute('aria-valuenow', this.value);
+    if (this.element && typeof this.element.setAttribute === 'function') {
+      this.element.setAttribute('aria-valuenow', this.value);
+    }
 
     const norm = this.toNormalized(this.value);
     const angle = this.startAngle + norm * this.angleRange;
@@ -487,6 +490,10 @@ export class BraunKnob {
    * @param {boolean} [triggerOnChangeAtEnd=true] - Whether to fire onChange upon animation completion
    */
   animateTo(targetVal, duration = 300, onComplete = null, triggerOnChangeDuring = false, triggerOnChangeAtEnd = true) {
+    if (this.value === undefined) {
+      if (onComplete) onComplete();
+      return;
+    }
     if (this._animFrameId) {
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._animFrameId);
       else clearTimeout(this._animFrameId);

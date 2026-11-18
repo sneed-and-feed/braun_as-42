@@ -27,7 +27,7 @@
 * **Freeze Smoother Reset Integrity (`ShimmerReverbDsp.h`)**:
   * Explicitly reset `mFreezeFeedbackSmoother` (`0.0f`), `mFreezeWetSmoother` (`0.0f`), and `mFreezeInputSmoother` (`1.0f`) inside `ShimmerReverbDsp::reset()`. Previously, resetting the processor while Freeze was engaged left `mFreezeInputSmoother` ducked at `0.08f` (-22 dB) after unfreezing.
 * **Bass Register Decay Knob Consistency (`FeltPianoDsp.h`)**:
-  * Updated `FeltPianoVoice::updateDecay(float newDecay)` to include the bass register multiplier (`mCurrentMidi < 48` $\rightarrow 1.45 + (48 - \text{midi}) \times 0.04$), matching `FeltPianoVoice::trigger()`. Turning the Decay knob while holding a bass note now transitions smoothly without an abrupt drop in decay time.
+  * Updated `FeltPianoVoice::updateDecay(float newDecay)` to include the bass register multiplier (for `mCurrentMidi < 48`, scale $(1.45 + (48 - \text{midi}) \times 0.04)$), matching `FeltPianoVoice::trigger()`. Turning the Decay knob while holding a bass note now transitions smoothly without an abrupt drop in decay time.
 * **Zero-Volume Active Voice Advancement (`FeltPianoDsp.h`)**:
   * Fixed `FeltPianoSynthesizer::process()` when `volume < 1.0e-5f` so active or releasing voices continue advancing their envelopes to natural completion while outputting silence, rather than freezing in time and audibly resuming later when volume is raised.
 

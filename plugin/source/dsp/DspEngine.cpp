@@ -274,7 +274,7 @@ void DspEngine::process(float* left, float* right, int numSamples,
 
     MasterLimiterParams masterParams;
     masterParams.masterVolume = params.master_volume;
-    masterParams.tapeWarmth = 0.18f;
+    masterParams.tapeWarmth = std::clamp(params.master_drive, 0.0f, 1.0f);
     masterParams.limiterKnee = 0.80f;
 
     // 3. Process block with sample-accurate MIDI event dispatching

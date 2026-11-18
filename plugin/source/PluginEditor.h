@@ -30,10 +30,13 @@ public:
 
     // Native vs WebView GUI switching
     bool isNativeModeActive() const noexcept { return useNativeUI; }
+    bool isWebBridgeReady() const noexcept { return webBridgeReady; }
+    bool isDarkThemeActive() const noexcept { return braunLookAndFeel.isDarkTheme(); }
     void setNativeMode(bool native);
 
     // Web integration helpers
     void handleParamChangeFromWeb(const juce::var& data);
+    void handleVectorStateFromWeb(const juce::var& data);
     void handleNoteOnFromWeb(const juce::var& data);
     void handleNoteOffFromWeb(const juce::var& data);
     void handleAllNotesOffFromWeb(const juce::var& data);
@@ -68,6 +71,8 @@ private:
     braun::BraunLookAndFeel braunLookAndFeel;
     bool useNativeUI { false };
     bool initialSyncDone { false };
+    bool webBridgeReady { false };
+    bool wasWebShowing { false };
 
     // Lock-free parameter change coalescing to avoid flooding Win32 message loop
     std::atomic<float> pendingParamValues[kNumTrackedParams] {};
